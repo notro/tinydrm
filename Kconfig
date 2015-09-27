@@ -1,0 +1,40 @@
+menuconfig DRM_TINYDRM
+	tristate "Support for small TFT LCD display modules"
+	depends on DRM
+	select DRM_KMS_HELPER
+	select DRM_KMS_CMA_HELPER
+	select DRM_GEM_CMA_HELPER
+	select DRM_KMS_FB_HELPER
+	select VIDEOMODE_HELPERS
+	help
+	  Choose this option if you have a tinydrm supported display.
+	  If M is selected the module will be called tinydrm.
+
+config TINYDRM_ADA_MIPI
+	tristate "Framebuffer driver for Adafruit MIPI SPI displays"
+	depends on DRM_TINYDRM && SPI
+	select LCDREG_SPI
+	select LCDCTRL_MIPI_DBI
+	help
+	  Framebuffer Driver for Adafruit MIPI compatible SPI TFT displays
+
+config TINYDRM_ADA_SSD1306
+	tristate "Framebuffer driver for Adafruit SSD1306 displays"
+	depends on DRM_TINYDRM && (I2C || SPI)
+	select LCDREG_I2C if I2C
+	select LCDREG_SPI if SPI
+	select LCDCTRL_SSD1306
+	help
+	  Framebuffer Driver for Adafruit SSD1306 based
+	  Monochrome OLED displays
+
+config TINYDRM_HY28
+	tristate "Framebuffer driver for the HY28A and HY28B displays"
+	depends on DRM_TINYDRM && SPI
+	select LCDREG_SPI
+	select LCDCTRL_ILI9320
+	help
+	  Framebuffer driver for the HY28A and HY28B displays
+
+#source "drivers/gpu/drm/tinydrm/lcdctrl/Kconfig"
+#source "drivers/gpu/drm/tinydrm/lcdreg/Kconfig"
