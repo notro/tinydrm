@@ -26,13 +26,15 @@
 
 #include "internal.h"
 
-/*
+
+
+
+/******************************************************************************
  *
  *  Connector
  *
  */
 
-// http://lxr.free-electrons.com/source/drivers/gpu/drm/rcar-du/tinydrm_hdmicon.c#L55
 
 static inline struct tinydrm_device *connector_to_tinydrm(struct drm_connector *connector)
 {
@@ -97,13 +99,12 @@ static const struct drm_connector_funcs tinydrm_connector_funcs = {
 
 
 
-/*
+/******************************************************************************
  *
  *  Encoder
  *
  */
 
-// http://lxr.free-electrons.com/source/drivers/gpu/drm/rcar-du/tinydrm_encoder.c
 
 static void tinydrm_encoder_disable(struct drm_encoder *encoder)
 {
@@ -146,11 +147,11 @@ static int tinydrm_encoder_atomic_check(struct drm_encoder *encoder,
 static const struct drm_encoder_helper_funcs tinydrm_encoder_helper_funcs = {
 //	.mode_set = tinydrm_encoder_mode_set, // optional, not sure if we need it. Called from crtc_set_mode()
 
-// either dpms or enable/disable
+// either dpms/commit or enable/disable
 	.disable = tinydrm_encoder_disable,
 	.enable = tinydrm_encoder_enable,
 
-// OR mode_fixup()
+// atomic_check() or mode_fixup()
 	.atomic_check = tinydrm_encoder_atomic_check,
 };
 
@@ -161,13 +162,12 @@ static const struct drm_encoder_funcs tinydrm_encoder_funcs = {
 
 
 
-/*
+/******************************************************************************
  *
  *  Crtc
  *
  */
 
-// http://lxr.free-electrons.com/source/drivers/gpu/drm/rcar-du/tinydrm_crtc.c
 
 static void tinydrm_crtc_enable(struct drm_crtc *crtc)
 {
@@ -207,17 +207,9 @@ static void tinydrm_crtc_disable(struct drm_crtc *crtc)
 	tdev->enabled = false;
 }
 
-static bool tinydrm_crtc_mode_fixup(struct drm_crtc *crtc,
-				    const struct drm_display_mode *mode,
-				    struct drm_display_mode *adjusted_mode)
-{
-	return true;
-}
-
 static const struct drm_crtc_helper_funcs tinydrm_crtc_helper_funcs = {
-	.mode_fixup = tinydrm_crtc_mode_fixup,
 	.disable = tinydrm_crtc_disable,
-	.enable = tinydrm_crtc_enable,
+	.enable = tinydrm_crtc_enable, // enable or commit: http://lxr.free-electrons.com/ident?i=drm_atomic_helper_commit_modeset_enables
 };
 
 static const struct drm_crtc_funcs tinydrm_crtc_funcs = {
@@ -230,14 +222,15 @@ static const struct drm_crtc_funcs tinydrm_crtc_funcs = {
 };
 
 
-/*
+
+
+/******************************************************************************
  *
  *  Framebuffer
  *
  */
 
 
-//#define to_tinydrm_framebuffer(x) container_of(x, struct tinydrm_framebuffer, base)
 static inline struct tinydrm_framebuffer *to_tinydrm_framebuffer(struct drm_framebuffer *fb)
 {
 	return container_of(fb, struct tinydrm_framebuffer, base);
@@ -246,10 +239,6 @@ static inline struct tinydrm_framebuffer *to_tinydrm_framebuffer(struct drm_fram
 static void tinydrm_framebuffer_destroy(struct drm_framebuffer *fb)
 {
 	struct tinydrm_framebuffer *tinydrm_fb = to_tinydrm_framebuffer(fb);
-
-// With this, running ~/docs/drm-howto/modeset whacks everything and results in oopses that renders the system unusable
-//	if (tinydrm_fb->cma_obj)
-//		drm_gem_cma_free_object(&tinydrm_fb->cma_obj->base);
 
 	if (tinydrm_fb->obj)
 		drm_gem_object_unreference_unlocked(tinydrm_fb->obj);
@@ -280,89 +269,13 @@ static const struct drm_framebuffer_funcs tinydrm_fb_funcs = {
 };
 
 
-/*
-
-drm_fb_cma_helper.c
-
-doesn't have .dirty
-
-http://lxr.free-electrons.com/ident?i=drm_fb_cma_funcs
-
- * Userspace may annotate the updates, the annotates are a
- * promise made by the caller that the change is either a copy
- * of pixels or a fill of a single color in the region specified.
- *
- * If the DRM_MODE_FB_DIRTY_ANNOTATE_COPY flag is given then
- * the number of updated regions are half of num_clips given,
- * where the clip rects are paired in src and dst. The width and
- * height of each one of the pairs must match.
- *
- * If the DRM_MODE_FB_DIRTY_ANNOTATE_FILL flag is given the caller
- * promises that the region specified of the clip rects is filled
- * completely with a single color as given in the color argument.
-struct drm_mode_fb_dirty_cmd {
-        __u32 flags;
-        __u32 color;
-
-*/
-
-//static struct drm_framebuffer_funcs drm_fb_cma_funcs = {
-//	.destroy	= drm_fb_cma_destroy,
-//	.create_handle	= drm_fb_cma_create_handle,
-//};
-//
-//static const struct drm_framebuffer_funcs qxl_fb_funcs = {
-//        .destroy = qxl_user_framebuffer_destroy,
-//        .dirty = qxl_framebuffer_surface_dirty, // no FILL
-///*      TODO?
-// *      .create_handle = qxl_user_framebuffer_create_handle, */
-//};
-//
-//static struct drm_framebuffer_funcs vmw_framebuffer_surface_funcs = {
-//        .destroy = vmw_framebuffer_surface_destroy,
-//        .dirty = vmw_framebuffer_surface_dirty, // same as qxl
-//};
-//
-//static const struct drm_framebuffer_funcs virtio_gpu_fb_funcs = {
-//        .destroy = virtio_gpu_user_framebuffer_destroy,
-//        .dirty = virtio_gpu_framebuffer_surface_dirty, // no FILL/COPY support
-//};
-//
-//static const struct drm_framebuffer_funcs udlfb_funcs = {
-//        .destroy = udl_user_framebuffer_destroy,
-//        .dirty = udl_user_framebuffer_dirty, // no FILL/COPY support
-//};
-//
-//static struct drm_framebuffer_funcs exynos_drm_fb_funcs = {
-//        .destroy        = exynos_drm_fb_destroy,
-//        .create_handle  = exynos_drm_fb_create_handle,
-//        .dirty          = exynos_drm_fb_dirty, // empty
-//};
-//
-//static const struct drm_framebuffer_funcs omap_framebuffer_funcs = {
-//        .create_handle = omap_framebuffer_create_handle,
-//        .destroy = omap_framebuffer_destroy,
-//        .dirty = omap_framebuffer_dirty, // empty
-//};
-//
-//static const struct drm_framebuffer_funcs msm_framebuffer_funcs = {
-//        .create_handle = msm_framebuffer_create_handle,
-//        .destroy = msm_framebuffer_destroy,
-//        .dirty = msm_framebuffer_dirty, // empty
-//};
 
 
-
-
-
-/*
+/******************************************************************************
  *
  *  Mode
  *
  */
-
-// http://lxr.free-electrons.com/source/drivers/gpu/drm/rcar-du/tinydrm_kms.c
-
 
 
 static struct drm_framebuffer *
@@ -412,32 +325,16 @@ DRM_DEBUG_KMS("%s: pitches[0]=%u\n", __func__, mode_cmd->pitches[0]);
 	return &tinydrm_fb->base;
 }
 
-/*
-static int tinydrm_atomic_commit(struct drm_device *dev,
-				 struct drm_atomic_state *state, bool async)
-{
-	int ret;
-
-	ret = drm_atomic_helper_prepare_planes(dev, state);
-	if (ret)
-		return ret;
-
-	drm_atomic_helper_swap_state(dev, state);
-
-	return 0;
-}
-*/
-
 static const struct drm_mode_config_funcs tinydrm_mode_config_funcs = {
 	.fb_create = tinydrm_fb_create,
-//	.output_poll_changed = tinydrm_output_poll_changed,
 	.atomic_check = drm_atomic_helper_check,
-//	.atomic_commit = tinydrm_atomic_commit,
 	.atomic_commit = drm_atomic_helper_commit,
 };
 
 
-/*
+
+
+/******************************************************************************
  *
  * Plane
  *
@@ -457,29 +354,6 @@ static const uint32_t tinydrm_formats[] = {
 	DRM_FORMAT_ABGR8888,
 */
 };
-
-/*
-static void tinydrm_plane_destroy(struct drm_plane *plane)
-{
-	kfree(plane);
-}
-*/
-
-static const struct drm_plane_funcs tinydrm_plane_funcs = {
-	.update_plane		= drm_atomic_helper_update_plane,
-	.disable_plane		= drm_atomic_helper_disable_plane,
-//	.destroy		= tinydrm_plane_destroy,
-	.destroy		= drm_primary_helper_destroy,
-	.reset			= drm_atomic_helper_plane_reset,
-	.atomic_duplicate_state	= drm_atomic_helper_plane_duplicate_state,
-	.atomic_destroy_state	= drm_atomic_helper_plane_destroy_state,
-};
-
-static int tinydrm_plane_atomic_check(struct drm_plane *plane,
-                                         struct drm_plane_state *state)
-{
-	return 0;
-}
 
 static void tinydrm_plane_atomic_update(struct drm_plane *plane,
                                            struct drm_plane_state *old_state)
@@ -501,9 +375,26 @@ static void tinydrm_plane_atomic_update(struct drm_plane *plane,
 }
 
 static const struct drm_plane_helper_funcs tinydrm_plane_helper_funcs = {
-	.atomic_check = tinydrm_plane_atomic_check,
 	.atomic_update = tinydrm_plane_atomic_update,
 };
+
+static const struct drm_plane_funcs tinydrm_plane_funcs = {
+	.update_plane		= drm_atomic_helper_update_plane,
+	.disable_plane		= drm_atomic_helper_disable_plane,
+	.destroy		= drm_primary_helper_destroy,
+	.reset			= drm_atomic_helper_plane_reset,
+	.atomic_duplicate_state	= drm_atomic_helper_plane_duplicate_state,
+	.atomic_destroy_state	= drm_atomic_helper_plane_destroy_state,
+};
+
+
+
+
+/******************************************************************************
+ *
+ * DRM driver
+ *
+ */
 
 
 static int tinydrm_load(struct drm_device *ddev, unsigned long flags)
@@ -564,28 +455,6 @@ static int tinydrm_load(struct drm_device *ddev, unsigned long flags)
 	return 0;
 }
 
-/*
-
-we use drm_dev_set_unique()
-
-int tinydrm_set_busid(struct drm_device *ddev, struct drm_master *master)
-{
-	int id;
-
-//	id = dev->platformdev->id;
-//	if (id < 0)
-		id = 0;
-
-	master->unique = kasprintf(GFP_KERNEL, "tinydrm:%s:%02d",
-                                                dev_name(ddev->dev), id);
-	if (!master->unique)
-		return -ENOMEM;
-
-	master->unique_len = strlen(master->unique);
-	return 0;
-}
-*/
-
 static const struct file_operations tinydrm_fops = {
 	.owner		= THIS_MODULE,
 	.open		= drm_open,
@@ -605,9 +474,6 @@ static struct drm_driver tinydrm_driver = {
 				| DRIVER_ATOMIC,
 	.load			= tinydrm_load,
 //	.unload			= tinydrm_unload,
-//	.preclose		= tinydrm_preclose,
-//	.lastclose		= tinydrm_lastclose,
-//	.set_busid		= tinydrm_set_busid,
 	.get_vblank_counter	= drm_vblank_count,
 //	.enable_vblank		= tinydrm_enable_vblank,
 //	.disable_vblank		= tinydrm_disable_vblank,
@@ -650,9 +516,7 @@ static int tinydrm_register(struct device *dev, struct tinydrm_device *tdev)
 	struct drm_device *ddev;
 	int ret;
 
-dev_info(dev, "%s\n", __func__);
-
-	DRM_DEBUG("\n");
+	dev_info(dev, "%s\n", __func__);
 
 dev->coherent_dma_mask = DMA_BIT_MASK(32);
 
@@ -685,6 +549,13 @@ err_free:
 }
 
 
+
+
+/******************************************************************************
+ *
+ * Display driver
+ *
+ */
 
 
 static int drv_enable(struct tinydrm_device *tdev)
@@ -830,7 +701,7 @@ I need a reference on drm_gem_cma_object
 How can I only take one reference in dirty, so I can release it once in deferred?
 
 drm_gem_object_reference(&cma_obj->base);
-drm_gem_object_unreference(&cma_obj->base);
+drm_gem_object_unreference_unlocked(&cma_obj->base);
 
 */
 
@@ -840,12 +711,14 @@ static void tinydrm_deferred_io_work(struct work_struct *work)
 	struct drm_clip_rect clip;
 static bool inside = false;
 
-inside = true;
+	// locking
 	clip = *tctrl->clips;
 	tinydrm_reset_clip(tctrl->clips);
 
 	dev_info(tctrl->tdev.base->dev, "%s(inside=%u): x1=%u, x2=%u, y1=%u, y2=%u\n\n", __func__, inside, clip.x1, clip.x2, clip.y1, clip.y2);
+inside = true;
 	msleep(150);
+	dev_info(tctrl->tdev.base->dev, "%s: done.\n\n", __func__);
 inside = false;
 }
 
