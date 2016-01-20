@@ -179,20 +179,13 @@ static void tinydrm_crtc_enable(struct drm_crtc *crtc)
 {
 	struct drm_device *ddev = crtc->dev;
 	struct tinydrm_device *tdev = ddev->dev_private;
-	int ret;
 
 	dev_info(ddev->dev, "%s: enabled=%u\n", __func__, tdev->enabled);
 	if (tdev->enabled)
 		return;
 
-	ret = drm_panel_prepare(&tdev->panel);
-	if (ret && ret != -ENOSYS)
-		dev_err(ddev->dev, "panel prepare() failed %d\n", ret);
-
-	ret = drm_panel_enable(&tdev->panel);
-	if (ret && ret != -ENOSYS)
-		dev_err(ddev->dev, "panel enable() failed %d\n", ret);
-
+	drm_panel_prepare(&tdev->panel);
+	drm_panel_enable(&tdev->panel);
 	tdev->enabled = true;
 }
 
@@ -200,20 +193,13 @@ static void tinydrm_crtc_disable(struct drm_crtc *crtc)
 {
 	struct drm_device *ddev = crtc->dev;
 	struct tinydrm_device *tdev = ddev->dev_private;
-	int ret;
 
 	dev_info(ddev->dev, "%s: enabled=%u\n", __func__, tdev->enabled);
 	if (!tdev->enabled)
 		return;
 
-	ret = drm_panel_disable(&tdev->panel);
-	if (ret && ret != -ENOSYS)
-		dev_err(ddev->dev, "panel disable() failed %d\n", ret);
-
-	ret = drm_panel_unprepare(&tdev->panel);
-	if (ret && ret != -ENOSYS)
-		dev_err(ddev->dev, "panel unprepare() failed %d\n", ret);
-
+	drm_panel_disable(&tdev->panel);
+	drm_panel_unprepare(&tdev->panel);
 	tdev->enabled = false;
 }
 
@@ -540,7 +526,7 @@ static int tinydrm_register(struct device *dev, struct tinydrm_device *tdev)
 
 dev->coherent_dma_mask = DMA_BIT_MASK(32);
 
-	if (!tdev->panel.funcs || !tdev->dirty)
+	if (WARN_ON(!tdev->dirty))
 		return -EINVAL;
 
 	ddev = drm_dev_alloc(driver, dev);
