@@ -28,3 +28,6 @@ struct tinydrm_device {
 		     unsigned flags, unsigned color,
 		     struct drm_clip_rect *clips, unsigned num_clips);
 };
+
+int tinydrm_register(struct device *dev, struct tinydrm_device *tdev);
+void tinydrm_release(struct tinydrm_device *tdev);
