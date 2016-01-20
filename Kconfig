@@ -5,6 +5,7 @@ menuconfig DRM_TINYDRM
 	select DRM_KMS_CMA_HELPER
 	select DRM_GEM_CMA_HELPER
 	select DRM_KMS_FB_HELPER
+	select DRM_PANEL
 	select VIDEOMODE_HELPERS
 	help
 	  Choose this option if you have a tinydrm supported display.

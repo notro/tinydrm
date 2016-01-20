@@ -217,9 +217,9 @@ smem_start = info->fix.smem_start;
 		fb_deferred_io_init(info);
 		break;
 	case FB_EVENT_FB_UNREGISTERED:
-info->fix.smem_start = smem_start;
 		if (info->fbdefio)
 			fb_deferred_io_cleanup(info);
+info->fix.smem_start = smem_start;
 		break;
 	}
 
