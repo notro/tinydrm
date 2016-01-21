@@ -11,54 +11,12 @@
  * (at your option) any later version.
  */
 
+#include <drm/drm_gem_cma_helper.h>
 #include <drm/tinydrm/tinydrm.h>
 #include <linux/module.h>
 #include <linux/of_device.h>
 #include <linux/spi/spi.h>
 
-static inline void tinydrm_reset_clip(struct drm_clip_rect *clip)
-{
-	clip->x1 = ~0;
-	clip->x2 = 0;
-	clip->y1 = ~0;
-	clip->y2 = 0;
-}
-
-void tinydrm_merge_clips(struct drm_clip_rect *dst, struct drm_clip_rect *clips, unsigned num_clips, unsigned flags)
-{
-	int i;
-
-	for (i = 0; i < num_clips; i++) {
-		dst->x1 = min(dst->x1, clips[i].x1);
-		dst->x2 = max(dst->x2, clips[i].x2);
-		dst->y1 = min(dst->y1, clips[i].y1);
-		dst->y2 = max(dst->y2, clips[i].y2);
-
-		if (flags & DRM_MODE_FB_DIRTY_ANNOTATE_COPY) {
-			i++;
-			dst->x2 = max(dst->x2, clips[i].x2);
-			dst->y2 = max(dst->y2, clips[i].y2);
-		}
-	}
-}
-
-#include <linux/workqueue.h>
-
-struct tinydrm_lcdctrl {
-	struct tinydrm_device tdev;
-
-	struct delayed_work deferred_work;
-	unsigned defer_ms;
-
-//	clips_lock
-	struct drm_clip_rect *clips;
-	unsigned num_clips;
-};
-
-static inline struct tinydrm_lcdctrl *to_tinydrm_lcdctrl(struct tinydrm_device *tdev)
-{
-	return container_of(tdev, struct tinydrm_lcdctrl, tdev);
-}
 
 #include <linux/delay.h>
 
@@ -149,91 +107,64 @@ drm_gem_object_unreference_unlocked(&cma_obj->base);
 
 */
 
-static void tinydrm_deferred_io_work(struct work_struct *work)
+static int ada_mipi_update(struct tinydrm_device *tdev)
 {
-	struct tinydrm_lcdctrl *tctrl = container_of(work, struct tinydrm_lcdctrl, deferred_work.work);
+	struct drm_gem_cma_object *cma_obj = tdev->dirty.cma_obj;
 	struct drm_clip_rect clip;
-static bool inside = false;
 
-	// locking
-	clip = *tctrl->clips;
-	tinydrm_reset_clip(tctrl->clips);
+	spin_lock(&tdev->dirty.lock);
+	clip = tdev->dirty.clip;
+	tinydrm_reset_clip(&tdev->dirty.clip);
+	spin_unlock(&tdev->dirty.lock);
 
-	dev_info(tctrl->tdev.base->dev, "%s(inside=%u): x1=%u, x2=%u, y1=%u, y2=%u\n\n", __func__, inside, clip.x1, clip.x2, clip.y1, clip.y2);
-inside = true;
-	msleep(150);
-	dev_info(tctrl->tdev.base->dev, "%s: done.\n\n", __func__);
-inside = false;
-}
-
-static int drv_dirty(struct drm_framebuffer *fb, struct drm_gem_cma_object *cma_obj, unsigned flags,
-		     unsigned color, struct drm_clip_rect *clips, unsigned num_clips)
-{
-	struct tinydrm_device *tdev = fb->dev->dev_private;
-	struct tinydrm_lcdctrl *tctrl = to_tinydrm_lcdctrl(tdev);
-	struct drm_clip_rect full_clip = {
-		.x1 = 0,
-		.x2 = fb->width - 1,
-		.y1 = 0,
-		.y2 = fb->height - 1,
-	};
-	int i;
-
-	dev_info(tdev->base->dev, "%s(cma_obj=%p, flags=0x%x, color=0x%x, clips=%p, num_clips=%u)\n", __func__, cma_obj, flags, color, clips, num_clips);
-
-	if (num_clips == 0) {
-		clips = &full_clip;
-		num_clips = 1;
-	}
-
-	for (i = 0; i < num_clips; i++)
-		dev_info(tdev->base->dev, "    x1=%u, x2=%u, y1=%u, y2=%u\n", clips[i].x1, clips[i].x2, clips[i].y1, clips[i].y2);
-
-	tinydrm_merge_clips(tctrl->clips, clips, num_clips, flags);
-
-	if (tctrl->clips[0].x1 == 0 && tctrl->clips[0].x2 == (fb->width - 1) && tctrl->clips[0].y1 == 0 && tctrl->clips[0].y2 == (fb->height - 1))
-		schedule_delayed_work(&tctrl->deferred_work, 0);
-	else
-		schedule_delayed_work(&tctrl->deferred_work, msecs_to_jiffies(tctrl->defer_ms));
+	dev_dbg(tdev->base->dev, "%s: cma_obj=%p, vaddr=%p, paddr=%pad\n", __func__, cma_obj, cma_obj->vaddr, &cma_obj->paddr);
+	dev_dbg(tdev->base->dev, "%s: x1=%u, x2=%u, y1=%u, y2=%u\n", __func__, clip.x1, clip.x2, clip.y1, clip.y2);
+	dev_dbg(tdev->base->dev, "\n");
 
 	return 0;
 }
 
-static int ada_mipifb_panel_disable(struct drm_panel *panel)
+static int ada_mipi_panel_disable(struct drm_panel *panel)
 {
-//	struct tinydrm_device *tdev = connector_to_tinydrm(panel->connector);
+	struct tinydrm_device *tdev = tinydrm_from_panel(panel);
 
-	DRM_DEBUG_KMS("\n");
+	dev_dbg(tdev->base->dev, "%s\n", __func__);
 
 	return 0;
 }
 
-static int ada_mipifb_panel_unprepare(struct drm_panel *panel)
+static int ada_mipi_panel_unprepare(struct drm_panel *panel)
 {
-	DRM_DEBUG_KMS("\n");
+	struct tinydrm_device *tdev = tinydrm_from_panel(panel);
+
+	dev_dbg(tdev->base->dev, "%s\n", __func__);
 
 	return 0;
 }
 
-static int ada_mipifb_panel_prepare(struct drm_panel *panel)
+static int ada_mipi_panel_prepare(struct drm_panel *panel)
 {
-	DRM_DEBUG_KMS("\n");
+	struct tinydrm_device *tdev = tinydrm_from_panel(panel);
+
+	dev_dbg(tdev->base->dev, "%s\n", __func__);
 
 	return 0;
 }
 
-static int ada_mipifb_panel_enable(struct drm_panel *panel)
+static int ada_mipi_panel_enable(struct drm_panel *panel)
 {
-	DRM_DEBUG_KMS("\n");
+	struct tinydrm_device *tdev = tinydrm_from_panel(panel);
+
+	dev_dbg(tdev->base->dev, "%s\n", __func__);
 
 	return 0;
 }
 
-struct drm_panel_funcs ada_mipifb_drm_panel_funcs = {
-	.disable = ada_mipifb_panel_disable,
-	.unprepare = ada_mipifb_panel_unprepare,
-	.prepare = ada_mipifb_panel_prepare,
-	.enable = ada_mipifb_panel_enable,
+struct drm_panel_funcs ada_mipi_drm_panel_funcs = {
+	.disable = ada_mipi_panel_disable,
+	.unprepare = ada_mipi_panel_unprepare,
+	.prepare = ada_mipi_panel_prepare,
+	.enable = ada_mipi_panel_enable,
 };
 
 enum adafruit_displays {
@@ -243,7 +174,7 @@ enum adafruit_displays {
 	ADAFRUIT_1601 = 1601,
 };
 
-static const struct of_device_id ada_mipifb_ids[] = {
+static const struct of_device_id ada_mipi_ids[] = {
 	{ .compatible = "adafruit,ada358",  .data = (void *)ADAFRUIT_358 },
 	{ .compatible = "adafruit,ada797",  .data = (void *)ADAFRUIT_797 },
 	{ .compatible = "adafruit,ada1480", .data = (void *)ADAFRUIT_1480 },
@@ -251,37 +182,25 @@ static const struct of_device_id ada_mipifb_ids[] = {
 { .compatible = "sainsmart18", .data = (void *)ADAFRUIT_358 },
 	{},
 };
-MODULE_DEVICE_TABLE(of, ada_mipifb_ids);
+MODULE_DEVICE_TABLE(of, ada_mipi_ids);
 
-static int ada_mipifb_probe(struct spi_device *spi)
+static int ada_mipi_probe(struct spi_device *spi)
 {
-	struct tinydrm_lcdctrl *tctrl;
 	struct tinydrm_device *tdev;
 	struct device *dev = &spi->dev;
 	const struct of_device_id *of_id;
 
-	of_id = of_match_device(ada_mipifb_ids, dev);
+	of_id = of_match_device(ada_mipi_ids, dev);
 	if (!of_id)
 		return -EINVAL;
 
-//	tdev = devm_kzalloc(dev, sizeof(*tdev), GFP_KERNEL);
-//	if (!tdev)
-//		return -ENOMEM;
-	tctrl = devm_kzalloc(dev, sizeof(*tctrl), GFP_KERNEL);
-	if (!tctrl)
+	tdev = devm_kzalloc(dev, sizeof(*tdev), GFP_KERNEL);
+	if (!tdev)
 		return -ENOMEM;
 
-	tctrl->defer_ms = 50;
-	tctrl->clips = devm_kzalloc(dev, sizeof(*tctrl->clips), GFP_KERNEL);
-	if (!tctrl->clips)
-		return -ENOMEM;
-
-	INIT_DELAYED_WORK(&tctrl->deferred_work, tinydrm_deferred_io_work);
-	tinydrm_reset_clip(tctrl->clips);
-
-	tdev = &tctrl->tdev;
-	tdev->panel.funcs = &ada_mipifb_drm_panel_funcs;
-	tdev->dirty = drv_dirty;
+	tdev->panel.funcs = &ada_mipi_drm_panel_funcs;
+	tdev->update = ada_mipi_update;
+	tdev->dirty.defer_ms = 40;
 
 	switch ((int)of_id->data) {
 	case ADAFRUIT_358:
@@ -306,7 +225,7 @@ tdev->height = 320;
 	return tinydrm_register(dev, tdev);
 }
 
-static int ada_mipifb_remove(struct spi_device *spi)
+static int ada_mipi_remove(struct spi_device *spi)
 {
 	struct tinydrm_device *tdev = spi_get_drvdata(spi);
 
@@ -315,16 +234,16 @@ static int ada_mipifb_remove(struct spi_device *spi)
 	return 0;
 }
 
-static struct spi_driver ada_mipifb_spi_driver = {
+static struct spi_driver ada_mipi_spi_driver = {
 	.driver = {
 		.name   = "ada-mipifb",
 		.owner  = THIS_MODULE,
-		.of_match_table = ada_mipifb_ids,
+		.of_match_table = ada_mipi_ids,
 	},
-	.probe  = ada_mipifb_probe,
-	.remove = ada_mipifb_remove,
+	.probe  = ada_mipi_probe,
+	.remove = ada_mipi_remove,
 };
-module_spi_driver(ada_mipifb_spi_driver);
+module_spi_driver(ada_mipi_spi_driver);
 
 //MODULE_ALIAS("spi:ada358");
 //MODULE_ALIAS("spi:ada797");

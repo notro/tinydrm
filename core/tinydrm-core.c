@@ -20,8 +20,38 @@
 
 #include "internal.h"
 
+void tinydrm_merge_clips(struct drm_clip_rect *dst, struct drm_clip_rect *clips, unsigned num_clips, unsigned flags, u32 width, u32 height)
+{
+	struct drm_clip_rect full_clip = {
+		.x1 = 0,
+		.x2 = width - 1,
+		.y1 = 0,
+		.y2 = height - 1,
+	};
+	int i;
 
+	if (!clips) {
+		clips = &full_clip;
+		num_clips = 1;
+	}
 
+	for (i = 0; i < num_clips; i++) {
+		dst->x1 = min(dst->x1, clips[i].x1);
+		dst->x2 = max(dst->x2, clips[i].x2);
+		dst->y1 = min(dst->y1, clips[i].y1);
+		dst->y2 = max(dst->y2, clips[i].y2);
+
+		if (flags & DRM_MODE_FB_DIRTY_ANNOTATE_COPY) {
+			i++;
+			dst->x2 = max(dst->x2, clips[i].x2);
+			dst->y2 = max(dst->y2, clips[i].y2);
+		}
+	}
+
+	dst->x2 = min_t(u32, dst->x2, width - 1);
+	dst->y2 = min_t(u32, dst->y2, height - 1);
+}
+EXPORT_SYMBOL(tinydrm_merge_clips);
 
 /******************************************************************************
  *
@@ -229,8 +259,12 @@ static inline struct tinydrm_framebuffer *to_tinydrm_framebuffer(struct drm_fram
 static void tinydrm_framebuffer_destroy(struct drm_framebuffer *fb)
 {
 	struct tinydrm_framebuffer *tinydrm_fb = to_tinydrm_framebuffer(fb);
+	struct tinydrm_device *tdev = fb->dev->dev_private;
 
-	DRM_DEBUG_KMS("\n");
+	DRM_DEBUG_KMS("drm_framebuffer = %p, tinydrm_fb->obj = %p\n", fb, tinydrm_fb->obj);
+
+	flush_delayed_work(&tdev->dirty.deferred_work);
+
 	if (tinydrm_fb->obj)
 		drm_gem_object_unreference_unlocked(tinydrm_fb->obj);
 
@@ -238,18 +272,61 @@ static void tinydrm_framebuffer_destroy(struct drm_framebuffer *fb)
 	kfree(tinydrm_fb);
 }
 
+static void tinydrm_deferred_dirty_work(struct work_struct *work)
+{
+	struct tinydrm_device *tdev = container_of(work, struct tinydrm_device, dirty.deferred_work.work);
+
+	dev_dbg(tdev->base->dev, "%s\n", __func__);
+
+	tdev->update(tdev);
+}
+
+int tinydrm_schedule_dirty(struct drm_framebuffer *fb,
+			   struct drm_gem_cma_object *cma_obj, unsigned flags,
+			   unsigned color, struct drm_clip_rect *clips,
+			   unsigned num_clips, bool run_now)
+{
+	struct tinydrm_device *tdev = fb->dev->dev_private;
+	unsigned long delay;
+
+	dev_dbg(tdev->base->dev, "%s(fb = %p, cma_obj = %p, clips = %p, num_clips = %u, run_now = %u)\n", __func__, fb, cma_obj, clips, num_clips, run_now);
+
+	spin_lock(&tdev->dirty.lock);
+
+	tdev->dirty.fb = fb;
+	tdev->dirty.cma_obj = cma_obj;
+	tinydrm_merge_clips(&tdev->dirty.clip, clips, num_clips, flags,
+			    fb->width, fb->height);
+	if (tinydrm_is_full_clip(&tdev->dirty.clip, fb->width, fb->height))
+		run_now = true;
+
+	spin_unlock(&tdev->dirty.lock);
+
+	delay = run_now ? 0 : msecs_to_jiffies(tdev->dirty.defer_ms);
+
+{
+bool ret;
+	ret = schedule_delayed_work(&tdev->dirty.deferred_work, delay);
+
+	if (ret)
+		dev_dbg(tdev->base->dev, "%s: %s\n", __func__, ret ? "queued" : "already on queue");
+
+}
+	return 0;
+}
+
 static int tinydrm_framebuffer_dirty(struct drm_framebuffer *fb,
-					 struct drm_file *file_priv,
-					 unsigned flags, unsigned color,
-					 struct drm_clip_rect *clips,
-					 unsigned num_clips)
+				     struct drm_file *file_priv,
+				     unsigned flags, unsigned color,
+				     struct drm_clip_rect *clips,
+				     unsigned num_clips)
 {
 	struct tinydrm_framebuffer *tfb = to_tinydrm_framebuffer(fb);
-	struct tinydrm_device *tdev = fb->dev->dev_private;
 
 	dev_dbg(fb->dev->dev, "%s\n", __func__);
 
-	return tdev->dirty(fb, tfb->cma_obj, flags, color, clips, num_clips);
+	return tinydrm_schedule_dirty(fb, tfb->cma_obj, flags, color,
+				      clips, num_clips, false);
 }
 
 static const struct drm_framebuffer_funcs tinydrm_fb_funcs = {
@@ -326,7 +403,7 @@ static const struct drm_mode_config_funcs tinydrm_mode_config_funcs = {
  *
  * Plane
  *
-*/
+ */
 
 static const uint32_t tinydrm_formats[] = {
 	DRM_FORMAT_RGB565,
@@ -391,6 +468,10 @@ static int tinydrm_load(struct drm_device *ddev, unsigned long flags)
 	int ret;
 
 	DRM_DEBUG_KMS("\n");
+
+	INIT_DELAYED_WORK(&tdev->dirty.deferred_work, tinydrm_deferred_dirty_work);
+	tinydrm_reset_clip(&tdev->dirty.clip);
+
 	drm_mode_config_init(ddev);
 
 	ddev->mode_config.min_width = tdev->width;
@@ -520,7 +601,7 @@ int tinydrm_register(struct device *dev, struct tinydrm_device *tdev)
 
 dev->coherent_dma_mask = DMA_BIT_MASK(32);
 
-	if (WARN_ON(!tdev->dirty))
+	if (WARN_ON(!tdev->update))
 		return -EINVAL;
 
 	ddev = drm_dev_alloc(driver, dev);

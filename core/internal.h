@@ -7,6 +7,11 @@
  * (at your option) any later version.
  */
 
+int tinydrm_schedule_dirty(struct drm_framebuffer *fb,
+			   struct drm_gem_cma_object *cma_obj, unsigned flags,
+			   unsigned color, struct drm_clip_rect *clips,
+			   unsigned num_clips, bool run_now);
+
 #ifdef CONFIG_DRM_KMS_FB_HELPER
 int tinydrm_fbdev_init(struct tinydrm_device *tdev);
 void tinydrm_fbdev_fini(struct tinydrm_device *tdev);

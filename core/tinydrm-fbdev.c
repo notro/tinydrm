@@ -14,26 +14,7 @@
 #include <drm/drm_gem_cma_helper.h>
 #include <drm/tinydrm/tinydrm.h>
 
-#define TINYDRM_FBDEV_DIRTY_DELAY	HZ/100
-
-static void tinydrm_fbdev_dirty(struct fb_info *info, unsigned flags,
-				unsigned color, struct drm_clip_rect *clips,
-				unsigned num_clips)
-{
-	struct drm_fb_helper *helper = info->par;
-	struct tinydrm_device *tdev = helper->dev->dev_private;
-	struct drm_framebuffer *fb = helper->fb;
-	struct drm_gem_cma_object *cma_obj;
-	int ret;
-
-	cma_obj = drm_fb_cma_get_gem_obj(fb, 0);
-	if (!cma_obj)
-		return;
-
-	ret = tdev->dirty(fb, cma_obj, flags, color, clips, num_clips);
-	if (ret)
-		dev_err_once(fb->dev->dev, "dirty() failed: %d\n", ret);
-}
+#include "internal.h"
 
 /*
 
@@ -44,15 +25,27 @@ static void tinydrm_fbdev_dirty(struct fb_info *info, unsigned flags,
 
 */
 
-#define TINYDRM_DEF_IO_CLIPS	32
+static void tinydrm_fbdev_dirty(struct fb_info *info,
+				struct drm_clip_rect *clip, bool run_now)
+{
+	struct drm_fb_helper *helper = info->par;
+	struct drm_framebuffer *fb = helper->fb;
+	struct drm_gem_cma_object *cma_obj = drm_fb_cma_get_gem_obj(fb, 0);
+
+	if (!cma_obj) {
+		dev_err_once(info->dev, "Can't get cma_obj\n");
+		return;
+	}
+
+	tinydrm_schedule_dirty(fb, cma_obj, 0, 0, clip, 1, run_now);
+}
 
 static void tinydrm_fbdev_deferred_io(struct fb_info *info,
 				      struct list_head *pagelist)
 {
-	struct drm_clip_rect clips[TINYDRM_DEF_IO_CLIPS];
 	unsigned long start, end, next, min, max;
+	struct drm_clip_rect clip;
 	struct page *page;
-	int i = 0;
 int count = 0;
 
 	min = ULONG_MAX;
@@ -61,20 +54,6 @@ int count = 0;
 	list_for_each_entry(page, pagelist, lru) {
 		start = page->index << PAGE_SHIFT;
 		end = start + PAGE_SIZE - 1;
-
-		if (next && start != next && i < TINYDRM_DEF_IO_CLIPS - 1) {
-			clips[i].x1 = 0;
-			clips[i].x2 = info->var.xres - 1;
-			clips[i].y1 = min / info->fix.line_length;
-			clips[i].y2 = max / info->fix.line_length;
-//		pr_debug("%s: x1=%u, x2=%u, y1=%u, y2=%u\n", __func__, clips[i].x1, clips[i].x2, clips[i].y1, clips[i].y2);
-			++i;
-			min = ULONG_MAX;
-			max = 0;
-		}
-
-		next = end + 1;
-
 		min = min(min, start);
 		max = max(max, end);
 count++;
@@ -83,20 +62,15 @@ count++;
 pr_debug("%s: count=%d\n", __func__, count);
 
 	if (min < max) {
-		clips[i].x1 = 0;
-		clips[i].x2 = info->var.xres - 1;
-		clips[i].y1 = min / info->fix.line_length;
-		clips[i].y2 = min_t(u32, max / info->fix.line_length,
+		clip.x1 = 0;
+		clip.x2 = info->var.xres - 1;
+		clip.y1 = min / info->fix.line_length;
+		clip.y2 = min_t(u32, max / info->fix.line_length,
 				    info->var.yres - 1);
 //		pr_debug("%s: x1=%u, x2=%u, y1=%u, y2=%u\n", __func__, clips[i].x1, clips[i].x2, clips[i].y1, clips[i].y2);
-		tinydrm_fbdev_dirty(info, 0, 0, clips, i + 1);
+		tinydrm_fbdev_dirty(info, &clip, true);
 	}
 }
-
-static struct fb_deferred_io tinydrm_fbdev_defio = {
-	.delay          = TINYDRM_FBDEV_DIRTY_DELAY,
-	.deferred_io    = tinydrm_fbdev_deferred_io,
-};
 
 static void tinydrm_fbdev_fillrect(struct fb_info *info,
 				   const struct fb_fillrect *rect)
@@ -111,30 +85,23 @@ static void tinydrm_fbdev_fillrect(struct fb_info *info,
 	dev_dbg(info->dev, "%s: dx=%d, dy=%d, width=%d, height=%d\n",
 		__func__, rect->dx, rect->dy, rect->width, rect->height);
 	sys_fillrect(info, rect);
-	tinydrm_fbdev_dirty(info, DRM_MODE_FB_DIRTY_ANNOTATE_FILL, rect->color, &clip, 1);
+	tinydrm_fbdev_dirty(info, &clip, false);
 }
 
 static void tinydrm_fbdev_copyarea(struct fb_info *info,
 				   const struct fb_copyarea *area)
 {
-	struct drm_clip_rect clips[2] = {
-		{
-			.x1 = area->sx,
-			.x2 = area->sx + area->width - 1,
-			.y1 = area->sy,
-			.y2 = area->sy + area->height - 1,
-		}, {
-			.x1 = area->dx,
-			.x2 = area->dx + area->width - 1,
-			.y1 = area->dy,
-			.y2 = area->dy + area->height - 1,
-		}
+	struct drm_clip_rect clip = {
+		.x1 = area->dx,
+		.x2 = area->dx + area->width - 1,
+		.y1 = area->dy,
+		.y2 = area->dy + area->height - 1,
 	};
 
 	dev_dbg(info->dev, "%s: dx=%d, dy=%d, width=%d, height=%d\n",
 		__func__,  area->dx, area->dy, area->width, area->height);
 	sys_copyarea(info, area);
-	tinydrm_fbdev_dirty(info, DRM_MODE_FB_DIRTY_ANNOTATE_COPY, 0, clips, 2);
+	tinydrm_fbdev_dirty(info, &clip, false);
 }
 
 static void tinydrm_fbdev_imageblit(struct fb_info *info,
@@ -150,7 +117,7 @@ static void tinydrm_fbdev_imageblit(struct fb_info *info,
 	dev_dbg(info->dev, "%s: dx=%d, dy=%d, width=%d, height=%d\n",
 		__func__,  image->dx, image->dy, image->width, image->height);
 	sys_imageblit(info, image);
-	tinydrm_fbdev_dirty(info, 0, 0, &clip, 1);
+	tinydrm_fbdev_dirty(info, &clip, false);
 }
 
 static struct fb_ops tinydrm_fbdev_cma_ops = {
@@ -213,7 +180,18 @@ smem_start = info->fix.smem_start;
 		memcpy(fbops, &tinydrm_fbdev_cma_ops, sizeof(*fbops));
 		info->fbops = fbops;
 
-		info->fbdefio = &tinydrm_fbdev_defio;
+		/*
+		 * To get individual delays, a per device fbdefio structure is
+		 * used.
+		 */
+		info->fbdefio = devm_kzalloc(info->device,
+					     sizeof(*info->fbdefio),
+					     GFP_KERNEL);
+		if (!info->fbdefio)
+			return -ENOMEM;
+
+		info->fbdefio->delay = msecs_to_jiffies(tdev->dirty.defer_ms);
+		info->fbdefio->deferred_io = tinydrm_fbdev_deferred_io;
 		fb_deferred_io_init(info);
 		break;
 	case FB_EVENT_FB_UNREGISTERED:
