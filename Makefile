@@ -2,8 +2,7 @@ ccflags-y += -I$(src)/include
 
 obj-$(CONFIG_DRM_TINYDRM)		+= core/
 
-#obj-$(CONFIG_LCDREG)			+= lcdreg/
-#obj-$(CONFIG_LCDCTRL)			+= lcdctrl/
+obj-$(CONFIG_LCDREG)			+= lcdreg/
 
 #obj-$(CONFIG_TINYDRM_ADA_MIPI)		+= ada-mipifb.o
 obj-m					+= ada-mipifb.o

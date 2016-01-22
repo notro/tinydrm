@@ -37,5 +37,4 @@ config TINYDRM_HY28
 	help
 	  Framebuffer driver for the HY28A and HY28B displays
 
-#source "drivers/gpu/drm/tinydrm/lcdctrl/Kconfig"
-#source "drivers/gpu/drm/tinydrm/lcdreg/Kconfig"
+source "drivers/gpu/drm/tinydrm/lcdreg/Kconfig"

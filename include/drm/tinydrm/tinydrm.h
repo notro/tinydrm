@@ -5,6 +5,8 @@
 #include <drm/drm_crtc.h>
 #include <drm/drm_panel.h>
 
+struct lcdreg;
+
 struct tinydrm_framebuffer {
 	struct drm_framebuffer base;
 struct drm_gem_object *obj;
@@ -29,6 +31,7 @@ struct tinydrm_device {
 	struct drm_connector connector;
 	struct drm_fbdev_cma *fbdev_cma;
 	struct tinydrm_dirty dirty;
+	struct lcdreg *lcdreg;
 	bool enabled;
 	u32 width, height;
 	void *dev_private;
