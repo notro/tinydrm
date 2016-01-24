@@ -1,4 +1,4 @@
-#define DEBUG
+//#define DEBUG
 /*
  * Copyright (C) 2015 Noralf Trønnes
  *
@@ -182,6 +182,8 @@ static const struct drm_encoder_helper_funcs tinydrm_encoder_helper_funcs = {
 	.enable = tinydrm_encoder_enable,
 
 // atomic_check() or mode_fixup()
+// maybe not: http://lxr.free-electrons.com/source/drivers/gpu/drm/drm_atomic_helper.c#L310
+// ->atomic_check(
 	.atomic_check = tinydrm_encoder_atomic_check,
 };
 

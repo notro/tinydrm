@@ -11,118 +11,15 @@
  * (at your option) any later version.
  */
 
-#include <drm/drm_gem_cma_helper.h>
+#include <drm/tinydrm/ili9340.h>
+#include <drm/tinydrm/lcdreg.h>
+#include <drm/tinydrm/mipi-dbi.h>
 #include <drm/tinydrm/tinydrm.h>
+#include <linux/delay.h>
 #include <linux/module.h>
 #include <linux/of_device.h>
 #include <linux/spi/spi.h>
-
-
-#include <linux/delay.h>
-
-
-// what happens if entering while running?
-
-/*
-
-Is it possible that the framebuffer has been released when we get here?
-
-https://www.kernel.org/doc/htmldocs/drm/drm-mode-setting.html
-
-The lifetime of a drm framebuffer is controlled with a reference count,
-drivers can grab additional references with drm_framebuffer_reference and
-drop them again with drm_framebuffer_unreference. For driver-private
-framebuffers for which the last reference is never dropped (e.g. for the
-fbdev framebuffer when the struct drm_framebuffer is embedded into the fbdev
-helper struct) drivers can manually clean up a framebuffer at module unload
-time with drm_framebuffer_unregister_private.
-
-I need a reference on drm_gem_cma_object
-
-136 static inline void
-137 drm_gem_object_reference(struct drm_gem_object *obj)
-138 {
-139         kref_get(&obj->refcount);
-140 }
-141
-142 static inline void
-143 drm_gem_object_unreference(struct drm_gem_object *obj)
-144 {
-145         if (obj != NULL)
-146                 kref_put(&obj->refcount, drm_gem_object_free);
-147 }
-
-754  **
-755  * drm_gem_object_free - free a GEM object
-756  * @kref: kref of the object to free
-757  *
-758  * Called after the last reference to the object has been lost.
-759  * Must be called holding struct_ mutex
-760  *
-761  * Frees the object
-762  *
-763 void
-764 drm_gem_object_free(struct kref *kref)
-765 {
-766         struct drm_gem_object *obj = (struct drm_gem_object *) kref;
-767         struct drm_device *dev = obj->dev;
-768
-769         BUG_ON(!mutex_is_locked(&dev->struct_mutex));
-770
-771         if (dev->driver->gem_free_object != NULL)
-772                 dev->driver->gem_free_object(obj);
-773 }
-
-177  **
-178  * drm_gem_cma_free_object - free resources associated with a CMA GEM object
-179  * @gem_obj: GEM object to free
-180  *
-181  * This function frees the backing memory of the CMA GEM object, cleans up the
-182  * GEM object state and frees the memory used to store the object itself.
-183  * Drivers using the CMA helpers should set this as their DRM driver's
-184  * ->gem_free_object() callback.
-185  *
-186 void drm_gem_cma_free_object(struct drm_gem_object *gem_obj)
-187 {
-188         struct drm_gem_cma_object *cma_obj;
-189
-190         cma_obj = to_drm_gem_cma_obj(gem_obj);
-191
-192         if (cma_obj->vaddr) {
-193                 dma_free_writecombine(gem_obj->dev->dev, cma_obj->base.size,
-194                                       cma_obj->vaddr, cma_obj->paddr);
-195         } else if (gem_obj->import_attach) {
-196                 drm_prime_gem_destroy(gem_obj, cma_obj->sgt);
-197         }
-198
-199         drm_gem_object_release(gem_obj);
-200
-201         kfree(cma_obj);
-202 }
-
-How can I only take one reference in dirty, so I can release it once in deferred?
-
-drm_gem_object_reference(&cma_obj->base);
-drm_gem_object_unreference_unlocked(&cma_obj->base);
-
-*/
-
-static int ada_mipi_update(struct tinydrm_device *tdev)
-{
-	struct drm_gem_cma_object *cma_obj = tdev->dirty.cma_obj;
-	struct drm_clip_rect clip;
-
-	spin_lock(&tdev->dirty.lock);
-	clip = tdev->dirty.clip;
-	tinydrm_reset_clip(&tdev->dirty.clip);
-	spin_unlock(&tdev->dirty.lock);
-
-	dev_dbg(tdev->base->dev, "%s: cma_obj=%p, vaddr=%p, paddr=%pad\n", __func__, cma_obj, cma_obj->vaddr, &cma_obj->paddr);
-	dev_dbg(tdev->base->dev, "%s: x1=%u, x2=%u, y1=%u, y2=%u\n", __func__, clip.x1, clip.x2, clip.y1, clip.y2);
-	dev_dbg(tdev->base->dev, "\n");
-
-	return 0;
-}
+#include <video/mipi_display.h>
 
 static int ada_mipi_panel_disable(struct drm_panel *panel)
 {
@@ -133,7 +30,7 @@ static int ada_mipi_panel_disable(struct drm_panel *panel)
 	return 0;
 }
 
-static int ada_mipi_panel_unprepare(struct drm_panel *panel)
+static int ada_mipi_1601_panel_unprepare(struct drm_panel *panel)
 {
 	struct tinydrm_device *tdev = tinydrm_from_panel(panel);
 
@@ -142,11 +39,60 @@ static int ada_mipi_panel_unprepare(struct drm_panel *panel)
 	return 0;
 }
 
-static int ada_mipi_panel_prepare(struct drm_panel *panel)
+static int ada_mipi_1601_panel_prepare(struct drm_panel *panel)
 {
 	struct tinydrm_device *tdev = tinydrm_from_panel(panel);
+	struct lcdreg *reg = tdev->lcdreg;
+	int ret;
 
 	dev_dbg(tdev->base->dev, "%s\n", __func__);
+
+	lcdreg_reset(reg);
+	ret = lcdreg_writereg(reg, ILI9340_SWRESET);
+	if (ret) {
+		dev_err(reg->dev, "lcdreg_writereg failed: %d\n", ret);
+		return ret;
+	}
+
+	msleep(20);
+//	mipi_dbi_check(reg, 0);
+
+	/* Undocumented registers */
+	lcdreg_writereg(reg, 0xEF, 0x03, 0x80, 0x02);
+	lcdreg_writereg(reg, 0xCF, 0x00, 0xC1, 0x30);
+	lcdreg_writereg(reg, 0xED, 0x64, 0x03, 0x12, 0x81);
+	lcdreg_writereg(reg, 0xE8, 0x85, 0x00, 0x78);
+	lcdreg_writereg(reg, 0xCB, 0x39, 0x2C, 0x00, 0x34, 0x02);
+	lcdreg_writereg(reg, 0xF7, 0x20);
+	lcdreg_writereg(reg, 0xEA, 0x00, 0x00);
+
+	lcdreg_writereg(reg, ILI9340_PWCTRL1, 0x23);
+	lcdreg_writereg(reg, ILI9340_PWCTRL2, 0x10);
+	lcdreg_writereg(reg, ILI9340_VMCTRL1, 0x3e, 0x28);
+	lcdreg_writereg(reg, ILI9340_VMCTRL2, 0x86);
+
+	lcdreg_writereg(reg, ILI9340_PIXSET, 0x55);
+	lcdreg_writereg(reg, ILI9340_FRMCTR1, 0x00, 0x18);
+	lcdreg_writereg(reg, ILI9340_DISCTRL, 0x08, 0x82, 0x27);
+
+	/* 3Gamma Function Disable */
+	lcdreg_writereg(reg, 0xF2, 0x00);
+
+	lcdreg_writereg(reg, ILI9340_GAMSET, 0x01);
+	lcdreg_writereg(reg, ILI9340_PGAMCTRL,
+			0x0F, 0x31, 0x2B, 0x0C, 0x0E, 0x08, 0x4E, 0xF1,
+			0x37, 0x07, 0x10, 0x03, 0x0E, 0x09, 0x00);
+	lcdreg_writereg(reg, ILI9340_NGAMCTRL,
+			0x00, 0x0E, 0x14, 0x03, 0x11, 0x07, 0x31, 0xC1,
+			0x48, 0x08, 0x0F, 0x0C, 0x31, 0x36, 0x0F);
+
+	lcdreg_writereg(reg, ILI9340_SLPOUT);
+	msleep(120);
+//	mipi_dbi_check(reg, 1);
+
+	lcdreg_writereg(reg, ILI9340_DISPON);
+
+lcdreg_writereg(reg, MIPI_DCS_SET_ADDRESS_MODE, ILI9340_MADCTL_MX | (1 << 3));
 
 	return 0;
 }
@@ -160,10 +106,10 @@ static int ada_mipi_panel_enable(struct drm_panel *panel)
 	return 0;
 }
 
-struct drm_panel_funcs ada_mipi_drm_panel_funcs = {
+struct drm_panel_funcs ada_mipi_1601_drm_panel_funcs = {
 	.disable = ada_mipi_panel_disable,
-	.unprepare = ada_mipi_panel_unprepare,
-	.prepare = ada_mipi_panel_prepare,
+	.unprepare = ada_mipi_1601_panel_unprepare,
+	.prepare = ada_mipi_1601_panel_prepare,
 	.enable = ada_mipi_panel_enable,
 };
 
@@ -186,9 +132,13 @@ MODULE_DEVICE_TABLE(of, ada_mipi_ids);
 
 static int ada_mipi_probe(struct spi_device *spi)
 {
-	struct tinydrm_device *tdev;
-	struct device *dev = &spi->dev;
 	const struct of_device_id *of_id;
+	struct device *dev = &spi->dev;
+	struct tinydrm_device *tdev;
+	enum lcdreg_spi_mode mode;
+	bool readable = false;
+	struct lcdreg *reg;
+	int ret;
 
 	of_id = of_match_device(ada_mipi_ids, dev);
 	if (!of_id)
@@ -198,8 +148,8 @@ static int ada_mipi_probe(struct spi_device *spi)
 	if (!tdev)
 		return -ENOMEM;
 
-	tdev->panel.funcs = &ada_mipi_drm_panel_funcs;
-	tdev->update = ada_mipi_update;
+	tdev->panel.funcs = &ada_mipi_1601_drm_panel_funcs;
+	tdev->update = mipi_dbi_update;
 	tdev->dirty.defer_ms = 40;
 
 	switch ((int)of_id->data) {
@@ -213,12 +163,26 @@ tdev->height = 320;
 		break;
 	case ADAFRUIT_1480:
 	case ADAFRUIT_1601:
+		readable = true;
+		mode = LCDREG_SPI_4WIRE;
 		tdev->width = 240;
 		tdev->height = 320;
 		break;
 	default:
 		return -EINVAL;
 	}
+
+	reg = devm_lcdreg_spi_init_of(spi, mode);
+	if (IS_ERR(reg))
+		return PTR_ERR(reg);
+
+	reg->readable = readable;
+reg->def_width = 8;
+	tdev->lcdreg = reg;
+
+	ret = mipi_dbi_check(reg);
+	if (ret)
+		dev_warn(dev, "mipi_dbi_check failed: %d\n", ret);
 
 	spi_set_drvdata(spi, tdev);
 
