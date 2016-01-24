@@ -11,11 +11,14 @@ menuconfig DRM_TINYDRM
 	  Choose this option if you have a tinydrm supported display.
 	  If M is selected the module will be called tinydrm.
 
+config TINYDRM_MIPI_DBI
+	tristate
+
 config TINYDRM_ADA_MIPI
 	tristate "Framebuffer driver for Adafruit MIPI SPI displays"
 	depends on DRM_TINYDRM && SPI
 	select LCDREG_SPI
-	select LCDCTRL_MIPI_DBI
+	select TINYDRM_MIPI_DBI
 	help
 	  Framebuffer Driver for Adafruit MIPI compatible SPI TFT displays
 
