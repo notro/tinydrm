@@ -9,7 +9,7 @@
  * (at your option) any later version.
  */
 
-#include <drm/tinydrm/lcdreg.h>
+#include <drm/tinydrm/lcdreg-i2c.h>
 #include <linux/delay.h>
 #include <linux/device.h>
 #include <linux/gpio/consumer.h>

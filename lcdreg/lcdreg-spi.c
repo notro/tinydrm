@@ -10,7 +10,7 @@
  */
 
 #include <asm/unaligned.h>
-#include <drm/tinydrm/lcdreg.h>
+#include <drm/tinydrm/lcdreg-spi.h>
 #include <linux/delay.h>
 #include <linux/device.h>
 #include <linux/dma-mapping.h>

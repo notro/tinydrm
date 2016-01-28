@@ -12,7 +12,7 @@
  */
 
 #include <drm/tinydrm/ili9340.h>
-#include <drm/tinydrm/lcdreg.h>
+#include <drm/tinydrm/lcdreg-spi.h>
 #include <drm/tinydrm/mipi-dbi.h>
 #include <drm/tinydrm/tinydrm.h>
 #include <linux/delay.h>
