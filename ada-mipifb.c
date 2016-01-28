@@ -1,7 +1,7 @@
 #define DEBUG
 
 /*
- * Framebuffer driver for Adafruit MIPI compatible SPI displays
+ * DRM driver for Adafruit MIPI compatible SPI displays
  *
  * Copyright 2016 Noralf Trønnes
  *
@@ -217,4 +217,6 @@ module_spi_driver(ada_mipi_spi_driver);
 //MODULE_ALIAS("spi:ada1601");
 
 
+MODULE_DESCRIPTION("Adafruit MIPI compatible SPI displays");
+MODULE_AUTHOR("Noralf Trønnes");
 MODULE_LICENSE("GPL");

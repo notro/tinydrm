@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2015 Noralf Trønnes
+ * Copyright (C) 2016 Noralf Trønnes
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
