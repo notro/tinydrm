@@ -14,49 +14,93 @@
 #include <drm/tinydrm/lcdreg.h>
 #include <drm/tinydrm/tinydrm.h>
 #include <linux/module.h>
+#include <linux/swab.h>
 #include <video/mipi_display.h>
 
-int lcdctrl_update_writereg(struct tinydrm_device *tdev, u32 regnr,
-			    struct drm_clip_rect *clip)
+void tinydrm_xrgb8888_to_rgb565(u32 *src, u16 *dst, unsigned num_pixels, bool swap_bytes)
 {
-	struct drm_gem_cma_object *cma_obj = tdev->dirty.cma_obj;
-	struct lcdreg *reg = tdev->lcdreg;
-	u32 num_pixels = (clip->x2 - clip->x1 + 1) *
-			 (clip->y2 - clip->y1 + 1);
+	int i;
+
+	for (i = 0; i < num_pixels; i++) {
+		*dst = ((*src & 0x00F80000) >> 8) |
+		       ((*src & 0x0000FC00) >> 5) |
+		       ((*src & 0x000000F8) >> 3);
+		if (swap_bytes)
+			*dst = swab16(*dst);
+		src++;
+		dst++;
+	}
+}
+
+int tinydrm_update_rgb565_lcdreg(struct tinydrm_device *tdev, struct drm_framebuffer *fb, struct drm_gem_cma_object *cma_obj, struct drm_clip_rect *clip)
+{
+	unsigned num_pixels = (clip->x2 - clip->x1 + 1) *
+			      (clip->y2 - clip->y1 + 1);
 	struct lcdreg_transfer tr = {
 		.index = 1,
 		.width = 16,
-		.buf = cma_obj->vaddr,
 		.count = num_pixels
 	};
+	bool byte_swap = false;
+	u16 *buf = NULL;
 	int ret;
 
-	//lcdctrl_debugfs_update_begin(ctrl, update);
-	ret = lcdreg_write(reg, regnr, &tr);
-	//lcdctrl_debugfs_update_end(ctrl, tr.count);
+	dev_err_once(tdev->base->dev, "pixel_format = %s, bpw = 0x%08x\n", drm_get_format_name(fb->pixel_format), tdev->lcdreg->bits_per_word_mask);
+
+	switch (fb->pixel_format) {
+	case DRM_FORMAT_RGB565:
+		tr.buf = cma_obj->vaddr;
+		break;
+	case DRM_FORMAT_XRGB8888:
+		buf = kmalloc(num_pixels * sizeof(u16), GFP_KERNEL);
+		if (!buf)
+			return -ENOMEM;
+
+#if defined(__LITTLE_ENDIAN)
+		byte_swap = !lcdreg_bpw_supported(tdev->lcdreg, 16);
+#endif
+		tinydrm_xrgb8888_to_rgb565(cma_obj->vaddr, buf, num_pixels, byte_swap);
+		tr.buf = buf;
+		if (byte_swap) {
+			tr.width = 8;
+			tr.count *= 2;
+		}
+		break;
+	default:
+		dev_err_once(tdev->base->dev,
+			     "pixel_format '%s' is not supported\n",
+			     drm_get_format_name(fb->pixel_format));
+		return -EINVAL;
+	}
+
+	ret = lcdreg_write(tdev->lcdreg, MIPI_DCS_WRITE_MEMORY_START, &tr);
+	kfree(buf);
 
 	return ret;
 }
 
 int mipi_dbi_update(struct tinydrm_device *tdev)
 {
-	struct drm_gem_cma_object *cma_obj = tdev->dirty.cma_obj;
-	struct drm_framebuffer *fb = tdev->dirty.fb;
+	struct drm_gem_cma_object *cma_obj;
 	struct lcdreg *reg = tdev->lcdreg;
+	struct drm_framebuffer *fb;
 	struct drm_clip_rect clip;
 
 	spin_lock(&tdev->dirty.lock);
 	clip = tdev->dirty.clip;
 	tinydrm_reset_clip(&tdev->dirty.clip);
+	cma_obj = tdev->dirty.cma_obj;
+	fb = tdev->dirty.fb;
 	spin_unlock(&tdev->dirty.lock);
 
 	if (!cma_obj || !fb)
 		return -EINVAL;
 
-clip.x1 = 0;
-clip.x2 = fb->width - 1;
-clip.y1 = 0;
-clip.y2 = fb->height - 1;
+	/* TODO: support partial updates */
+	clip.x1 = 0;
+	clip.x2 = fb->width - 1;
+	clip.y1 = 0;
+	clip.y2 = fb->height - 1;
 
 	dev_dbg(tdev->base->dev, "%s: cma_obj=%p, vaddr=%p, paddr=%pad\n", __func__, cma_obj, cma_obj->vaddr, &cma_obj->paddr);
 	dev_dbg(tdev->base->dev, "%s: x1=%u, x2=%u, y1=%u, y2=%u\n", __func__, clip.x1, clip.x2, clip.y1, clip.y2);
@@ -68,8 +112,8 @@ clip.y2 = fb->height - 1;
 	lcdreg_writereg(reg, MIPI_DCS_SET_PAGE_ADDRESS,
 			(clip.y1 >> 8) & 0xFF, clip.y1 & 0xFF,
 			(clip.y2 >> 8) & 0xFF, clip.y2 & 0xFF);
-	return lcdctrl_update_writereg(tdev, MIPI_DCS_WRITE_MEMORY_START,
-				       &clip);
+
+	return tinydrm_update_rgb565_lcdreg(tdev, fb, cma_obj, &clip);
 }
 EXPORT_SYMBOL(mipi_dbi_update);
 

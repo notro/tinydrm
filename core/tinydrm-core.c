@@ -410,16 +410,6 @@ static const struct drm_mode_config_funcs tinydrm_mode_config_funcs = {
 static const uint32_t tinydrm_formats[] = {
 	DRM_FORMAT_RGB565,
 	DRM_FORMAT_XRGB8888,
-	DRM_FORMAT_ARGB8888,
-
-/*
-	DRM_FORMAT_BGRX8888,
-	DRM_FORMAT_BGRA8888,
-	DRM_FORMAT_RGBX8888,
-	DRM_FORMAT_RGBA8888,
-	DRM_FORMAT_XBGR8888,
-	DRM_FORMAT_ABGR8888,
-*/
 };
 
 static void tinydrm_plane_atomic_update(struct drm_plane *plane,
