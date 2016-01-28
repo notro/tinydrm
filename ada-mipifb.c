@@ -133,9 +133,11 @@ MODULE_DEVICE_TABLE(of, ada_mipi_ids);
 static int ada_mipi_probe(struct spi_device *spi)
 {
 	const struct of_device_id *of_id;
+	struct lcdreg_spi_config cfg = {
+		.mode = LCDREG_SPI_4WIRE,
+	};
 	struct device *dev = &spi->dev;
 	struct tinydrm_device *tdev;
-	enum lcdreg_spi_mode mode;
 	bool readable = false;
 	struct lcdreg *reg;
 	int ret;
@@ -164,7 +166,7 @@ tdev->height = 320;
 	case ADAFRUIT_1480:
 	case ADAFRUIT_1601:
 		readable = true;
-		mode = LCDREG_SPI_4WIRE;
+		cfg.mode = LCDREG_SPI_4WIRE;
 		tdev->width = 240;
 		tdev->height = 320;
 		break;
@@ -172,7 +174,7 @@ tdev->height = 320;
 		return -EINVAL;
 	}
 
-	reg = devm_lcdreg_spi_init_of(spi, mode);
+	reg = devm_lcdreg_spi_init(spi, &cfg);
 	if (IS_ERR(reg))
 		return PTR_ERR(reg);
 

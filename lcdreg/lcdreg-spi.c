@@ -633,41 +633,10 @@ static u8 lcdreg_spi_startbyte(struct lcdreg *reg, struct lcdreg_transfer *tr,
 	return 0x70 | (!!spi->id << 2) | (!!tr->index << 1) | read;
 }
 
-int devm_lcdreg_spi_of_parse(struct device *dev, struct lcdreg_spi_config *cfg)
-{
-	char *dc_name = cfg->dc_name ? : "dc";
-	int ret;
-
-	cfg->reset = devm_gpiod_get_optional(dev, "reset",
-					     GPIOD_OUT_HIGH);
-	if (IS_ERR(cfg->reset))
-		return PTR_ERR(cfg->reset);
-
-	switch (cfg->mode) {
-	case LCDREG_SPI_4WIRE:
-		cfg->dc = devm_gpiod_get_optional(dev, dc_name,
-						  GPIOD_OUT_LOW);
-		if (IS_ERR(cfg->dc))
-			return PTR_ERR(cfg->dc);
-		break;
-	case LCDREG_SPI_STARTBYTE:
-		ret = of_property_read_u32(dev->of_node, "id", &cfg->id);
-		if (ret && ret != -EINVAL) {
-			dev_err(dev, "error reading property 'id': %i\n", ret);
-			return ret;
-		}
-		break;
-	default:
-		break;
-	}
-
-	return 0;
-}
-EXPORT_SYMBOL(devm_lcdreg_spi_of_parse);
-
 struct lcdreg *devm_lcdreg_spi_init(struct spi_device *sdev,
 				    const struct lcdreg_spi_config *config)
 {
+	char *dc_name = config->dc_name ? : "dc";
 	struct device *dev = &sdev->dev;
 	struct lcdreg_spi *spi;
 	struct lcdreg *reg;
@@ -696,28 +665,39 @@ dev_info(dev, "txlen: %u\n", txlen);
 		else
 			reg->bits_per_word_mask = SPI_BPW_MASK(8);
 	}
-	dev_dbg(dev, "bits_per_word_mask: 0x%04x", reg->bits_per_word_mask);
-	spi->mode = config->mode;
+	dev_dbg(dev, "bits_per_word_mask: 0x%08x", reg->bits_per_word_mask);
+
 	reg->def_width = config->def_width;
 	reg->readable = config->readable;
 	reg->reset = lcdreg_spi_reset;
 	reg->write = lcdreg_spi_write;
-	if (spi->mode == LCDREG_SPI_STARTBYTE) {
-		spi->startbyte = config->startbyte ? : lcdreg_spi_startbyte;
-		reg->read = lcdreg_spi_read_startbyte;
-	} else {
-		reg->read = lcdreg_spi_read;
-	}
+	reg->read = lcdreg_spi_read;
 
+	spi->mode = config->mode;
+	spi->id = config->id;
 	if (!spi->txbuflen)
 		spi->txbuflen = PAGE_SIZE;
 
-	spi->id = config->id;
-	spi->reset = config->reset;
-	spi->dc = config->dc;
-	if (spi->mode == LCDREG_SPI_4WIRE && !spi->dc) {
-		dev_err(dev, "missing 'dc' gpio\n");
-		return ERR_PTR(-EINVAL);
+	switch (spi->mode) {
+	case LCDREG_SPI_4WIRE:
+		spi->dc = devm_gpiod_get(dev, dc_name, GPIOD_OUT_LOW);
+		if (IS_ERR(spi->dc)) {
+			dev_err(dev, "Failed to get gpio '%s'\n", dc_name);
+			return ERR_CAST(spi->dc);
+		}
+		break;
+	case LCDREG_SPI_3WIRE:
+		break;
+	case LCDREG_SPI_STARTBYTE:
+		reg->read = lcdreg_spi_read_startbyte;
+		spi->startbyte = config->startbyte ? : lcdreg_spi_startbyte;
+		break;
+	}
+
+	spi->reset = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_HIGH);
+	if (IS_ERR(spi->reset)) {
+		dev_err(dev, "Failed to get gpio 'reset'\n");
+		return ERR_CAST(spi->reset);
 	}
 
 	pr_debug("spi->reg.def_width: %u\n", reg->def_width);

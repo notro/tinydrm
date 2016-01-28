@@ -25,30 +25,11 @@ struct lcdreg_spi_config {
 	bool readable;
 	u32 id;
 	char *dc_name;
-	struct gpio_desc *dc;
-	struct gpio_desc *reset;
 	u8 (*startbyte)(struct lcdreg *reg, struct lcdreg_transfer *tr,
 			bool read);
 };
 
 struct lcdreg *devm_lcdreg_spi_init(struct spi_device *sdev,
 				    const struct lcdreg_spi_config *config);
-int devm_lcdreg_spi_of_parse(struct device *dev,
-			     struct lcdreg_spi_config *cfg);
-
-static inline struct lcdreg *devm_lcdreg_spi_init_of(struct spi_device *sdev,
-						     enum lcdreg_spi_mode mode)
-{
-	struct lcdreg_spi_config cfg = {
-		.mode = mode,
-	};
-	int ret;
-
-	ret = devm_lcdreg_spi_of_parse(&sdev->dev, &cfg);
-	if (ret)
-		return ERR_PTR(ret);
-
-	return devm_lcdreg_spi_init(sdev, &cfg);
-}
 
 #endif /* __LINUX_LCDREG_SPI_H */
