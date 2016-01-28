@@ -15,7 +15,6 @@
 
 /**
  * struct lcdreg_transfer - LCD register transfer
- *
  * @index: register index (address)
  *         Known under the following names:
  *         D/C (command=0, data=1)
@@ -34,7 +33,6 @@ struct lcdreg_transfer {
 
 /**
  * struct lcdreg - interface to LCD register
- *
  * @dev: device interface
  * @lock: mutex for register access locking
  * @def_width: default register width
@@ -45,7 +43,6 @@ struct lcdreg_transfer {
  * @write: write to register
  * @read: read from register (optional)
  * @reset: reset controller (optional)
- * @quirks: Deviations from the MIPI DBI standard
  */
 struct lcdreg {
 	struct device *dev;
@@ -61,16 +58,6 @@ struct lcdreg {
 	int (*read)(struct lcdreg *reg, unsigned regnr,
 		    struct lcdreg_transfer *transfer);
 	void (*reset)(struct lcdreg *reg);
-
-	u64 quirks;
-/* slowdown command (index=0) */
-#define LCDREG_SLOW_INDEX0_WRITE	BIT(0)
-/*
- * The MIPI DBI spec states that D/C should be HIGH during register reading.
- * However, not all SPI master drivers support cs_change on last transfer and
- * there are LCD controllers that ignore D/C on read.
- */
-#define LCDREG_INDEX0_ON_READ		BIT(1)
 
 #ifdef CONFIG_DEBUG_FS
 	struct dentry *debugfs;

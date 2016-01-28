@@ -35,6 +35,7 @@ struct lcdreg_spi {
 unsigned txbuflen;
 	void *txbuf_dc;
 	unsigned id;
+	u32 quirks;
 	u8 (*startbyte)(struct lcdreg *reg, struct lcdreg_transfer *tr,
 			bool read);
 	struct gpio_desc *dc;
@@ -97,7 +98,7 @@ static int lcdreg_spi_do_transfer(struct lcdreg *reg,
 		return -ENOMEM;
 
 	/* slow down commands? */
-	if (!transfer->index && (reg->quirks & LCDREG_SLOW_INDEX0_WRITE))
+	if (!transfer->index && (spi->quirks & LCDREG_SLOW_INDEX0_WRITE))
 		for (i = 0; i < 2; i++)
 			tr[i].speed_hz = min_t(u32, 2000000,
 					       sdev->max_speed_hz / 2);
@@ -583,7 +584,8 @@ static int lcdreg_spi_read(struct lcdreg *reg, unsigned regnr,
 	}
 	spi_message_add_tail(&trtx, &m);
 
-	if (spi->mode == LCDREG_SPI_4WIRE && transfer->index) {
+	if (spi->mode == LCDREG_SPI_4WIRE && transfer->index &&
+	    !(spi->quirks & LCDREG_INDEX0_ON_READ)) {
 		trtx.cs_change = 1; /* not always supported */
 		lcdreg_vdbg_dump_spi(&sdev->dev, &m, NULL);
 		ret = spi_sync(sdev, &m);
@@ -674,6 +676,7 @@ dev_info(dev, "txlen: %u\n", txlen);
 	reg->read = lcdreg_spi_read;
 
 	spi->mode = config->mode;
+	spi->quirks = config->quirks;
 	spi->id = config->id;
 	if (!spi->txbuflen)
 		spi->txbuflen = PAGE_SIZE;
@@ -692,6 +695,9 @@ dev_info(dev, "txlen: %u\n", txlen);
 		reg->read = lcdreg_spi_read_startbyte;
 		spi->startbyte = config->startbyte ? : lcdreg_spi_startbyte;
 		break;
+	default:
+		dev_err(dev, "Mode is not supported: %u\n", spi->mode);
+		return ERR_PTR(-EINVAL);
 	}
 
 	spi->reset = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_HIGH);

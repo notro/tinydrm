@@ -122,7 +122,7 @@ int lcdreg_readreg_buf32(struct lcdreg *reg, unsigned regnr, u32 *buf,
 			 unsigned count)
 {
 	struct lcdreg_transfer tr = {
-		.index = (reg->quirks & LCDREG_INDEX0_ON_READ) ? 0 : 1,
+		.index = 1,
 		.count = count,
 	};
 	int i, ret;

@@ -108,7 +108,7 @@ static ssize_t lcdreg_debugfs_read_wr(struct file *file,
 static int lcdreg_debugfs_readreg(struct lcdreg *reg)
 {
 	struct lcdreg_transfer tr = {
-		.index = (reg->quirks & LCDREG_INDEX0_ON_READ) ? 0 : 1,
+		.index = 1,
 		.width = reg->debugfs_read_width,
 		.count = 1,
 	};
