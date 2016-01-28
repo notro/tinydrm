@@ -210,7 +210,6 @@ static void tinydrm_crtc_enable(struct drm_crtc *crtc)
 	if (tdev->enabled)
 		return;
 
-	drm_panel_prepare(&tdev->panel);
 	drm_panel_enable(&tdev->panel);
 	tdev->enabled = true;
 }
@@ -225,7 +224,6 @@ static void tinydrm_crtc_disable(struct drm_crtc *crtc)
 		return;
 
 	drm_panel_disable(&tdev->panel);
-	drm_panel_unprepare(&tdev->panel);
 	tdev->enabled = false;
 }
 
@@ -570,6 +568,7 @@ void tinydrm_release(struct tinydrm_device *tdev)
 	DRM_DEBUG_KMS("\n");
 //	drm_put_dev(tdev->base);
 
+	drm_panel_unprepare(&tdev->panel);
 // TODO: cancel dirty deferred_work
 //	cancel_delayed_work_sync(...);
 	tinydrm_fbdev_fini(tdev);
@@ -610,6 +609,8 @@ dev->coherent_dma_mask = DMA_BIT_MASK(32);
 	ret = drm_dev_register(ddev, 0);
 	if (ret)
 		goto err_free;
+
+	drm_panel_prepare(&tdev->panel);
 
 	DRM_INFO("Device: %s\n", dev_name(dev));
 	DRM_INFO("Initialized %s %d.%d.%d on minor %d\n",
