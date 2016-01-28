@@ -39,18 +39,11 @@ unsigned txbuflen;
 			bool read);
 	struct gpio_desc *dc;
 	struct gpio_desc *reset;
-	u32 bits_per_word_mask;
 };
 
 static inline struct lcdreg_spi *to_lcdreg_spi(struct lcdreg *reg)
 {
 	return reg ? container_of(reg, struct lcdreg_spi, reg) : NULL;
-}
-
-static inline bool lcdreg_spi_is_bpw_supported(struct lcdreg_spi *spi,
-					       unsigned bpw)
-{
-	return (SPI_BPW_MASK(bpw) & spi->bits_per_word_mask) ? true : false;
 }
 
 #ifdef VERBOSE_DEBUG
@@ -275,7 +268,7 @@ static int lcdreg_spi_transfer(struct lcdreg *reg,
 	if (spi->dc)
 		gpiod_set_value_cansleep(spi->dc, transfer->index);
 
-	if (lcdreg_spi_is_bpw_supported(spi, transfer->width))
+	if (lcdreg_bpw_supported(reg, transfer->width))
 		return lcdreg_spi_do_transfer(reg, transfer);
 
 	if (transfer->width == 9)
@@ -343,7 +336,7 @@ width = transfer->width;
 	   Pad with no-ops if necessary (assuming here that zero is a no-op)
 	   FIX: If video buf isn't divisible by 8, it will break.
 	 */
-	if (!lcdreg_spi_is_bpw_supported(spi, 9) && width == 8 &&
+	if (!lcdreg_bpw_supported(reg, 9) && width == 8 &&
 						remain < tx_array_size) {
 		pad = (transfer->count % 8) ? 8 - (transfer->count % 8) : 0;
 		if (transfer->index == 0)
@@ -565,7 +558,7 @@ static int lcdreg_spi_read(struct lcdreg *reg, unsigned regnr,
 		if (trtx.bits_per_word == 8) {
 			*(u8 *)txbuf = regnr;
 		} else if (trtx.bits_per_word == 16) {
-			if (lcdreg_spi_is_bpw_supported(spi, trtx.bits_per_word)) {
+			if (lcdreg_bpw_supported(reg, trtx.bits_per_word)) {
 				*(u16 *)txbuf = regnr;
 			} else {
 				*(u16 *)txbuf = cpu_to_be16(regnr);
@@ -577,7 +570,7 @@ static int lcdreg_spi_read(struct lcdreg *reg, unsigned regnr,
 		}
 		gpiod_set_value_cansleep(spi->dc, 0);
 	} else if (spi->mode == LCDREG_SPI_3WIRE) {
-		if (lcdreg_spi_is_bpw_supported(spi, 9)) {
+		if (lcdreg_bpw_supported(reg, 9)) {
 			trtx.bits_per_word = 9;
 			*(u16 *)txbuf = regnr; /* dc=0 */
 		} else {
@@ -609,7 +602,7 @@ static int lcdreg_spi_read(struct lcdreg *reg, unsigned regnr,
 	if (ret)
 		return ret;
 
-	if (!lcdreg_spi_is_bpw_supported(spi, trrx.bits_per_word) &&
+	if (!lcdreg_bpw_supported(reg, trrx.bits_per_word) &&
 						(trrx.bits_per_word == 16))
 		for (i = 0; i < transfer->count; i++)
 			((u16 *)transfer->buf)[i] = be16_to_cpu(((u16 *)transfer->buf)[i]);
@@ -675,7 +668,9 @@ EXPORT_SYMBOL(devm_lcdreg_spi_of_parse);
 struct lcdreg *devm_lcdreg_spi_init(struct spi_device *sdev,
 				    const struct lcdreg_spi_config *config)
 {
+	struct device *dev = &sdev->dev;
 	struct lcdreg_spi *spi;
+	struct lcdreg *reg;
 
 	if (txlen) {
 		if (txlen < PAGE_SIZE) {
@@ -686,32 +681,32 @@ struct lcdreg *devm_lcdreg_spi_init(struct spi_device *sdev,
 			txlen &= PAGE_MASK;
 		}
 	}
-dev_info(&sdev->dev, "txlen: %u\n", txlen);
+dev_info(dev, "txlen: %u\n", txlen);
 
-	spi = devm_kzalloc(&sdev->dev, sizeof(*spi), GFP_KERNEL);
-	if (spi == NULL)
+	spi = devm_kzalloc(dev, sizeof(*spi), GFP_KERNEL);
+	if (!spi)
 		return ERR_PTR(-ENOMEM);
 
+	reg = &spi->reg;
 	if (bpwm) {
-		spi->bits_per_word_mask = bpwm;
+		reg->bits_per_word_mask = bpwm;
 	} else {
 		if (sdev->master->bits_per_word_mask)
-			spi->bits_per_word_mask = sdev->master->bits_per_word_mask;
+			reg->bits_per_word_mask = sdev->master->bits_per_word_mask;
 		else
-			spi->bits_per_word_mask = SPI_BPW_MASK(8);
+			reg->bits_per_word_mask = SPI_BPW_MASK(8);
 	}
-	dev_dbg(&sdev->dev, "bits_per_word_mask: 0x%04x",
-					spi->bits_per_word_mask);
+	dev_dbg(dev, "bits_per_word_mask: 0x%04x", reg->bits_per_word_mask);
 	spi->mode = config->mode;
-	spi->reg.def_width = config->def_width;
-	spi->reg.readable = config->readable;
-	spi->reg.reset = lcdreg_spi_reset;
-	spi->reg.write = lcdreg_spi_write;
+	reg->def_width = config->def_width;
+	reg->readable = config->readable;
+	reg->reset = lcdreg_spi_reset;
+	reg->write = lcdreg_spi_write;
 	if (spi->mode == LCDREG_SPI_STARTBYTE) {
 		spi->startbyte = config->startbyte ? : lcdreg_spi_startbyte;
-		spi->reg.read = lcdreg_spi_read_startbyte;
+		reg->read = lcdreg_spi_read_startbyte;
 	} else {
-		spi->reg.read = lcdreg_spi_read;
+		reg->read = lcdreg_spi_read;
 	}
 
 	if (!spi->txbuflen)
@@ -721,18 +716,18 @@ dev_info(&sdev->dev, "txlen: %u\n", txlen);
 	spi->reset = config->reset;
 	spi->dc = config->dc;
 	if (spi->mode == LCDREG_SPI_4WIRE && !spi->dc) {
-		dev_err(&sdev->dev, "missing 'dc' gpio\n");
+		dev_err(dev, "missing 'dc' gpio\n");
 		return ERR_PTR(-EINVAL);
 	}
 
-	pr_debug("spi->reg.def_width: %u\n", spi->reg.def_width);
+	pr_debug("spi->reg.def_width: %u\n", reg->def_width);
 	if (spi->reset)
 		pr_debug("spi->reset: %i\n", desc_to_gpio(spi->reset));
 	if (spi->dc)
 		pr_debug("spi->dc: %i\n", desc_to_gpio(spi->dc));
 	pr_debug("spi->mode: %u\n", spi->mode);
 
-	return devm_lcdreg_init(&sdev->dev, &spi->reg);
+	return devm_lcdreg_init(dev, reg);
 }
 EXPORT_SYMBOL_GPL(devm_lcdreg_spi_init);
 

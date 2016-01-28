@@ -40,6 +40,8 @@ struct lcdreg_transfer {
  * @dev: device interface
  * @lock: mutex for register access locking
  * @def_width: default register width
+ * @bits_per_word_mask: Bitmask of bits per word supported by the hardware.
+ *                      The driver can emulate more word widths.
  * @readable: register is readable
  * @little_endian: register has little endian byte order
  * @write: write to register
@@ -53,6 +55,8 @@ struct lcdreg {
 	unsigned def_width;
 	bool readable;
 	bool little_endian;
+	u32 bits_per_word_mask;
+#define LCDREG_BPW_MASK(bits) BIT((bits) - 1)
 
 	int (*write)(struct lcdreg *reg, unsigned regnr,
 		     struct lcdreg_transfer *transfer);
@@ -114,6 +118,11 @@ static inline unsigned lcdreg_bytes_per_word(unsigned bits_per_word)
 		return 2;
 	else /* bits_per_word <= 32 */
 		return 4;
+}
+
+static inline bool lcdreg_bpw_supported(struct lcdreg *reg, unsigned bpw)
+{
+	return LCDREG_BPW_MASK(bpw) & reg->bits_per_word_mask;
 }
 
 struct lcdreg *devm_lcdreg_i2c_init(struct i2c_client *client);

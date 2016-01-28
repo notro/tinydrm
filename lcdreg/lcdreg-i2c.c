@@ -107,6 +107,7 @@ struct lcdreg *devm_lcdreg_i2c_init(struct i2c_client *client)
 	if (!i2c)
 		return ERR_PTR(-ENOMEM);
 
+	i2c->reg.bits_per_word_mask = LCDREG_BPW_MASK(8);
 	i2c->reg.readable = true;
 	i2c->client = client;
 	i2c->reset = devm_gpiod_get_optional(&client->dev, "reset",
