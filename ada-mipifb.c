@@ -43,19 +43,14 @@ static int ada_mipi_1601_panel_prepare(struct drm_panel *panel)
 {
 	struct tinydrm_device *tdev = tinydrm_from_panel(panel);
 	struct lcdreg *reg = tdev->lcdreg;
-	int ret;
 
 	dev_dbg(tdev->base->dev, "%s\n", __func__);
 
-	lcdreg_reset(reg);
-	ret = lcdreg_writereg(reg, ILI9340_SWRESET);
-	if (ret) {
-		dev_err(reg->dev, "lcdreg_writereg failed: %d\n", ret);
-		return ret;
-	}
+	mipi_dbi_debug_dump_regs(reg);
 
+	lcdreg_reset(reg);
+	lcdreg_writereg(reg, ILI9340_SWRESET);
 	msleep(20);
-//	mipi_dbi_check(reg, 0);
 
 	/* Undocumented registers */
 	lcdreg_writereg(reg, 0xEF, 0x03, 0x80, 0x02);
@@ -88,11 +83,11 @@ static int ada_mipi_1601_panel_prepare(struct drm_panel *panel)
 
 	lcdreg_writereg(reg, ILI9340_SLPOUT);
 	msleep(120);
-//	mipi_dbi_check(reg, 1);
-
 	lcdreg_writereg(reg, ILI9340_DISPON);
 
 lcdreg_writereg(reg, MIPI_DCS_SET_ADDRESS_MODE, ILI9340_MADCTL_MX | (1 << 3));
+
+	mipi_dbi_debug_dump_regs(reg);
 
 	return 0;
 }
@@ -182,9 +177,15 @@ tdev->height = 320;
 reg->def_width = 8;
 	tdev->lcdreg = reg;
 
-	ret = mipi_dbi_check(reg);
-	if (ret)
-		dev_warn(dev, "mipi_dbi_check failed: %d\n", ret);
+	/* Make sure we at least can write */
+	ret = lcdreg_writereg(reg, MIPI_DCS_NOP);
+	if (ret) {
+		dev_err(dev, "Error writing lcdreg\n");
+		return ret;
+	}
+
+	/* to avoid flicker, skip setup if the bootloader has done it */
+	tdev->prepared = mipi_dbi_display_is_on(reg);
 
 	spi_set_drvdata(spi, tdev);
 

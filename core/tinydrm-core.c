@@ -206,12 +206,14 @@ static void tinydrm_crtc_enable(struct drm_crtc *crtc)
 	struct drm_device *ddev = crtc->dev;
 	struct tinydrm_device *tdev = ddev->dev_private;
 
-	dev_info(ddev->dev, "%s: enabled=%u\n", __func__, tdev->enabled);
-	if (tdev->enabled)
-		return;
+	DRM_DEBUG_KMS("prepared=%u, enabled=%u\n", tdev->prepared, tdev->enabled);
 
-	drm_panel_enable(&tdev->panel);
-	tdev->enabled = true;
+	if (!tdev->prepared) {
+		drm_panel_prepare(&tdev->panel);
+		tdev->prepared = true;
+	}
+
+	/* The panel is enabled after the first display update */
 }
 
 static void tinydrm_crtc_disable(struct drm_crtc *crtc)
@@ -219,12 +221,17 @@ static void tinydrm_crtc_disable(struct drm_crtc *crtc)
 	struct drm_device *ddev = crtc->dev;
 	struct tinydrm_device *tdev = ddev->dev_private;
 
-	dev_info(ddev->dev, "%s: enabled=%u\n", __func__, tdev->enabled);
-	if (!tdev->enabled)
-		return;
+	DRM_DEBUG_KMS("prepared=%u, enabled=%u\n", tdev->prepared, tdev->enabled);
 
-	drm_panel_disable(&tdev->panel);
-	tdev->enabled = false;
+	if (tdev->enabled) {
+		drm_panel_disable(&tdev->panel);
+		tdev->enabled = false;
+	}
+
+	if (tdev->prepared) {
+		drm_panel_unprepare(&tdev->panel);
+		tdev->prepared = false;
+	}
 }
 
 static const struct drm_crtc_helper_funcs tinydrm_crtc_helper_funcs = {
@@ -278,7 +285,22 @@ static void tinydrm_deferred_dirty_work(struct work_struct *work)
 
 	dev_dbg(tdev->base->dev, "%s\n", __func__);
 
+	if (!tdev->enabled) {
+		/* make sure to update the entire framebuffer */
+		spin_lock(&tdev->dirty.lock);
+		tdev->dirty.clip.x1 = 0;
+		tdev->dirty.clip.x2 = tdev->dirty.fb->width - 1;
+		tdev->dirty.clip.y1 = 0;
+		tdev->dirty.clip.y2 = tdev->dirty.fb->height - 1;
+		spin_unlock(&tdev->dirty.lock);
+	}
+
 	tdev->update(tdev);
+
+	if (!tdev->enabled) {
+		drm_panel_enable(&tdev->panel);
+		tdev->enabled = true;
+	}
 }
 
 int tinydrm_schedule_dirty(struct drm_framebuffer *fb,
@@ -568,7 +590,6 @@ void tinydrm_release(struct tinydrm_device *tdev)
 	DRM_DEBUG_KMS("\n");
 //	drm_put_dev(tdev->base);
 
-	drm_panel_unprepare(&tdev->panel);
 // TODO: cancel dirty deferred_work
 //	cancel_delayed_work_sync(...);
 	tinydrm_fbdev_fini(tdev);
@@ -609,8 +630,6 @@ dev->coherent_dma_mask = DMA_BIT_MASK(32);
 	ret = drm_dev_register(ddev, 0);
 	if (ret)
 		goto err_free;
-
-	drm_panel_prepare(&tdev->panel);
 
 	DRM_INFO("Device: %s\n", dev_name(dev));
 	DRM_INFO("Initialized %s %d.%d.%d on minor %d\n",

@@ -16,6 +16,7 @@ struct tinydrm_device;
 struct lcdreg;
 
 int mipi_dbi_update(struct tinydrm_device *tdev);
-int mipi_dbi_check(struct lcdreg *reg);
+bool mipi_dbi_display_is_on(struct lcdreg *reg);
+void mipi_dbi_debug_dump_regs(struct lcdreg *reg);
 
 #endif /* __LINUX_MIPI_DBI_H */

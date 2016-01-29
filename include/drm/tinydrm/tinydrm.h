@@ -32,6 +32,7 @@ struct tinydrm_device {
 	struct drm_fbdev_cma *fbdev_cma;
 	struct tinydrm_dirty dirty;
 	struct lcdreg *lcdreg;
+	bool prepared;
 	bool enabled;
 	u32 width, height;
 	void *dev_private;

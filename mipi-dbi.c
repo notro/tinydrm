@@ -17,6 +17,13 @@
 #include <linux/swab.h>
 #include <video/mipi_display.h>
 
+#define DCS_POWER_MODE_DISPLAY			BIT(2)
+#define DCS_POWER_MODE_DISPLAY_NORMAL_MODE	BIT(3)
+#define DCS_POWER_MODE_SLEEP_MODE		BIT(4)
+#define DCS_POWER_MODE_PARTIAL_MODE		BIT(5)
+#define DCS_POWER_MODE_IDLE_MODE		BIT(6)
+#define DCS_POWER_MODE_RESERVED_MASK		(BIT(0) | BIT(1) | BIT(7))
+
 void tinydrm_xrgb8888_to_rgb565(u32 *src, u16 *dst, unsigned num_pixels, bool swap_bytes)
 {
 	int i;
@@ -117,60 +124,76 @@ int mipi_dbi_update(struct tinydrm_device *tdev)
 }
 EXPORT_SYMBOL(mipi_dbi_update);
 
-#define MIPI_REGISTER_LOADING_DETECTION		BIT(7)
-#define MIPI_FUNCTIONALITY_DETECTION		BIT(6)
+/* Returns true if the display can be verified to be on */
+bool mipi_dbi_display_is_on(struct lcdreg *reg)
+{
+	u32 val;
 
-/* value: 0=sleep mode on, 1=sleep mode off */
-int mipi_dbi_check(struct lcdreg *reg)
+	if (!lcdreg_is_readable(reg))
+		return false;
+
+	if (lcdreg_readreg_buf32(reg, MIPI_DCS_GET_POWER_MODE, &val, 1))
+		return false;
+
+	val &= ~DCS_POWER_MODE_RESERVED_MASK;
+
+	if (val != (DCS_POWER_MODE_DISPLAY |
+	    DCS_POWER_MODE_DISPLAY_NORMAL_MODE | DCS_POWER_MODE_SLEEP_MODE))
+		return false;
+
+	DRM_DEBUG_DRIVER("Display is ON\n");
+
+	return true;
+}
+EXPORT_SYMBOL(mipi_dbi_display_is_on);
+
+void mipi_dbi_debug_dump_regs(struct lcdreg *reg)
 {
 	u32 val[4];
 	int ret;
 
-#if defined(DEBUG) || defined(DYNAMIC_DEBUG)
-	lcdreg_readreg_buf32(reg, MIPI_DCS_GET_DISPLAY_ID, val, 3);
-	dev_dbg(reg->dev, "Display ID (%02x): %02x %02x %02x\n",
-		MIPI_DCS_GET_DISPLAY_ID, val[0], val[1], val[2]);
+	if (!(lcdreg_is_readable(reg) && (drm_debug & DRM_UT_DRIVER)))
+		return;
 
-	lcdreg_readreg_buf32(reg, MIPI_DCS_GET_DISPLAY_STATUS, val, 4);
-	dev_dbg(reg->dev, "Display status (%02x): %02x %02x %02x %02x\n",
-		MIPI_DCS_GET_DISPLAY_STATUS, val[0], val[1], val[2], val[3]);
-
-	lcdreg_readreg_buf32(reg, MIPI_DCS_GET_POWER_MODE, val, 1);
-	dev_dbg(reg->dev, "Power mode (%02x): %02x\n",
-		MIPI_DCS_GET_POWER_MODE, val[0]);
-
-	lcdreg_readreg_buf32(reg, MIPI_DCS_GET_ADDRESS_MODE, val, 1);
-	dev_dbg(reg->dev, "Address mode (%02x): %02x\n",
-		MIPI_DCS_GET_ADDRESS_MODE, val[0]);
-
-	lcdreg_readreg_buf32(reg, MIPI_DCS_GET_PIXEL_FORMAT, val, 1);
-	dev_dbg(reg->dev, "Pixel format (%02x): %02x\n",
-		MIPI_DCS_GET_PIXEL_FORMAT, val[0]);
-
-	lcdreg_readreg_buf32(reg, MIPI_DCS_GET_DISPLAY_MODE, val, 1);
-	dev_dbg(reg->dev, "Display mode (%02x): %02x\n",
-		MIPI_DCS_GET_DISPLAY_MODE, val[0]);
-
-	lcdreg_readreg_buf32(reg, MIPI_DCS_GET_SIGNAL_MODE, val, 1);
-	dev_dbg(reg->dev, "Display signal mode (%02x): %02x\n",
-		MIPI_DCS_GET_SIGNAL_MODE, val[0]);
-#endif
-
-	ret = lcdreg_readreg_buf32(reg, MIPI_DCS_GET_DIAGNOSTIC_RESULT,
-				   val, 1);
+	ret = lcdreg_readreg_buf32(reg, MIPI_DCS_GET_DISPLAY_ID, val, 3);
 	if (ret) {
 		dev_warn(reg->dev,
-			"failed to read from controller: %d", ret);
-		return ret;
+			 "failed to read from controller: %d", ret);
+		return;
 	}
 
-	dev_dbg(reg->dev, "Diagnostic result (%02x): %02x\n",
-		MIPI_DCS_GET_DIAGNOSTIC_RESULT, val[0]);
+	/* RDDID is not part of the MIPI standard, but seems to be common */
+	DRM_DEBUG_DRIVER("Display ID (%02x): %02x %02x %02x\n",
+			 MIPI_DCS_GET_DISPLAY_ID, val[0], val[1], val[2]);
 
-	return 0;
+	lcdreg_readreg_buf32(reg, MIPI_DCS_GET_DISPLAY_STATUS, val, 4);
+	DRM_DEBUG_DRIVER("Display status (%02x): %02x %02x %02x %02x\n",
+			 MIPI_DCS_GET_DISPLAY_STATUS, val[0], val[1], val[2], val[3]);
+
+	lcdreg_readreg_buf32(reg, MIPI_DCS_GET_POWER_MODE, val, 1);
+	DRM_DEBUG_DRIVER("Power mode (%02x): %02x\n",
+			 MIPI_DCS_GET_POWER_MODE, val[0]);
+
+	lcdreg_readreg_buf32(reg, MIPI_DCS_GET_ADDRESS_MODE, val, 1);
+	DRM_DEBUG_DRIVER("Address mode (%02x): %02x\n",
+			 MIPI_DCS_GET_ADDRESS_MODE, val[0]);
+
+	lcdreg_readreg_buf32(reg, MIPI_DCS_GET_PIXEL_FORMAT, val, 1);
+	DRM_DEBUG_DRIVER("Pixel format (%02x): %02x\n",
+			 MIPI_DCS_GET_PIXEL_FORMAT, val[0]);
+
+	lcdreg_readreg_buf32(reg, MIPI_DCS_GET_DISPLAY_MODE, val, 1);
+	DRM_DEBUG_DRIVER("Display mode (%02x): %02x\n",
+			 MIPI_DCS_GET_DISPLAY_MODE, val[0]);
+
+	lcdreg_readreg_buf32(reg, MIPI_DCS_GET_SIGNAL_MODE, val, 1);
+	DRM_DEBUG_DRIVER("Display signal mode (%02x): %02x\n",
+			 MIPI_DCS_GET_SIGNAL_MODE, val[0]);
+
+	lcdreg_readreg_buf32(reg, MIPI_DCS_GET_DIAGNOSTIC_RESULT, val, 1);
+	DRM_DEBUG_DRIVER("Diagnostic result (%02x): %02x\n",
+			 MIPI_DCS_GET_DIAGNOSTIC_RESULT, val[0]);
 }
-EXPORT_SYMBOL(mipi_dbi_check);
+EXPORT_SYMBOL(mipi_dbi_debug_dump_regs);
 
-MODULE_DESCRIPTION("MIPI DBI LCD controller support");
-MODULE_AUTHOR("Noralf Trønnes");
 MODULE_LICENSE("GPL");
