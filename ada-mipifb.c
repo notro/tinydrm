@@ -48,6 +48,10 @@ static int ada_mipi_1601_panel_prepare(struct drm_panel *panel)
 
 	mipi_dbi_debug_dump_regs(reg);
 
+	/* Avoid flicker by skipping setup if the bootloader has done it */
+	if (mipi_dbi_display_is_on(reg))
+		return 0;
+
 	lcdreg_reset(reg);
 	lcdreg_writereg(reg, ILI9340_SWRESET);
 	msleep(20);
@@ -183,9 +187,6 @@ reg->def_width = 8;
 		dev_err(dev, "Error writing lcdreg\n");
 		return ret;
 	}
-
-	/* to avoid flicker, skip setup if the bootloader has done it */
-	tdev->prepared = mipi_dbi_display_is_on(reg);
 
 	spi_set_drvdata(spi, tdev);
 
