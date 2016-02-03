@@ -29,9 +29,14 @@ static void tinydrm_fbdev_dirty(struct fb_info *info,
 				struct drm_clip_rect *clip, bool run_now)
 {
 	struct drm_fb_helper *helper = info->par;
+	struct tinydrm_device *tdev = helper->dev->dev_private;
 	struct drm_framebuffer *fb = helper->fb;
-	struct drm_gem_cma_object *cma_obj = drm_fb_cma_get_gem_obj(fb, 0);
+	struct drm_gem_cma_object *cma_obj;
 
+	if (tdev->plane.fb != fb)
+		return;
+
+	cma_obj = drm_fb_cma_get_gem_obj(fb, 0);
 	if (!cma_obj) {
 		dev_err_once(info->dev, "Can't get cma_obj\n");
 		return;
@@ -133,8 +138,6 @@ static struct fb_ops tinydrm_fbdev_cma_ops = {
 	.fb_setcmap     = drm_fb_helper_setcmap,
 };
 
-static unsigned long smem_start;
-
 static int tinydrm_fbdev_event_notify(struct notifier_block *self,
 				      unsigned long action, void *data)
 {
@@ -151,13 +154,19 @@ static int tinydrm_fbdev_event_notify(struct notifier_block *self,
 
 	/* Make sure it's a tinydrm fbdev */
 	if (!(info == helper->fbdev && helper->dev == tdev->base))
-		return 0;
+		return NOTIFY_DONE;
 
 	DRM_DEBUG("xres=%u, yres=%u\n", info->var.xres, info->var.yres);
 	DRM_DEBUG("action=%lu, info=%p\n", action, info);
 
 	switch (action) {
 	case FB_EVENT_FB_REGISTERED:
+		/* console and fb_info are locked at this point */
+
+		/* This notifier can be registered multiple times */
+		if (info->fbdefio)
+			return NOTIFY_DONE;
+
 		info->flags |= FBINFO_VIRTFB;
 		strcpy(info->fix.id, "tinydrm");
 
@@ -166,64 +175,78 @@ static int tinydrm_fbdev_event_notify(struct notifier_block *self,
 		 * fb_deferred_io_fault() results in an oops:
 		 *   Unable to handle kernel paging request at virtual address
 		 */
-smem_start = info->fix.smem_start;
 		info->fix.smem_start = __pa(info->screen_base);
 
 		/*
-		 * a per device fbops structure is needed because
+		 * A per device fbops structure is needed because
 		 * fb_deferred_io_cleanup() clears fbops.fb_mmap
 		 */
 		fbops = devm_kzalloc(info->device, sizeof(*fbops), GFP_KERNEL);
-		if (!fbops)
-			return -ENOMEM;
+		if (!fbops) {
+			dev_err(info->device, "Could not allocate fbops\n");
+			return notifier_from_errno(-ENOMEM);
+		}
 
-		memcpy(fbops, &tinydrm_fbdev_cma_ops, sizeof(*fbops));
+		*fbops = tinydrm_fbdev_cma_ops;
 		info->fbops = fbops;
 
-		/*
-		 * To get individual delays, a per device fbdefio structure is
-		 * used.
-		 */
+		/* A per device structure is needed for individual delays */
 		info->fbdefio = devm_kzalloc(info->device,
 					     sizeof(*info->fbdefio),
 					     GFP_KERNEL);
-		if (!info->fbdefio)
-			return -ENOMEM;
+		if (!info->fbdefio) {
+			dev_err(info->device, "Could not allocate fbdefio\n");
+			return notifier_from_errno(-ENOMEM);
+		}
 
-		info->fbdefio->delay = msecs_to_jiffies(tdev->dirty.defer_ms);
+		/* delay=0 is turned into delay=HZ, so use 1 as a minimum */
+		info->fbdefio->delay =
+				msecs_to_jiffies(tdev->dirty.defer_ms) ? : 1;
 		info->fbdefio->deferred_io = tinydrm_fbdev_deferred_io;
 		fb_deferred_io_init(info);
 		break;
 	case FB_EVENT_FB_UNREGISTERED:
-		if (info->fbdefio)
+		if (info->fbdefio) {
 			fb_deferred_io_cleanup(info);
-info->fix.smem_start = smem_start;
+			info->fbdefio = NULL;
+		}
 		break;
 	}
 
-	return 0;
+	return NOTIFY_DONE;
 }
 
 static struct notifier_block tinydrm_fbdev_event_notifier = {
 	.notifier_call  = tinydrm_fbdev_event_notify,
-	.priority = 100, /* place before the fbcon notifier */
+	.priority = 100, /* place before the fbcon notifier which is 0 */
 };
 
 int tinydrm_fbdev_init(struct tinydrm_device *tdev)
 {
 	struct drm_device *ddev = tdev->base;
+	struct drm_fbdev_cma *fbdev;
 
+	/*
+	 * There's no race problem with 2 devices being here at the same
+	 * time since the same notifier can be registered multiple times.
+	 */
 	fb_register_client(&tinydrm_fbdev_event_notifier);
-	tdev->fbdev_cma = drm_fbdev_cma_init(ddev, 16,
-					     ddev->mode_config.num_crtc,
-					     ddev->mode_config.num_connector);
+	fbdev = drm_fbdev_cma_init(ddev, 16, ddev->mode_config.num_crtc,
+				   ddev->mode_config.num_connector);
 	fb_unregister_client(&tinydrm_fbdev_event_notifier);
+	if (IS_ERR(fbdev))
+		return PTR_ERR(fbdev);
 
-	return PTR_ERR_OR_ZERO(tdev->fbdev_cma);
+	tdev->fbdev_cma = fbdev;
+
+	return 0;
 }
 
 void tinydrm_fbdev_fini(struct tinydrm_device *tdev)
 {
+	if (!tdev->fbdev_cma)
+		return;
+
 	fb_register_client(&tinydrm_fbdev_event_notifier);
 	drm_fbdev_cma_fini(tdev->fbdev_cma);
 	fb_unregister_client(&tinydrm_fbdev_event_notifier);
