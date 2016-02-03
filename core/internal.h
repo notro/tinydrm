@@ -15,6 +15,12 @@ int tinydrm_schedule_dirty(struct drm_framebuffer *fb,
 #ifdef CONFIG_DRM_KMS_FB_HELPER
 int tinydrm_fbdev_init(struct tinydrm_device *tdev);
 void tinydrm_fbdev_fini(struct tinydrm_device *tdev);
+
+static inline void tinydrm_fbdev_cma_restore_mode(struct drm_fbdev_cma *cma)
+{
+	drm_fbdev_cma_restore_mode(cma);
+}
+
 #else
 static inline int tinydrm_fbdev_init(struct tinydrm_device *tdev)
 {
@@ -22,4 +28,8 @@ static inline int tinydrm_fbdev_init(struct tinydrm_device *tdev)
 }
 
 static inline void tinydrm_fbdev_fini(struct tinydrm_device *tdev) { }
+
+static inline void tinydrm_fbdev_cma_restore_mode(struct drm_fbdev_cma *cma)
+{
+}
 #endif

@@ -541,6 +541,14 @@ static int tinydrm_load(struct drm_device *ddev, unsigned long flags)
 	return 0;
 }
 
+static void tinydrm_lastclose(struct drm_device *ddev)
+{
+	struct tinydrm_device *tdev = ddev->dev_private;
+
+	DRM_DEBUG_KMS("\n");
+	tinydrm_fbdev_cma_restore_mode(tdev->fbdev_cma);
+}
+
 static const struct file_operations tinydrm_fops = {
 	.owner		= THIS_MODULE,
 	.open		= drm_open,
@@ -559,6 +567,7 @@ static struct drm_driver tinydrm_driver = {
 	.driver_features	= DRIVER_GEM | DRIVER_MODESET | DRIVER_PRIME
 				| DRIVER_ATOMIC,
 	.load			= tinydrm_load,
+	.lastclose		= tinydrm_lastclose,
 //	.unload			= tinydrm_unload,
 	.get_vblank_counter	= drm_vblank_count,
 //	.enable_vblank		= tinydrm_enable_vblank,
