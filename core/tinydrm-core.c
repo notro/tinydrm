@@ -53,6 +53,25 @@ void tinydrm_merge_clips(struct drm_clip_rect *dst, struct drm_clip_rect *clips,
 }
 EXPORT_SYMBOL(tinydrm_merge_clips);
 
+struct backlight_device *tinydrm_of_find_backlight(struct device *dev)
+{
+	struct backlight_device *backlight;
+	struct device_node *np;
+
+	np = of_parse_phandle(dev->of_node, "backlight", 0);
+	if (!np)
+		return NULL;
+
+	backlight = of_find_backlight_by_node(np);
+	of_node_put(np);
+
+	if (!backlight)
+		return ERR_PTR(-EPROBE_DEFER);
+
+	return backlight;
+}
+EXPORT_SYMBOL(tinydrm_of_find_backlight);
+
 /******************************************************************************
  *
  *  Connector

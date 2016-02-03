@@ -32,6 +32,7 @@ struct tinydrm_device {
 	struct drm_fbdev_cma *fbdev_cma;
 	struct tinydrm_dirty dirty;
 	struct lcdreg *lcdreg;
+	struct backlight_device *backlight;
 	bool prepared;
 	bool enabled;
 	u32 width, height;
@@ -63,3 +64,4 @@ static inline void tinydrm_reset_clip(struct drm_clip_rect *clip)
 }
 
 void tinydrm_merge_clips(struct drm_clip_rect *dst, struct drm_clip_rect *clips, unsigned num_clips, unsigned flags, u32 width, u32 height);
+struct backlight_device *tinydrm_of_find_backlight(struct device *dev);

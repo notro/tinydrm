@@ -21,24 +21,6 @@
 #include <linux/spi/spi.h>
 #include <video/mipi_display.h>
 
-static int ada_mipi_panel_disable(struct drm_panel *panel)
-{
-	struct tinydrm_device *tdev = tinydrm_from_panel(panel);
-
-	dev_dbg(tdev->base->dev, "%s\n", __func__);
-
-	return 0;
-}
-
-static int ada_mipi_1601_panel_unprepare(struct drm_panel *panel)
-{
-	struct tinydrm_device *tdev = tinydrm_from_panel(panel);
-
-	dev_dbg(tdev->base->dev, "%s\n", __func__);
-
-	return 0;
-}
-
 static int ada_mipi_1601_panel_prepare(struct drm_panel *panel)
 {
 	struct tinydrm_device *tdev = tinydrm_from_panel(panel);
@@ -96,11 +78,39 @@ lcdreg_writereg(reg, MIPI_DCS_SET_ADDRESS_MODE, ILI9340_MADCTL_MX | (1 << 3));
 	return 0;
 }
 
+static int ada_mipi_1601_panel_unprepare(struct drm_panel *panel)
+{
+	struct tinydrm_device *tdev = tinydrm_from_panel(panel);
+
+	dev_dbg(tdev->base->dev, "%s\n", __func__);
+
+	return 0;
+}
+
 static int ada_mipi_panel_enable(struct drm_panel *panel)
 {
 	struct tinydrm_device *tdev = tinydrm_from_panel(panel);
 
 	dev_dbg(tdev->base->dev, "%s\n", __func__);
+
+	if (tdev->backlight) {
+		tdev->backlight->props.state &= ~BL_CORE_SUSPENDED;
+		backlight_update_status(tdev->backlight);
+	}
+
+	return 0;
+}
+
+static int ada_mipi_panel_disable(struct drm_panel *panel)
+{
+	struct tinydrm_device *tdev = tinydrm_from_panel(panel);
+
+	dev_dbg(tdev->base->dev, "%s\n", __func__);
+
+	if (tdev->backlight) {
+		tdev->backlight->props.state |= BL_CORE_SUSPENDED;
+		backlight_update_status(tdev->backlight);
+	}
 
 	return 0;
 }
@@ -148,6 +158,10 @@ static int ada_mipi_probe(struct spi_device *spi)
 	tdev = devm_kzalloc(dev, sizeof(*tdev), GFP_KERNEL);
 	if (!tdev)
 		return -ENOMEM;
+
+	tdev->backlight = tinydrm_of_find_backlight(dev);
+	if (IS_ERR(tdev->backlight))
+		return PTR_ERR(tdev->backlight);
 
 	tdev->panel.funcs = &ada_mipi_1601_drm_panel_funcs;
 	tdev->update = mipi_dbi_update;
@@ -202,14 +216,25 @@ static int ada_mipi_remove(struct spi_device *spi)
 	return 0;
 }
 
+static void ada_mipi_shutdown(struct spi_device *spi)
+{
+	struct tinydrm_device *tdev = spi_get_drvdata(spi);
+
+	dev_dbg(tdev->base->dev, "%s\n", __func__);
+
+	drm_panel_disable(&tdev->panel);
+	drm_panel_unprepare(&tdev->panel);
+}
+
 static struct spi_driver ada_mipi_spi_driver = {
 	.driver = {
-		.name   = "ada-mipifb",
-		.owner  = THIS_MODULE,
+		.name = "ada-mipifb",
+		.owner = THIS_MODULE,
 		.of_match_table = ada_mipi_ids,
 	},
-	.probe  = ada_mipi_probe,
+	.probe = ada_mipi_probe,
 	.remove = ada_mipi_remove,
+	.shutdown = ada_mipi_shutdown,
 };
 module_spi_driver(ada_mipi_spi_driver);
 
