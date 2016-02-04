@@ -237,7 +237,7 @@ tdev->height = 320;
 		return PTR_ERR(reg);
 
 	reg->readable = readable;
-reg->def_width = 8;
+	reg->def_width = MIPI_DBI_DEFAULT_REGWIDTH;
 	tdev->lcdreg = reg;
 
 	/* Make sure we at least can write */
@@ -249,16 +249,7 @@ reg->def_width = 8;
 
 	spi_set_drvdata(spi, tdev);
 
-	return tinydrm_register(dev, tdev);
-}
-
-static int ada_mipi_remove(struct spi_device *spi)
-{
-	struct tinydrm_device *tdev = spi_get_drvdata(spi);
-
-	tinydrm_release(tdev);
-
-	return 0;
+	return devm_tinydrm_register(dev, tdev);
 }
 
 static void ada_mipi_shutdown(struct spi_device *spi)
@@ -278,7 +269,6 @@ static struct spi_driver ada_mipi_spi_driver = {
 		.of_match_table = ada_mipi_ids,
 	},
 	.probe = ada_mipi_probe,
-	.remove = ada_mipi_remove,
 	.shutdown = ada_mipi_shutdown,
 };
 module_spi_driver(ada_mipi_spi_driver);

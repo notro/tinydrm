@@ -41,6 +41,7 @@ struct tinydrm_device {
 	int (*update)(struct tinydrm_device *tdev);
 };
 
+int devm_tinydrm_register(struct device *dev, struct tinydrm_device *tdev);
 int tinydrm_register(struct device *dev, struct tinydrm_device *tdev);
 void tinydrm_release(struct tinydrm_device *tdev);
 

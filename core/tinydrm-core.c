@@ -673,4 +673,31 @@ err_free:
 }
 EXPORT_SYMBOL(tinydrm_register);
 
+static void devm_tinydrm_release(struct device *dev, void *res)
+{
+	tinydrm_release(*(struct tinydrm_device **)res);
+}
+
+int devm_tinydrm_register(struct device *dev, struct tinydrm_device *tdev)
+{
+	struct tinydrm_device **ptr;
+	int ret;
+
+	ptr = devres_alloc(devm_tinydrm_release, sizeof(*ptr), GFP_KERNEL);
+	if (!ptr)
+		return -ENOMEM;
+
+	ret = tinydrm_register(dev, tdev);
+	if (ret) {
+		devres_free(ptr);
+		return ret;
+	}
+
+	*ptr = tdev;
+	devres_add(dev, ptr);
+
+	return 0;
+}
+EXPORT_SYMBOL(devm_tinydrm_register);
+
 MODULE_LICENSE("GPL");

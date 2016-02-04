@@ -12,6 +12,8 @@
 #ifndef __LINUX_MIPI_DBI_H
 #define __LINUX_MIPI_DBI_H
 
+#define MIPI_DBI_DEFAULT_REGWIDTH 8
+
 struct tinydrm_device;
 struct lcdreg;
 
