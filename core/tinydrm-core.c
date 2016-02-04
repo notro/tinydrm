@@ -304,7 +304,7 @@ static void tinydrm_deferred_dirty_work(struct work_struct *work)
 
 	dev_dbg(tdev->base->dev, "%s\n", __func__);
 
-	if (!tdev->enabled) {
+	if (tdev->prepared && !tdev->enabled) {
 		/* make sure to update the entire framebuffer */
 		spin_lock(&tdev->dirty.lock);
 		tdev->dirty.clip.x1 = 0;
@@ -316,7 +316,7 @@ static void tinydrm_deferred_dirty_work(struct work_struct *work)
 
 	tdev->update(tdev);
 
-	if (!tdev->enabled) {
+	if (tdev->prepared && !tdev->enabled) {
 		drm_panel_enable(&tdev->panel);
 		tdev->enabled = true;
 	}

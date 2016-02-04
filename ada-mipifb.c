@@ -131,6 +131,9 @@ static int ada_mipi_panel_enable(struct drm_panel *panel)
 	dev_dbg(tdev->base->dev, "%s\n", __func__);
 
 	if (tdev->backlight) {
+		if (tdev->backlight->props.brightness == 0)
+			tdev->backlight->props.brightness =
+					tdev->backlight->props.max_brightness;
 		tdev->backlight->props.state &= ~BL_CORE_SUSPENDED;
 		backlight_update_status(tdev->backlight);
 	}
