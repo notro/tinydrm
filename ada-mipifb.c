@@ -18,13 +18,24 @@
 #include <linux/delay.h>
 #include <linux/module.h>
 #include <linux/of_device.h>
+#include <linux/property.h>
 #include <linux/spi/spi.h>
 #include <video/mipi_display.h>
+
+static u32 ada_mipi_get_rotation(struct device *dev)
+{
+	u32 rotation = 0;
+
+	device_property_read_u32(dev, "rotation", &rotation);
+
+	return rotation;
+}
 
 static int ada_mipi_1601_panel_prepare(struct drm_panel *panel)
 {
 	struct tinydrm_device *tdev = tinydrm_from_panel(panel);
 	struct lcdreg *reg = tdev->lcdreg;
+	u8 addr_mode;
 
 	dev_dbg(tdev->base->dev, "%s\n", __func__);
 
@@ -67,11 +78,27 @@ static int ada_mipi_1601_panel_prepare(struct drm_panel *panel)
 			0x00, 0x0E, 0x14, 0x03, 0x11, 0x07, 0x31, 0xC1,
 			0x48, 0x08, 0x0F, 0x0C, 0x31, 0x36, 0x0F);
 
+	switch (ada_mipi_get_rotation(reg->dev)) {
+		default:
+			addr_mode = ILI9340_MADCTL_MV | ILI9340_MADCTL_MY |
+				    ILI9340_MADCTL_MX;
+			break;
+		case 90:
+			addr_mode = ILI9340_MADCTL_MY;;
+			break;
+		case 180:
+			addr_mode = ILI9340_MADCTL_MV;
+			break;
+		case 270:
+			addr_mode = ILI9340_MADCTL_MX;
+			break;
+	}
+	addr_mode |= ILI9340_MADCTL_BGR;
+	lcdreg_writereg(reg, MIPI_DCS_SET_ADDRESS_MODE, addr_mode);
+
 	lcdreg_writereg(reg, ILI9340_SLPOUT);
 	msleep(120);
 	lcdreg_writereg(reg, ILI9340_DISPON);
-
-lcdreg_writereg(reg, MIPI_DCS_SET_ADDRESS_MODE, ILI9340_MADCTL_MX | (1 << 3));
 
 	mipi_dbi_debug_dump_regs(reg);
 
@@ -81,8 +108,18 @@ lcdreg_writereg(reg, MIPI_DCS_SET_ADDRESS_MODE, ILI9340_MADCTL_MX | (1 << 3));
 static int ada_mipi_1601_panel_unprepare(struct drm_panel *panel)
 {
 	struct tinydrm_device *tdev = tinydrm_from_panel(panel);
+	struct lcdreg *reg = tdev->lcdreg;
 
 	dev_dbg(tdev->base->dev, "%s\n", __func__);
+
+	/*
+	 * Only do this if we have turned off backlight because if it's on the
+	 * display will be all white when the pixels are turned off.
+	 */
+	if (tdev->backlight) {
+		lcdreg_writereg(reg, ILI9340_DISPOFF);
+		lcdreg_writereg(reg, ILI9340_SLPIN);
+	}
 
 	return 0;
 }
@@ -180,11 +217,19 @@ tdev->height = 320;
 	case ADAFRUIT_1601:
 		readable = true;
 		cfg.mode = LCDREG_SPI_4WIRE;
-		tdev->width = 240;
-		tdev->height = 320;
+		tdev->width = 320;
+		tdev->height = 240;
 		break;
 	default:
 		return -EINVAL;
+	}
+
+	DRM_DEBUG_DRIVER("rotation = %u\n", ada_mipi_get_rotation(dev));
+	switch (ada_mipi_get_rotation(dev)) {
+		case 90:
+		case 270:
+			swap(tdev->width, tdev->height);
+			break;
 	}
 
 	reg = devm_lcdreg_spi_init(spi, &cfg);
