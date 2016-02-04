@@ -166,7 +166,7 @@ enum adafruit_displays {
 	ADAFRUIT_1601 = 1601,
 };
 
-static const struct of_device_id ada_mipi_ids[] = {
+static const struct of_device_id ada_mipi_of_match[] = {
 	{ .compatible = "adafruit,ada358",  .data = (void *)ADAFRUIT_358 },
 	{ .compatible = "adafruit,ada797",  .data = (void *)ADAFRUIT_797 },
 	{ .compatible = "adafruit,ada1480", .data = (void *)ADAFRUIT_1480 },
@@ -174,7 +174,16 @@ static const struct of_device_id ada_mipi_ids[] = {
 { .compatible = "sainsmart18", .data = (void *)ADAFRUIT_358 },
 	{},
 };
-MODULE_DEVICE_TABLE(of, ada_mipi_ids);
+MODULE_DEVICE_TABLE(of, ada_mipi_of_match);
+
+static const struct spi_device_id ada_mipi_id[] = {
+	{ "ada358",  ADAFRUIT_358 },
+	{ "ada797",  ADAFRUIT_797 },
+	{ "ada1480", ADAFRUIT_1480 },
+	{ "ada1601", ADAFRUIT_1601 },
+        { }
+};
+MODULE_DEVICE_TABLE(spi, ada_mipi_id);
 
 static int ada_mipi_probe(struct spi_device *spi)
 {
@@ -186,11 +195,19 @@ static int ada_mipi_probe(struct spi_device *spi)
 	struct tinydrm_device *tdev;
 	bool readable = false;
 	struct lcdreg *reg;
-	int ret;
+	int id, ret;
 
-	of_id = of_match_device(ada_mipi_ids, dev);
-	if (!of_id)
-		return -EINVAL;
+	of_id = of_match_device(ada_mipi_of_match, dev);
+	if (of_id) {
+		id = (int)of_id->data;
+	} else {
+		const struct spi_device_id *spi_id = spi_get_device_id(spi);
+
+		if (!spi_id)
+			return -EINVAL;
+
+		id = spi_id->driver_data;
+	}
 
 	tdev = devm_kzalloc(dev, sizeof(*tdev), GFP_KERNEL);
 	if (!tdev)
@@ -202,9 +219,11 @@ static int ada_mipi_probe(struct spi_device *spi)
 
 	tdev->panel.funcs = &ada_mipi_1601_drm_panel_funcs;
 	tdev->update = mipi_dbi_update;
+
+	/* TODO: Make configurable */
 	tdev->dirty.defer_ms = 40;
 
-	switch ((int)of_id->data) {
+	switch (id) {
 	case ADAFRUIT_358:
 tdev->width = 240;
 tdev->height = 240;
@@ -266,8 +285,9 @@ static struct spi_driver ada_mipi_spi_driver = {
 	.driver = {
 		.name = "ada-mipifb",
 		.owner = THIS_MODULE,
-		.of_match_table = ada_mipi_ids,
+		.of_match_table = ada_mipi_of_match,
 	},
+	.id_table = ada_mipi_id,
 	.probe = ada_mipi_probe,
 	.shutdown = ada_mipi_shutdown,
 };
