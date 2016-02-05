@@ -1,6 +1,6 @@
 config LCDREG
 	tristate
-	depends on GPIOLIB
+	depends on GPIOLIB || COMPILE_TEST
 	default n
 
 config LCDREG_I2C
