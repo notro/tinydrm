@@ -16,14 +16,7 @@
 
 #include "internal.h"
 
-/*
-
-[14666.762322] tinydrm_fbdev_deferred_io: count=3
-[14666.762386] ada-mipifb spi0.0: drv_dirty(cma_obj=da707980, flags=0x0, color=0x0, clips=daf31ea0, num_clips=1)
-[14666.762415] ada-mipifb spi0.0: drv_dirty: x1=0, x2=239, y1=0, y2=319
-[14666.792353] ada-mipifb spi0.0: tinydrm_deferred_io_work: x1=0, x2=239, y1=0, y2=319
-
-*/
+#define DEFAULT_DEFIO_DELAY HZ/30
 
 static void tinydrm_fbdev_dirty(struct fb_info *info,
 				struct drm_clip_rect *clip, bool run_now)
@@ -42,7 +35,9 @@ static void tinydrm_fbdev_dirty(struct fb_info *info,
 		return;
 	}
 
-	tinydrm_schedule_dirty(fb, cma_obj, 0, 0, clip, 1, run_now);
+	if (tdev->deferred)
+		tdev->deferred->no_delay = run_now;
+	tdev->fb_dirty(fb, cma_obj, 0, 0, clip, 1);
 }
 
 static void tinydrm_fbdev_deferred_io(struct fb_info *info,
@@ -145,6 +140,7 @@ static int tinydrm_fbdev_event_notify(struct notifier_block *self,
 	struct fb_info *info = event->info;
 	struct drm_fb_helper *helper = info->par;
 	struct tinydrm_device *tdev = helper->dev->dev_private;
+	unsigned long delay = DEFAULT_DEFIO_DELAY;
 	struct fb_ops *fbops;
 
 	DRM_DEBUG("info=%p\n", info);
@@ -199,9 +195,10 @@ static int tinydrm_fbdev_event_notify(struct notifier_block *self,
 			return notifier_from_errno(-ENOMEM);
 		}
 
+		if (tdev->deferred)
+			delay = msecs_to_jiffies(tdev->deferred->defer_ms);
 		/* delay=0 is turned into delay=HZ, so use 1 as a minimum */
-		info->fbdefio->delay =
-				msecs_to_jiffies(tdev->dirty.defer_ms) ? : 1;
+		info->fbdefio->delay = delay ? : 1;
 		info->fbdefio->deferred_io = tinydrm_fbdev_deferred_io;
 		fb_deferred_io_init(info);
 		break;

@@ -216,11 +216,6 @@ static int adafruit_pitft_probe(struct spi_device *spi)
 	if (IS_ERR(tdev->backlight))
 		return PTR_ERR(tdev->backlight);
 
-	tdev->update = mipi_dbi_update;
-
-	/* TODO: Make configurable */
-	tdev->dirty.defer_ms = 40;
-
 	switch (id) {
 	case ADAFRUIT_1601:
 		readable = true;
@@ -257,8 +252,13 @@ static int adafruit_pitft_probe(struct spi_device *spi)
 		return PTR_ERR(reg);
 
 	reg->readable = readable;
-	reg->def_width = MIPI_DBI_DEFAULT_REGWIDTH;
 	tdev->lcdreg = reg;
+	ret = mipi_dbi_init(dev, tdev);
+	if (ret)
+		return ret;
+
+	/* TODO: Make configurable */
+	tdev->deferred->defer_ms = 40;
 
 	/* Make sure we at least can write */
 	ret = lcdreg_writereg(reg, MIPI_DCS_NOP);

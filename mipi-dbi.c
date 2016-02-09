@@ -40,6 +40,7 @@ void tinydrm_xrgb8888_to_rgb565(u32 *src, u16 *dst, unsigned num_pixels, bool sw
 	}
 }
 
+// TODO: Pass in regnr
 int tinydrm_update_rgb565_lcdreg(struct tinydrm_device *tdev, struct drm_framebuffer *fb, struct drm_gem_cma_object *cma_obj, struct drm_clip_rect *clip)
 {
 	unsigned num_pixels = (clip->x2 - clip->x1 + 1) *
@@ -87,43 +88,51 @@ int tinydrm_update_rgb565_lcdreg(struct tinydrm_device *tdev, struct drm_framebu
 	return ret;
 }
 
-int mipi_dbi_update(struct tinydrm_device *tdev)
+static void mipi_dbi_deferred_update(struct work_struct *work)
 {
-	struct drm_gem_cma_object *cma_obj;
+	struct tinydrm_device *tdev = work_to_tinydrm(work);
 	struct lcdreg *reg = tdev->lcdreg;
-	struct drm_framebuffer *fb;
-	struct drm_clip_rect clip;
+	struct tinydrm_fb_clip fb_clip;
+	struct drm_clip_rect *clip = &fb_clip.clip;
+	int ret;
 
-	spin_lock(&tdev->dirty.lock);
-	clip = tdev->dirty.clip;
-	tinydrm_reset_clip(&tdev->dirty.clip);
-	cma_obj = tdev->dirty.cma_obj;
-	fb = tdev->dirty.fb;
-	spin_unlock(&tdev->dirty.lock);
+	dev_dbg(tdev->base->dev, "%s\n", __func__);
 
-	if (!cma_obj || !fb)
-		return -EINVAL;
+	tinydrm_deferred_begin(tdev, &fb_clip);
 
-	/* TODO: support partial updates */
-	clip.x1 = 0;
-	clip.x2 = fb->width - 1;
-	clip.y1 = 0;
-	clip.y2 = fb->height - 1;
-
-	dev_dbg(tdev->base->dev, "%s: cma_obj=%p, vaddr=%p, paddr=%pad\n", __func__, cma_obj, cma_obj->vaddr, &cma_obj->paddr);
-	dev_dbg(tdev->base->dev, "%s: x1=%u, x2=%u, y1=%u, y2=%u\n", __func__, clip.x1, clip.x2, clip.y1, clip.y2);
+	dev_dbg(tdev->base->dev, "%s: cma_obj=%p, vaddr=%p, paddr=%pad\n", __func__, fb_clip.cma_obj, fb_clip.cma_obj->vaddr, &fb_clip.cma_obj->paddr);
+	dev_dbg(tdev->base->dev, "%s: x1=%u, x2=%u, y1=%u, y2=%u\n", __func__, clip->x1, clip->x2, clip->y1, clip->y2);
 	dev_dbg(tdev->base->dev, "\n");
 
 	lcdreg_writereg(reg, MIPI_DCS_SET_COLUMN_ADDRESS,
-			(clip.x1 >> 8) & 0xFF, clip.x1 & 0xFF,
-			(clip.x2 >> 8) & 0xFF, clip.x2 & 0xFF);
+			(clip->x1 >> 8) & 0xFF, clip->x1 & 0xFF,
+			(clip->x2 >> 8) & 0xFF, clip->x2 & 0xFF);
 	lcdreg_writereg(reg, MIPI_DCS_SET_PAGE_ADDRESS,
-			(clip.y1 >> 8) & 0xFF, clip.y1 & 0xFF,
-			(clip.y2 >> 8) & 0xFF, clip.y2 & 0xFF);
+			(clip->y1 >> 8) & 0xFF, clip->y1 & 0xFF,
+			(clip->y2 >> 8) & 0xFF, clip->y2 & 0xFF);
 
-	return tinydrm_update_rgb565_lcdreg(tdev, fb, cma_obj, &clip);
+	ret = tinydrm_update_rgb565_lcdreg(tdev, fb_clip.fb, fb_clip.cma_obj, clip);
+	if (ret)
+		dev_err_once(tdev->base->dev, "Failed to update display %d\n", ret);
+
+	tinydrm_deferred_end(tdev);
 }
-EXPORT_SYMBOL(mipi_dbi_update);
+
+int mipi_dbi_init(struct device *dev, struct tinydrm_device *tdev)
+{
+	tdev->deferred = devm_kzalloc(dev, sizeof(*tdev->deferred),
+				      GFP_KERNEL);
+	if (!tdev->deferred)
+		return -ENOMEM;
+
+	INIT_DELAYED_WORK(&tdev->deferred->dwork, mipi_dbi_deferred_update);
+	tinydrm_reset_clip(&tdev->deferred->fb_clip.clip);
+	tdev->lcdreg->def_width = 8;
+	tdev->fb_dirty = tinydrm_fb_dirty;
+
+	return 0;
+}
+EXPORT_SYMBOL(mipi_dbi_init);
 
 /* Returns true if the display can be verified to be on */
 bool mipi_dbi_display_is_on(struct lcdreg *reg)

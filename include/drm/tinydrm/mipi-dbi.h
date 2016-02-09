@@ -12,12 +12,10 @@
 #ifndef __LINUX_MIPI_DBI_H
 #define __LINUX_MIPI_DBI_H
 
-#define MIPI_DBI_DEFAULT_REGWIDTH 8
-
 struct tinydrm_device;
 struct lcdreg;
 
-int mipi_dbi_update(struct tinydrm_device *tdev);
+int mipi_dbi_init(struct device *dev, struct tinydrm_device *tdev);
 bool mipi_dbi_display_is_on(struct lcdreg *reg);
 void mipi_dbi_debug_dump_regs(struct lcdreg *reg);
 
