@@ -46,14 +46,9 @@ EXPORT_SYMBOL(tinydrm_of_find_backlight);
  */
 
 
-static inline struct tinydrm_device *connector_to_tinydrm(struct drm_connector *connector)
-{
-	return container_of(connector, struct tinydrm_device, connector);
-}
-
 static int tinydrm_connector_get_modes(struct drm_connector *connector)
 {
-	struct tinydrm_device *tdev = connector_to_tinydrm(connector);
+	struct tinydrm_device *tdev = connector->dev->dev_private;
 	struct drm_display_mode *mode;
 	int ret;
 
@@ -78,20 +73,19 @@ static int tinydrm_connector_get_modes(struct drm_connector *connector)
 
 struct drm_encoder *tinydrm_connector_best_encoder(struct drm_connector *connector)
 {
-	struct tinydrm_device *tdev = connector_to_tinydrm(connector);
-
-	return &tdev->encoder;
+	return drm_encoder_find(connector->dev, connector->encoder_ids[0]);
 }
 
 static const struct drm_connector_helper_funcs tinydrm_connector_helper_funcs = {
 	.get_modes = tinydrm_connector_get_modes,
-//	.mode_valid = tinydrm_connector_mode_valid, // optional
 	.best_encoder = tinydrm_connector_best_encoder,
 };
 
 static enum drm_connector_status
 tinydrm_connector_detect(struct drm_connector *connector, bool force)
 {
+	if (drm_device_is_unplugged(connector->dev))
+		return connector_status_disconnected;
 	return connector_status_connected;
 }
 
@@ -189,8 +183,7 @@ static const struct drm_encoder_funcs tinydrm_encoder_funcs = {
 
 static void tinydrm_crtc_enable(struct drm_crtc *crtc)
 {
-	struct drm_device *ddev = crtc->dev;
-	struct tinydrm_device *tdev = ddev->dev_private;
+	struct tinydrm_device *tdev = crtc->dev->dev_private;
 
 	DRM_DEBUG_KMS("prepared=%u, enabled=%u\n", tdev->prepared, tdev->enabled);
 
@@ -204,8 +197,7 @@ static void tinydrm_crtc_enable(struct drm_crtc *crtc)
 
 static void tinydrm_crtc_disable(struct drm_crtc *crtc)
 {
-	struct drm_device *ddev = crtc->dev;
-	struct tinydrm_device *tdev = ddev->dev_private;
+	struct tinydrm_device *tdev = crtc->dev->dev_private;
 
 	DRM_DEBUG_KMS("prepared=%u, enabled=%u\n", tdev->prepared, tdev->enabled);
 
