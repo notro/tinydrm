@@ -12,7 +12,7 @@
 #include <drm/drm_crtc_helper.h>
 #include <linux/slab.h>
 
-struct drm_connector *tinydrm_get_connector(struct drm_device *dev)
+struct drm_connector *tinydrm_get_first_connector(struct drm_device *dev)
 {
         struct drm_connector *connector;
 
@@ -26,9 +26,10 @@ struct drm_connector *tinydrm_get_connector(struct drm_device *dev)
 static enum drm_connector_status
 tinydrm_connector_detect(struct drm_connector *connector, bool force)
 {
+	DRM_DEBUG_KMS("status = %d\n", connector->status);
 	if (drm_device_is_unplugged(connector->dev))
 		return connector_status_disconnected;
-	return connector_status_connected;
+	return connector->status;
 }
 
 static void tinydrm_connector_destroy(struct drm_connector *connector)
@@ -154,7 +155,6 @@ int tinydrm_simple_crtc_create(struct drm_device *dev,
 	if (ret)
 		goto error_free;
 
-	connector->status = connector_status_connected; /* TODO: Is this necessary? */
 	drm_connector_helper_add(connector, connector_helper_funcs);
 	ret = drm_connector_init(dev, connector, &tinydrm_connector_funcs, DRM_MODE_CONNECTOR_VIRTUAL);
 	if (ret)

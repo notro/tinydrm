@@ -303,9 +303,10 @@ static int tinydrm_load(struct drm_device *ddev, unsigned long flags)
 	if (ret)
 		return ret;
 
+	tinydrm_get_first_connector(ddev)->status = connector_status_connected;
 	drm_panel_init(&tdev->panel);
 	drm_panel_add(&tdev->panel);
-	drm_panel_attach(&tdev->panel, tinydrm_get_connector(ddev));
+	drm_panel_attach(&tdev->panel, tinydrm_get_first_connector(ddev));
 
 	drm_mode_config_reset(ddev);
 

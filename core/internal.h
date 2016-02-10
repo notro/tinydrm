@@ -10,7 +10,7 @@
 struct drm_connector_helper_funcs;
 struct drm_crtc_helper_funcs;
 
-struct drm_connector *tinydrm_get_connector(struct drm_device *dev);
+struct drm_connector *tinydrm_get_first_connector(struct drm_device *dev);
 int tinydrm_simple_crtc_create(struct drm_device *dev,
 	struct drm_plane *primary, struct drm_plane *cursor,
 	const struct drm_crtc_helper_funcs *crtc_helper_funcs,
