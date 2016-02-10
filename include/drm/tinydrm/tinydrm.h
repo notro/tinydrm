@@ -28,9 +28,6 @@ struct tinydrm_device {
 	struct drm_device *base;
 	struct drm_panel panel;
 	struct drm_plane plane;
-	struct drm_crtc crtc;
-	struct drm_encoder encoder;
-	struct drm_connector connector;
 	struct drm_fbdev_cma *fbdev_cma;
 	struct tinydrm_deferred *deferred;
 	struct lcdreg *lcdreg;

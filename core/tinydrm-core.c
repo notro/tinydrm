@@ -94,6 +94,7 @@ static void tinydrm_connector_destroy(struct drm_connector *connector)
 	DRM_DEBUG_KMS("\n");
 	drm_connector_unregister(connector);
 	drm_connector_cleanup(connector);
+	kfree(connector);
 }
 
 static const struct drm_connector_funcs tinydrm_connector_funcs = {
@@ -167,8 +168,15 @@ static const struct drm_encoder_helper_funcs tinydrm_encoder_helper_funcs = {
 	.atomic_check = tinydrm_encoder_atomic_check,
 };
 
+static void tinydrm_encoder_cleanup(struct drm_encoder *encoder)
+{
+	DRM_DEBUG_KMS("\n");
+	drm_encoder_cleanup(encoder);
+	kfree(encoder);
+}
+
 static const struct drm_encoder_funcs tinydrm_encoder_funcs = {
-	.destroy = drm_encoder_cleanup,
+	.destroy = tinydrm_encoder_cleanup,
 };
 
 
@@ -217,14 +225,86 @@ static const struct drm_crtc_helper_funcs tinydrm_crtc_helper_funcs = {
 	.enable = tinydrm_crtc_enable, // enable or commit: http://lxr.free-electrons.com/ident?i=drm_atomic_helper_commit_modeset_enables
 };
 
+static void tinydrm_crtc_cleanup(struct drm_crtc *crtc)
+{
+	DRM_DEBUG_KMS("\n");
+	drm_crtc_cleanup(crtc);
+	kfree(crtc);
+}
+
 static const struct drm_crtc_funcs tinydrm_crtc_funcs = {
 	.reset = drm_atomic_helper_crtc_reset,
-	.destroy = drm_crtc_cleanup,
+	.destroy = tinydrm_crtc_cleanup,
 	.set_config = drm_atomic_helper_set_config,
 	.page_flip = drm_atomic_helper_page_flip,
 	.atomic_duplicate_state = drm_atomic_helper_crtc_duplicate_state,
 	.atomic_destroy_state = drm_atomic_helper_crtc_destroy_state,
 };
+
+int tinydrm_simple_crtc_create(struct drm_device *dev,
+	struct drm_plane *primary, struct drm_plane *cursor,
+	const struct drm_crtc_helper_funcs *crtc_helper_funcs,
+	const struct drm_connector_helper_funcs *connector_helper_funcs)
+{
+	struct drm_connector *connector;
+	struct drm_encoder *encoder;
+	struct drm_crtc *crtc;
+	int ret;
+
+	connector = kzalloc(sizeof(*connector), GFP_KERNEL);
+	encoder = kzalloc(sizeof(*encoder), GFP_KERNEL);
+	crtc = kzalloc(sizeof(*crtc), GFP_KERNEL);
+	if (!connector || !encoder || !crtc) {
+		ret = -ENOMEM;
+		goto error_free;
+	}
+
+	drm_crtc_helper_add(crtc, crtc_helper_funcs);
+	ret = drm_crtc_init_with_planes(dev, crtc, primary, cursor,
+					&tinydrm_crtc_funcs);
+	if (ret)
+		goto error_free;
+
+	encoder->possible_crtcs = 1 << drm_crtc_index(crtc);
+	drm_encoder_helper_add(encoder, &tinydrm_encoder_helper_funcs);
+	ret = drm_encoder_init(dev, encoder, &tinydrm_encoder_funcs, DRM_MODE_ENCODER_VIRTUAL);
+	if (ret)
+		goto error_free;
+
+	connector->status = connector_status_connected; /* TODO: Is this necessary? */
+	drm_connector_helper_add(connector, connector_helper_funcs);
+	ret = drm_connector_init(dev, connector, &tinydrm_connector_funcs, DRM_MODE_CONNECTOR_VIRTUAL);
+	if (ret)
+		goto error_free;
+
+	ret = drm_mode_connector_attach_encoder(connector, encoder);
+	if (ret)
+		goto error_free;
+
+	ret = drm_connector_register(connector);
+	if (ret)
+		goto error_free;
+
+	return 0;
+
+error_free:
+	kfree(crtc);
+	kfree(encoder);
+	kfree(connector);
+
+	return ret;
+}
+
+struct drm_connector *tinydrm_get_connector(struct drm_device *dev)
+{
+        struct drm_connector *connector;
+
+        list_for_each_entry(connector, &dev->mode_config.connector_list, head)
+                if (connector->dev == dev)
+                        return connector;
+
+        return NULL;
+}
 
 
 
@@ -419,37 +499,13 @@ static int tinydrm_load(struct drm_device *ddev, unsigned long flags)
 	if (ret)
 		return ret;
 
-	drm_crtc_helper_add(&tdev->crtc, &tinydrm_crtc_helper_funcs);
-	ret = drm_crtc_init_with_planes(ddev, &tdev->crtc, &tdev->plane, NULL,
-					&tinydrm_crtc_funcs);
-	if (ret)
-		return ret;
-
-//	drm_mode_crtc_set_gamma_size(&tdev->crtc, 256);
-
-	tdev->encoder.possible_crtcs = 1 << drm_crtc_index(&tdev->crtc);
-	drm_encoder_helper_add(&tdev->encoder, &tinydrm_encoder_helper_funcs);
-	ret = drm_encoder_init(ddev, &tdev->encoder, &tinydrm_encoder_funcs, DRM_MODE_ENCODER_VIRTUAL);
-	if (ret)
-		return ret;
-
-	tdev->connector.status = connector_status_connected;
-	drm_connector_helper_add(&tdev->connector, &tinydrm_connector_helper_funcs);
-	ret = drm_connector_init(ddev, &tdev->connector, &tinydrm_connector_funcs, DRM_MODE_CONNECTOR_VIRTUAL);
-	if (ret)
-		return ret;
-
-	ret = drm_mode_connector_attach_encoder(&tdev->connector, &tdev->encoder);
-	if (ret)
-		return ret;
-
-	ret = drm_connector_register(&tdev->connector);
+	ret = tinydrm_simple_crtc_create(ddev, &tdev->plane, NULL, &tinydrm_crtc_helper_funcs, &tinydrm_connector_helper_funcs);
 	if (ret)
 		return ret;
 
 	drm_panel_init(&tdev->panel);
 	drm_panel_add(&tdev->panel);
-	drm_panel_attach(&tdev->panel, &tdev->connector);
+	drm_panel_attach(&tdev->panel, tinydrm_get_connector(ddev));
 
 	drm_mode_config_reset(ddev);
 
