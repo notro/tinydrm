@@ -19,6 +19,8 @@ int tinydrm_simple_crtc_create(struct drm_device *dev,
 	const struct drm_connector_helper_funcs *connector_helper_funcs);
 int tinydrm_crtc_create(struct tinydrm_device *tdev);
 
+void tinydrm_mode_config_init(struct tinydrm_device *tdev);
+
 #ifdef CONFIG_DRM_KMS_FB_HELPER
 int tinydrm_fbdev_init(struct tinydrm_device *tdev);
 void tinydrm_fbdev_fini(struct tinydrm_device *tdev);
