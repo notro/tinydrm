@@ -7,6 +7,8 @@
  * (at your option) any later version.
  */
 
+#include <drm/drm_fb_cma_helper.h>
+
 struct drm_connector_helper_funcs;
 struct drm_crtc_helper_funcs;
 
@@ -15,6 +17,7 @@ int tinydrm_simple_crtc_create(struct drm_device *dev,
 	struct drm_plane *primary, struct drm_plane *cursor,
 	const struct drm_crtc_helper_funcs *crtc_helper_funcs,
 	const struct drm_connector_helper_funcs *connector_helper_funcs);
+int tinydrm_crtc_create(struct tinydrm_device *tdev);
 
 #ifdef CONFIG_DRM_KMS_FB_HELPER
 int tinydrm_fbdev_init(struct tinydrm_device *tdev);
