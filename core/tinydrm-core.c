@@ -11,7 +11,6 @@
 #include <drm/drmP.h>
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_gem_cma_helper.h>
-#include <drm/drm_plane_helper.h>
 #include <drm/tinydrm/tinydrm.h>
 #include <linux/device.h>
 
@@ -36,63 +35,6 @@ struct backlight_device *tinydrm_of_find_backlight(struct device *dev)
 }
 EXPORT_SYMBOL(tinydrm_of_find_backlight);
 
-
-
-
-/******************************************************************************
- *
- * Plane
- *
- */
-
-/* TODO: Configurable */
-static const uint32_t tinydrm_formats[] = {
-	DRM_FORMAT_RGB565,
-	DRM_FORMAT_XRGB8888,
-};
-
-static void tinydrm_plane_atomic_update(struct drm_plane *plane,
-                                           struct drm_plane_state *old_state)
-{
-//	struct drm_device *ddev = plane->dev;
-
-/*
-        if (plane->fb) {
-                vgfb = to_tinydrm_framebuffer(plane->fb);
-                bo = gem_to_tinydrm_obj(vgfb->obj);
-                handle = bo->hw_res_handle;
-        } else {
-                handle = 0;
-        }
-*/
-	DRM_DEBUG("handle 0x%x, crtc %dx%d+%d+%d\n", 0,
-		  plane->state->crtc_w, plane->state->crtc_h,
-		  plane->state->crtc_x, plane->state->crtc_y);
-}
-
-static const struct drm_plane_helper_funcs tinydrm_plane_helper_funcs = {
-	.atomic_update = tinydrm_plane_atomic_update,
-};
-
-static const struct drm_plane_funcs tinydrm_plane_funcs = {
-	.update_plane		= drm_atomic_helper_update_plane,
-	.disable_plane		= drm_atomic_helper_disable_plane,
-	.destroy		= drm_plane_cleanup,
-	.reset			= drm_atomic_helper_plane_reset,
-	.atomic_duplicate_state	= drm_atomic_helper_plane_duplicate_state,
-	.atomic_destroy_state	= drm_atomic_helper_plane_destroy_state,
-};
-
-
-
-
-/******************************************************************************
- *
- * DRM driver
- *
- */
-
-
 static int tinydrm_load(struct drm_device *ddev, unsigned long flags)
 {
 	struct tinydrm_device *tdev = ddev->dev_private;
@@ -102,11 +44,7 @@ static int tinydrm_load(struct drm_device *ddev, unsigned long flags)
 
 	tinydrm_mode_config_init(tdev);
 
-	drm_plane_helper_add(&tdev->plane, &tinydrm_plane_helper_funcs);
-	ret = drm_universal_plane_init(ddev, &tdev->plane, 0,
-				       &tinydrm_plane_funcs, tinydrm_formats,
-				       ARRAY_SIZE(tinydrm_formats),
-				       DRM_PLANE_TYPE_PRIMARY);
+	ret = tinydrm_plane_init(tdev);
 	if (ret)
 		return ret;
 
