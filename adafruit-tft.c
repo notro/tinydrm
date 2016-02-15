@@ -22,13 +22,13 @@
 #include <linux/spi/spi.h>
 #include <video/mipi_display.h>
 
-enum adafruit_pitft_displays {
+enum adafruit_tft_displays {
 	ADAFRUIT_1601 = 1601,
 	ADAFRUIT_797 = 797,
 	ADAFRUIT_358 = 358,
 };
 
-static u32 adafruit_pitft_get_rotation(struct device *dev)
+static u32 adafruit_tft_get_rotation(struct device *dev)
 {
 	u32 rotation = 0;
 
@@ -37,7 +37,7 @@ static u32 adafruit_pitft_get_rotation(struct device *dev)
 	return rotation;
 }
 
-static int adafruit_pitft_1601_panel_prepare(struct drm_panel *panel)
+static int adafruit_tft_1601_panel_prepare(struct drm_panel *panel)
 {
 	struct tinydrm_device *tdev = tinydrm_from_panel(panel);
 	struct lcdreg *reg = tdev->lcdreg;
@@ -84,7 +84,7 @@ static int adafruit_pitft_1601_panel_prepare(struct drm_panel *panel)
 			0x00, 0x0E, 0x14, 0x03, 0x11, 0x07, 0x31, 0xC1,
 			0x48, 0x08, 0x0F, 0x0C, 0x31, 0x36, 0x0F);
 
-	switch (adafruit_pitft_get_rotation(reg->dev)) {
+	switch (adafruit_tft_get_rotation(reg->dev)) {
 		default:
 			addr_mode = ILI9340_MADCTL_MV | ILI9340_MADCTL_MY |
 				    ILI9340_MADCTL_MX;
@@ -111,7 +111,7 @@ static int adafruit_pitft_1601_panel_prepare(struct drm_panel *panel)
 	return 0;
 }
 
-static int adafruit_pitft_panel_unprepare(struct drm_panel *panel)
+static int adafruit_tft_panel_unprepare(struct drm_panel *panel)
 {
 	struct tinydrm_device *tdev = tinydrm_from_panel(panel);
 	struct lcdreg *reg = tdev->lcdreg;
@@ -130,30 +130,30 @@ static int adafruit_pitft_panel_unprepare(struct drm_panel *panel)
 	return 0;
 }
 
-struct drm_panel_funcs adafruit_pitft_1601_funcs = {
-	.prepare = adafruit_pitft_1601_panel_prepare,
-	.unprepare = adafruit_pitft_panel_unprepare,
+struct drm_panel_funcs adafruit_tft_1601_funcs = {
+	.prepare = adafruit_tft_1601_panel_prepare,
+	.unprepare = adafruit_tft_panel_unprepare,
 	.enable = tinydrm_panel_enable_backlight,
 	.disable = tinydrm_panel_disable_backlight,
 };
 
-static const struct of_device_id adafruit_pitft_of_match[] = {
-	{ .compatible = "adafruit,pitft28", .data = (void *)ADAFRUIT_1601 },
+static const struct of_device_id adafruit_tft_of_match[] = {
+	{ .compatible = "adafruit,tft1601", .data = (void *)ADAFRUIT_1601 },
 	{ .compatible = "adafruit,tft797",  .data = (void *)ADAFRUIT_797 },
 	{ .compatible = "adafruit,tft358",  .data = (void *)ADAFRUIT_358 },
 	{},
 };
-MODULE_DEVICE_TABLE(of, adafruit_pitft_of_match);
+MODULE_DEVICE_TABLE(of, adafruit_tft_of_match);
 
-static const struct spi_device_id adafruit_pitft_id[] = {
-	{ "pitft28", ADAFRUIT_1601 },
+static const struct spi_device_id adafruit_tft_id[] = {
+	{ "tft1601", ADAFRUIT_1601 },
 	{ "tft797",  ADAFRUIT_797 },
 	{ "tft358",  ADAFRUIT_358 },
         { }
 };
-MODULE_DEVICE_TABLE(spi, adafruit_pitft_id);
+MODULE_DEVICE_TABLE(spi, adafruit_tft_id);
 
-static int adafruit_pitft_probe(struct spi_device *spi)
+static int adafruit_tft_probe(struct spi_device *spi)
 {
 	const struct of_device_id *of_id;
 	struct lcdreg_spi_config cfg = {
@@ -165,7 +165,7 @@ static int adafruit_pitft_probe(struct spi_device *spi)
 	struct lcdreg *reg;
 	int id, ret;
 
-	of_id = of_match_device(adafruit_pitft_of_match, dev);
+	of_id = of_match_device(adafruit_tft_of_match, dev);
 	if (of_id) {
 		id = (int)of_id->data;
 	} else {
@@ -191,25 +191,25 @@ static int adafruit_pitft_probe(struct spi_device *spi)
 		cfg.mode = LCDREG_SPI_4WIRE;
 		tdev->width = 320;
 		tdev->height = 240;
-		tdev->panel.funcs = &adafruit_pitft_1601_funcs;
+		tdev->panel.funcs = &adafruit_tft_1601_funcs;
 		break;
 	case ADAFRUIT_797:
 		cfg.mode = LCDREG_SPI_3WIRE;
 		tdev->width = 176;
 		tdev->height = 220;
-		/* TODO: tdev->panel.funcs = &adafruit_pitft_797_funcs*/
+		/* TODO: tdev->panel.funcs = &adafruit_tft_797_funcs*/
 		break;
 	case ADAFRUIT_358:
 		tdev->width = 128;
 		tdev->height = 160;
-		/* TODO: tdev->panel.funcs = &adafruit_pitft_358_funcs */
+		/* TODO: tdev->panel.funcs = &adafruit_tft_358_funcs */
 		break;
 	default:
 		return -EINVAL;
 	}
 
-	DRM_DEBUG_DRIVER("rotation = %u\n", adafruit_pitft_get_rotation(dev));
-	switch (adafruit_pitft_get_rotation(dev)) {
+	DRM_DEBUG_DRIVER("rotation = %u\n", adafruit_tft_get_rotation(dev));
+	switch (adafruit_tft_get_rotation(dev)) {
 		case 90:
 		case 270:
 			swap(tdev->width, tdev->height);
@@ -241,18 +241,18 @@ static int adafruit_pitft_probe(struct spi_device *spi)
 	return devm_tinydrm_register(dev, tdev);
 }
 
-static struct spi_driver adafruit_pitft_spi_driver = {
+static struct spi_driver adafruit_tft_spi_driver = {
 	.driver = {
 		.name = "ada-mipifb",
 		.owner = THIS_MODULE,
-		.of_match_table = adafruit_pitft_of_match,
+		.of_match_table = adafruit_tft_of_match,
 		.pm = &tinydrm_simple_pm_ops,
 	},
-	.id_table = adafruit_pitft_id,
-	.probe = adafruit_pitft_probe,
+	.id_table = adafruit_tft_id,
+	.probe = adafruit_tft_probe,
 	.shutdown = tinydrm_spi_shutdown,
 };
-module_spi_driver(adafruit_pitft_spi_driver);
+module_spi_driver(adafruit_tft_spi_driver);
 
 MODULE_DESCRIPTION("Adafruit MIPI compatible SPI displays");
 MODULE_AUTHOR("Noralf Trønnes");

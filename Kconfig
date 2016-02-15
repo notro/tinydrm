@@ -10,8 +10,8 @@ menuconfig DRM_TINYDRM
 	  Choose this option if you have a tinydrm supported display.
 	  If M is selected the module will be called tinydrm.
 
-config TINYDRM_ADAFRUIT_PITFT
-	tristate "DRM driver for Adafruit PiTFT and other TFT displays"
+config TINYDRM_ADAFRUIT_TFT
+	tristate "DRM driver for Adafruit SPI TFT displays"
 	depends on DRM_TINYDRM && SPI
 	select LCDREG_SPI
 	select TINYDRM_MIPI_DBI
