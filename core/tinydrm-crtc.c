@@ -50,11 +50,8 @@ static void tinydrm_crtc_enable(struct drm_crtc *crtc)
 
 	DRM_DEBUG_KMS("prepared=%u, enabled=%u\n", tdev->prepared, tdev->enabled);
 
-	if (!tdev->prepared) {
-		drm_panel_prepare(&tdev->panel);
-		tdev->prepared = true;
-	}
-
+	/* The panel must be prepared on the first crtc enable after probe */
+	tinydrm_prepare(tdev);
 	/* The panel is enabled after the first display update */
 }
 
@@ -64,15 +61,7 @@ static void tinydrm_crtc_disable(struct drm_crtc *crtc)
 
 	DRM_DEBUG_KMS("prepared=%u, enabled=%u\n", tdev->prepared, tdev->enabled);
 
-	if (tdev->enabled) {
-		drm_panel_disable(&tdev->panel);
-		tdev->enabled = false;
-	}
-
-	if (tdev->prepared) {
-		drm_panel_unprepare(&tdev->panel);
-		tdev->prepared = false;
-	}
+	tinydrm_disable(tdev);
 }
 
 static const struct drm_crtc_helper_funcs tinydrm_crtc_helper_funcs = {

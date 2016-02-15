@@ -98,7 +98,8 @@ static void mipi_dbi_deferred_update(struct work_struct *work)
 
 	dev_dbg(tdev->base->dev, "%s\n", __func__);
 
-	tinydrm_deferred_begin(tdev, &fb_clip);
+	if (!tinydrm_deferred_begin(tdev, &fb_clip))
+		return;
 
 	dev_dbg(tdev->base->dev, "%s: cma_obj=%p, vaddr=%p, paddr=%pad\n", __func__, fb_clip.cma_obj, fb_clip.cma_obj->vaddr, &fb_clip.cma_obj->paddr);
 	dev_dbg(tdev->base->dev, "%s: x1=%u, x2=%u, y1=%u, y2=%u\n", __func__, clip->x1, clip->x2, clip->y1, clip->y2);

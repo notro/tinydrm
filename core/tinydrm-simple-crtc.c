@@ -12,15 +12,24 @@
 #include <drm/drm_crtc_helper.h>
 #include <linux/slab.h>
 
+struct drm_crtc *tinydrm_get_first_crtc(struct drm_device *dev)
+{
+	struct drm_crtc *crtc;
+
+	drm_for_each_crtc(crtc, dev)
+		return crtc;
+
+	return NULL;
+}
+
 struct drm_connector *tinydrm_get_first_connector(struct drm_device *dev)
 {
-        struct drm_connector *connector;
+	struct drm_connector *connector;
 
-        list_for_each_entry(connector, &dev->mode_config.connector_list, head)
-                if (connector->dev == dev)
-                        return connector;
+	list_for_each_entry(connector, &dev->mode_config.connector_list, head)
+		return connector;
 
-        return NULL;
+	return NULL;
 }
 
 static enum drm_connector_status

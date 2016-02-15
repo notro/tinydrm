@@ -130,42 +130,11 @@ static int adafruit_pitft_panel_unprepare(struct drm_panel *panel)
 	return 0;
 }
 
-static int adafruit_pitft_panel_enable(struct drm_panel *panel)
-{
-	struct tinydrm_device *tdev = tinydrm_from_panel(panel);
-
-	dev_dbg(tdev->base->dev, "%s\n", __func__);
-
-	if (tdev->backlight) {
-		if (tdev->backlight->props.brightness == 0)
-			tdev->backlight->props.brightness =
-					tdev->backlight->props.max_brightness;
-		tdev->backlight->props.state &= ~BL_CORE_SUSPENDED;
-		backlight_update_status(tdev->backlight);
-	}
-
-	return 0;
-}
-
-static int adafruit_pitft_panel_disable(struct drm_panel *panel)
-{
-	struct tinydrm_device *tdev = tinydrm_from_panel(panel);
-
-	dev_dbg(tdev->base->dev, "%s\n", __func__);
-
-	if (tdev->backlight) {
-		tdev->backlight->props.state |= BL_CORE_SUSPENDED;
-		backlight_update_status(tdev->backlight);
-	}
-
-	return 0;
-}
-
 struct drm_panel_funcs adafruit_pitft_1601_funcs = {
 	.prepare = adafruit_pitft_1601_panel_prepare,
 	.unprepare = adafruit_pitft_panel_unprepare,
-	.enable = adafruit_pitft_panel_enable,
-	.disable = adafruit_pitft_panel_disable,
+	.enable = tinydrm_panel_enable_backlight,
+	.disable = tinydrm_panel_disable_backlight,
 };
 
 static const struct of_device_id adafruit_pitft_of_match[] = {
@@ -272,25 +241,16 @@ static int adafruit_pitft_probe(struct spi_device *spi)
 	return devm_tinydrm_register(dev, tdev);
 }
 
-static void adafruit_pitft_shutdown(struct spi_device *spi)
-{
-	struct tinydrm_device *tdev = spi_get_drvdata(spi);
-
-	dev_dbg(tdev->base->dev, "%s\n", __func__);
-
-	drm_panel_disable(&tdev->panel);
-	drm_panel_unprepare(&tdev->panel);
-}
-
 static struct spi_driver adafruit_pitft_spi_driver = {
 	.driver = {
 		.name = "ada-mipifb",
 		.owner = THIS_MODULE,
 		.of_match_table = adafruit_pitft_of_match,
+		.pm = &tinydrm_simple_pm_ops,
 	},
 	.id_table = adafruit_pitft_id,
 	.probe = adafruit_pitft_probe,
-	.shutdown = adafruit_pitft_shutdown,
+	.shutdown = tinydrm_spi_shutdown,
 };
 module_spi_driver(adafruit_pitft_spi_driver);
 

@@ -1,6 +1,8 @@
 #include <drm/tinydrm/tinydrm.h>
 
-void tinydrm_deferred_begin(struct tinydrm_device *tdev,
+#include "internal.h"
+
+bool tinydrm_deferred_begin(struct tinydrm_device *tdev,
 			    struct tinydrm_fb_clip *fb_clip)
 {
 	struct tinydrm_deferred *deferred = tdev->deferred;
@@ -11,6 +13,10 @@ void tinydrm_deferred_begin(struct tinydrm_device *tdev,
 	deferred->fb_clip.cma_obj = NULL;
 	deferred->fb_clip.fb = NULL;
 	spin_unlock(&deferred->lock);
+
+	/* The crtc might have been disabled by the time we get here */
+	if (!tinydrm_active(tdev))
+		return false;
 
 	/* On first update make sure to do the entire framebuffer */
 	if (!tdev->enabled) {
@@ -25,6 +31,8 @@ void tinydrm_deferred_begin(struct tinydrm_device *tdev,
 	fb_clip->clip.x2 = fb_clip->fb->width - 1;
 	fb_clip->clip.y1 = 0;
 	fb_clip->clip.y2 = fb_clip->fb->height - 1;
+
+	return true;
 }
 EXPORT_SYMBOL(tinydrm_deferred_begin);
 

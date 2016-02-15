@@ -15,8 +15,9 @@
 #include <drm/drm_crtc.h>
 #include <drm/drm_panel.h>
 
-struct lcdreg;
 struct tinydrm_deferred;
+struct spi_device;
+struct lcdreg;
 
 struct tinydrm_framebuffer {
 	struct drm_framebuffer base;
@@ -52,7 +53,43 @@ static inline struct tinydrm_device *tinydrm_from_panel(struct drm_panel *panel)
 	return panel->connector->dev->dev_private;
 }
 
+static inline void tinydrm_prepare(struct tinydrm_device *tdev)
+{
+	if (!tdev->prepared) {
+		drm_panel_prepare(&tdev->panel);
+		tdev->prepared = true;
+	}
+}
+
+static inline void tinydrm_unprepare(struct tinydrm_device *tdev)
+{
+	if (tdev->prepared) {
+		drm_panel_unprepare(&tdev->panel);
+		tdev->prepared = false;
+	}
+}
+
+static inline void tinydrm_enable(struct tinydrm_device *tdev)
+{
+	if (!tdev->enabled) {
+		drm_panel_enable(&tdev->panel);
+		tdev->enabled = true;
+	}
+}
+
+static inline void tinydrm_disable(struct tinydrm_device *tdev)
+{
+	if (tdev->enabled) {
+		drm_panel_disable(&tdev->panel);
+		tdev->enabled = false;
+	}
+}
+
 struct backlight_device *tinydrm_of_find_backlight(struct device *dev);
+int tinydrm_panel_enable_backlight(struct drm_panel *panel);
+int tinydrm_panel_disable_backlight(struct drm_panel *panel);
+extern const struct dev_pm_ops tinydrm_simple_pm_ops;
+void tinydrm_spi_shutdown(struct spi_device *spi);
 
 struct tinydrm_fb_clip {
 	struct drm_gem_cma_object *cma_obj;
@@ -76,7 +113,7 @@ static inline struct tinydrm_device *work_to_tinydrm(struct work_struct *work)
 	return deferred->fb_clip.fb->dev->dev_private;
 }
 
-void tinydrm_deferred_begin(struct tinydrm_device *tdev,
+bool tinydrm_deferred_begin(struct tinydrm_device *tdev,
 			    struct tinydrm_fb_clip *fb_clip);
 void tinydrm_deferred_end(struct tinydrm_device *tdev);
 int tinydrm_fb_dirty(struct drm_framebuffer *fb,
