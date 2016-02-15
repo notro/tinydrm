@@ -207,4 +207,23 @@ void mipi_dbi_debug_dump_regs(struct lcdreg *reg)
 }
 EXPORT_SYMBOL(mipi_dbi_debug_dump_regs);
 
+int mipi_dbi_panel_unprepare(struct drm_panel *panel)
+{
+	struct tinydrm_device *tdev = tinydrm_from_panel(panel);
+	struct lcdreg *reg = tdev->lcdreg;
+
+	/*
+	 * Only do this if we have turned off backlight because if it's on the
+	 * display will in most cases turn all white when the pixels are
+	 * turned off.
+	 */
+	if (tdev->backlight) {
+		lcdreg_writereg(reg, MIPI_DCS_SET_DISPLAY_OFF);
+		lcdreg_writereg(reg, MIPI_DCS_ENTER_SLEEP_MODE);
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(mipi_dbi_panel_unprepare);
+
 MODULE_LICENSE("GPL");

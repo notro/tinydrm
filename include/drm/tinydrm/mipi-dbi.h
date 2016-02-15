@@ -13,10 +13,12 @@
 #define __LINUX_MIPI_DBI_H
 
 struct tinydrm_device;
+struct drm_panel;
 struct lcdreg;
 
 int mipi_dbi_init(struct device *dev, struct tinydrm_device *tdev);
 bool mipi_dbi_display_is_on(struct lcdreg *reg);
 void mipi_dbi_debug_dump_regs(struct lcdreg *reg);
+int mipi_dbi_panel_unprepare(struct drm_panel *panel);
 
 #endif /* __LINUX_MIPI_DBI_H */

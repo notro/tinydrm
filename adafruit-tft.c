@@ -111,28 +111,9 @@ static int adafruit_tft_1601_panel_prepare(struct drm_panel *panel)
 	return 0;
 }
 
-static int adafruit_tft_panel_unprepare(struct drm_panel *panel)
-{
-	struct tinydrm_device *tdev = tinydrm_from_panel(panel);
-	struct lcdreg *reg = tdev->lcdreg;
-
-	dev_dbg(tdev->base->dev, "%s\n", __func__);
-
-	/*
-	 * Only do this if we have turned off backlight because if it's on the
-	 * display will be all white when the pixels are turned off.
-	 */
-	if (tdev->backlight) {
-		lcdreg_writereg(reg, ILI9340_DISPOFF);
-		lcdreg_writereg(reg, ILI9340_SLPIN);
-	}
-
-	return 0;
-}
-
 struct drm_panel_funcs adafruit_tft_1601_funcs = {
 	.prepare = adafruit_tft_1601_panel_prepare,
-	.unprepare = adafruit_tft_panel_unprepare,
+	.unprepare = mipi_dbi_panel_unprepare,
 	.enable = tinydrm_panel_enable_backlight,
 	.disable = tinydrm_panel_disable_backlight,
 };
