@@ -17,6 +17,7 @@
 
 struct tinydrm_deferred;
 struct spi_device;
+struct regulator;
 struct lcdreg;
 
 struct tinydrm_framebuffer {
@@ -27,15 +28,16 @@ struct drm_gem_object *obj;
 
 struct tinydrm_device {
 	struct drm_device *base;
+	u32 width, height;
 	struct drm_panel panel;
 	struct drm_plane plane;
 	struct drm_fbdev_cma *fbdev_cma;
 	struct tinydrm_deferred *deferred;
-	struct lcdreg *lcdreg;
 	struct backlight_device *backlight;
+	struct regulator *regulator;
+	struct lcdreg *lcdreg;
 	bool prepared;
 	bool enabled;
-	u32 width, height;
 	void *dev_private;
 
 	int (*fb_dirty)(struct drm_framebuffer *fb,

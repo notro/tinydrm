@@ -14,6 +14,7 @@
 #include <drm/tinydrm/lcdreg.h>
 #include <drm/tinydrm/tinydrm.h>
 #include <linux/module.h>
+#include <linux/regulator/consumer.h>
 #include <linux/swab.h>
 #include <video/mipi_display.h>
 
@@ -221,6 +222,9 @@ int mipi_dbi_panel_unprepare(struct drm_panel *panel)
 		lcdreg_writereg(reg, MIPI_DCS_SET_DISPLAY_OFF);
 		lcdreg_writereg(reg, MIPI_DCS_ENTER_SLEEP_MODE);
 	}
+
+	if (tdev->regulator)
+		regulator_disable(tdev->regulator);
 
 	return 0;
 }

@@ -19,6 +19,7 @@
 #include <linux/module.h>
 #include <linux/of_device.h>
 #include <linux/property.h>
+#include <linux/regulator/consumer.h>
 #include <linux/spi/spi.h>
 #include <video/mipi_display.h>
 
@@ -42,8 +43,18 @@ static int adafruit_tft_1601_panel_prepare(struct drm_panel *panel)
 	struct tinydrm_device *tdev = tinydrm_from_panel(panel);
 	struct lcdreg *reg = tdev->lcdreg;
 	u8 addr_mode;
+	int ret;
 
 	dev_dbg(tdev->base->dev, "%s\n", __func__);
+
+	if (tdev->regulator) {
+		ret = regulator_enable(tdev->regulator);
+		if (ret) {
+			dev_err(tdev->base->dev,
+				"Failed to enable regulator %d\n", ret);
+			return ret;
+		}
+	}
 
 	mipi_dbi_debug_dump_regs(reg);
 
@@ -52,7 +63,12 @@ static int adafruit_tft_1601_panel_prepare(struct drm_panel *panel)
 		return 0;
 
 	lcdreg_reset(reg);
-	lcdreg_writereg(reg, ILI9340_SWRESET);
+	ret = lcdreg_writereg(reg, ILI9340_SWRESET);
+	if (ret) {
+		dev_err(tdev->base->dev, "Error writing lcdreg %d\n", ret);
+		return ret;
+	}
+
 	msleep(20);
 
 	/* Undocumented registers */
@@ -166,6 +182,13 @@ static int adafruit_tft_probe(struct spi_device *spi)
 	if (IS_ERR(tdev->backlight))
 		return PTR_ERR(tdev->backlight);
 
+	tdev->regulator = devm_regulator_get_optional(dev, "power");
+	if (IS_ERR(tdev->regulator)) {
+		if (PTR_ERR(tdev->regulator) != -ENODEV)
+			return PTR_ERR(tdev->regulator);
+		tdev->regulator = NULL;
+	}
+
 	switch (id) {
 	case ADAFRUIT_1601:
 		readable = true;
@@ -209,13 +232,6 @@ static int adafruit_tft_probe(struct spi_device *spi)
 
 	/* TODO: Make configurable */
 	tdev->deferred->defer_ms = 40;
-
-	/* Make sure we at least can write */
-	ret = lcdreg_writereg(reg, MIPI_DCS_NOP);
-	if (ret) {
-		dev_err(dev, "Error writing lcdreg\n");
-		return ret;
-	}
 
 	spi_set_drvdata(spi, tdev);
 
