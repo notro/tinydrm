@@ -40,10 +40,10 @@ struct tinydrm_device {
 	bool enabled;
 	void *dev_private;
 
-	int (*fb_dirty)(struct drm_framebuffer *fb,
-			struct drm_gem_cma_object *cma_obj, unsigned flags,
-			unsigned color, struct drm_clip_rect *clips,
-			unsigned num_clips);
+	int (*dirtyfb)(struct drm_framebuffer *fb,
+		       struct drm_gem_cma_object *cma_obj, unsigned flags,
+		       unsigned color, struct drm_clip_rect *clips,
+		       unsigned num_clips);
 };
 
 int devm_tinydrm_register(struct device *dev, struct tinydrm_device *tdev);
@@ -118,10 +118,10 @@ static inline struct tinydrm_device *work_to_tinydrm(struct work_struct *work)
 bool tinydrm_deferred_begin(struct tinydrm_device *tdev,
 			    struct tinydrm_fb_clip *fb_clip);
 void tinydrm_deferred_end(struct tinydrm_device *tdev);
-int tinydrm_fb_dirty(struct drm_framebuffer *fb,
-		     struct drm_gem_cma_object *cma_obj, unsigned flags,
-		     unsigned color, struct drm_clip_rect *clips,
-		     unsigned num_clips);
+int tinydrm_dirtyfb(struct drm_framebuffer *fb,
+		    struct drm_gem_cma_object *cma_obj, unsigned flags,
+		    unsigned color, struct drm_clip_rect *clips,
+		    unsigned num_clips);
 
 static inline bool tinydrm_is_full_clip(struct drm_clip_rect *clip, u32 width, u32 height)
 {

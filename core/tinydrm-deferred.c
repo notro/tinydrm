@@ -45,10 +45,10 @@ void tinydrm_deferred_end(struct tinydrm_device *tdev)
 }
 EXPORT_SYMBOL(tinydrm_deferred_end);
 
-int tinydrm_fb_dirty(struct drm_framebuffer *fb,
-		     struct drm_gem_cma_object *cma_obj, unsigned flags,
-		     unsigned color, struct drm_clip_rect *clips,
-		     unsigned num_clips)
+int tinydrm_dirtyfb(struct drm_framebuffer *fb,
+		    struct drm_gem_cma_object *cma_obj, unsigned flags,
+		    unsigned color, struct drm_clip_rect *clips,
+		    unsigned num_clips)
 {
 	struct tinydrm_device *tdev = fb->dev->dev_private;
 
@@ -79,7 +79,7 @@ int tinydrm_fb_dirty(struct drm_framebuffer *fb,
 
 	return 0;
 }
-EXPORT_SYMBOL(tinydrm_fb_dirty);
+EXPORT_SYMBOL(tinydrm_dirtyfb);
 
 void tinydrm_merge_clips(struct drm_clip_rect *dst,
 			 struct drm_clip_rect *clips, unsigned num_clips,

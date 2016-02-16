@@ -130,7 +130,7 @@ int mipi_dbi_init(struct device *dev, struct tinydrm_device *tdev)
 	INIT_DELAYED_WORK(&tdev->deferred->dwork, mipi_dbi_deferred_update);
 	tinydrm_reset_clip(&tdev->deferred->fb_clip.clip);
 	tdev->lcdreg->def_width = 8;
-	tdev->fb_dirty = tinydrm_fb_dirty;
+	tdev->dirtyfb = tinydrm_dirtyfb;
 
 	return 0;
 }

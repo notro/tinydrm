@@ -37,7 +37,7 @@ static void tinydrm_fbdev_dirty(struct fb_info *info,
 
 	if (tdev->deferred)
 		tdev->deferred->no_delay = run_now;
-	tdev->fb_dirty(fb, cma_obj, 0, 0, clip, 1);
+	tdev->dirtyfb(fb, cma_obj, 0, 0, clip, 1);
 }
 
 static void tinydrm_fbdev_deferred_io(struct fb_info *info,

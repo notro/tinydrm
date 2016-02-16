@@ -125,7 +125,7 @@ int tinydrm_register(struct device *dev, struct tinydrm_device *tdev)
 
 dev->coherent_dma_mask = DMA_BIT_MASK(32);
 
-	if (WARN_ON(!tdev->fb_dirty))
+	if (WARN_ON(!tdev->dirtyfb))
 		return -EINVAL;
 
 	ddev = drm_dev_alloc(driver, dev);
