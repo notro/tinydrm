@@ -59,21 +59,19 @@ int count = 0;
 count++;
 	}
 
-pr_debug("%s: count=%d\n", __func__, count);
-
 	if (min < max) {
 		clip.x1 = 0;
 		clip.x2 = info->var.xres - 1;
 		clip.y1 = min / info->fix.line_length;
 		clip.y2 = min_t(u32, max / info->fix.line_length,
 				    info->var.yres - 1);
-//		pr_debug("%s: x1=%u, x2=%u, y1=%u, y2=%u\n", __func__, clips[i].x1, clips[i].x2, clips[i].y1, clips[i].y2);
+		pr_debug("%s: x1=%u, x2=%u, y1=%u, y2=%u, count=%d\n", __func__, clip.x1, clip.x2, clip.y1, clip.y2, count);
 		tinydrm_fbdev_dirty(info, &clip, true);
 	}
 }
 
-static void tinydrm_fbdev_fillrect(struct fb_info *info,
-				   const struct fb_fillrect *rect)
+static void tinydrm_fbdev_fb_fillrect(struct fb_info *info,
+				      const struct fb_fillrect *rect)
 {
 	struct drm_clip_rect clip = {
 		.x1 = rect->dx,
@@ -88,8 +86,8 @@ static void tinydrm_fbdev_fillrect(struct fb_info *info,
 	tinydrm_fbdev_dirty(info, &clip, false);
 }
 
-static void tinydrm_fbdev_copyarea(struct fb_info *info,
-				   const struct fb_copyarea *area)
+static void tinydrm_fbdev_fb_copyarea(struct fb_info *info,
+				      const struct fb_copyarea *area)
 {
 	struct drm_clip_rect clip = {
 		.x1 = area->dx,
@@ -104,8 +102,8 @@ static void tinydrm_fbdev_copyarea(struct fb_info *info,
 	tinydrm_fbdev_dirty(info, &clip, false);
 }
 
-static void tinydrm_fbdev_imageblit(struct fb_info *info,
-				    const struct fb_image *image)
+static void tinydrm_fbdev_fb_imageblit(struct fb_info *info,
+				       const struct fb_image *image)
 {
 	struct drm_clip_rect clip = {
 		.x1 = image->dx,
@@ -120,11 +118,31 @@ static void tinydrm_fbdev_imageblit(struct fb_info *info,
 	tinydrm_fbdev_dirty(info, &clip, false);
 }
 
+static ssize_t tinydrm_fbdev_fb_write(struct fb_info *info,
+				      const char __user *buf, size_t count,
+				      loff_t *ppos)
+{
+	struct drm_clip_rect clip = {
+		.x1 = 0,
+		.x2 = info->var.xres - 1,
+		.y1 = 0,
+		.y2 = info->var.yres - 1,
+	};
+	ssize_t ret;
+
+	dev_dbg(info->dev, "%s:\n", __func__);
+	ret = fb_sys_write(info, buf, count, ppos);
+	tinydrm_fbdev_dirty(info, &clip, false);
+
+	return ret;
+}
+
 static struct fb_ops tinydrm_fbdev_cma_ops = {
 	.owner          = THIS_MODULE,
-	.fb_fillrect    = tinydrm_fbdev_fillrect,
-	.fb_copyarea    = tinydrm_fbdev_copyarea,
-	.fb_imageblit   = tinydrm_fbdev_imageblit,
+	.fb_fillrect    = tinydrm_fbdev_fb_fillrect,
+	.fb_copyarea    = tinydrm_fbdev_fb_copyarea,
+	.fb_imageblit   = tinydrm_fbdev_fb_imageblit,
+	.fb_write       = tinydrm_fbdev_fb_write,
 
 	.fb_check_var   = drm_fb_helper_check_var,
 	.fb_set_par     = drm_fb_helper_set_par,
