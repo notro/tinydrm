@@ -42,7 +42,7 @@ void tinydrm_xrgb8888_to_rgb565(u32 *src, u16 *dst, unsigned num_pixels, bool sw
 }
 
 // TODO: Pass in regnr
-int tinydrm_update_rgb565_lcdreg(struct tinydrm_device *tdev, struct drm_framebuffer *fb, struct drm_gem_cma_object *cma_obj, struct drm_clip_rect *clip)
+int tinydrm_update_rgb565_lcdreg(struct tinydrm_device *tdev, struct drm_framebuffer *fb, void *vmem, struct drm_clip_rect *clip)
 {
 	unsigned num_pixels = (clip->x2 - clip->x1 + 1) *
 			      (clip->y2 - clip->y1 + 1);
@@ -59,7 +59,7 @@ int tinydrm_update_rgb565_lcdreg(struct tinydrm_device *tdev, struct drm_framebu
 
 	switch (fb->pixel_format) {
 	case DRM_FORMAT_RGB565:
-		tr.buf = cma_obj->vaddr;
+		tr.buf = vmem;
 		break;
 	case DRM_FORMAT_XRGB8888:
 		buf = kmalloc(num_pixels * sizeof(u16), GFP_KERNEL);
@@ -69,7 +69,7 @@ int tinydrm_update_rgb565_lcdreg(struct tinydrm_device *tdev, struct drm_framebu
 #if defined(__LITTLE_ENDIAN)
 		byte_swap = !lcdreg_bpw_supported(tdev->lcdreg, 16);
 #endif
-		tinydrm_xrgb8888_to_rgb565(cma_obj->vaddr, buf, num_pixels, byte_swap);
+		tinydrm_xrgb8888_to_rgb565(vmem, buf, num_pixels, byte_swap);
 		tr.buf = buf;
 		if (byte_swap) {
 			tr.width = 8;
@@ -102,9 +102,7 @@ static void mipi_dbi_deferred_update(struct work_struct *work)
 	if (!tinydrm_deferred_begin(tdev, &fb_clip))
 		return;
 
-	dev_dbg(tdev->base->dev, "%s: cma_obj=%p, vaddr=%p, paddr=%pad\n", __func__, fb_clip.cma_obj, fb_clip.cma_obj->vaddr, &fb_clip.cma_obj->paddr);
-	dev_dbg(tdev->base->dev, "%s: x1=%u, x2=%u, y1=%u, y2=%u\n", __func__, clip->x1, clip->x2, clip->y1, clip->y2);
-	dev_dbg(tdev->base->dev, "\n");
+	dev_dbg(tdev->base->dev, "%s: vmem=%p, x1=%u, x2=%u, y1=%u, y2=%u\n", __func__, fb_clip.vmem, clip->x1, clip->x2, clip->y1, clip->y2);
 
 	lcdreg_writereg(reg, MIPI_DCS_SET_COLUMN_ADDRESS,
 			(clip->x1 >> 8) & 0xFF, clip->x1 & 0xFF,
@@ -113,7 +111,7 @@ static void mipi_dbi_deferred_update(struct work_struct *work)
 			(clip->y1 >> 8) & 0xFF, clip->y1 & 0xFF,
 			(clip->y2 >> 8) & 0xFF, clip->y2 & 0xFF);
 
-	ret = tinydrm_update_rgb565_lcdreg(tdev, fb_clip.fb, fb_clip.cma_obj, clip);
+	ret = tinydrm_update_rgb565_lcdreg(tdev, fb_clip.fb, fb_clip.vmem, clip);
 	if (ret)
 		dev_err_once(tdev->base->dev, "Failed to update display %d\n", ret);
 

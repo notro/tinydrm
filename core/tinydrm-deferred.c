@@ -10,8 +10,8 @@ bool tinydrm_deferred_begin(struct tinydrm_device *tdev,
 	spin_lock(&deferred->lock);
 	*fb_clip = deferred->fb_clip;
 	tinydrm_reset_clip(&deferred->fb_clip.clip);
-	deferred->fb_clip.cma_obj = NULL;
 	deferred->fb_clip.fb = NULL;
+	deferred->fb_clip.vmem = NULL;
 	spin_unlock(&deferred->lock);
 
 	/* The crtc might have been disabled by the time we get here */
@@ -45,8 +45,7 @@ void tinydrm_deferred_end(struct tinydrm_device *tdev)
 }
 EXPORT_SYMBOL(tinydrm_deferred_end);
 
-int tinydrm_dirtyfb(struct drm_framebuffer *fb,
-		    struct drm_gem_cma_object *cma_obj, unsigned flags,
+int tinydrm_dirtyfb(struct drm_framebuffer *fb, void *vmem, unsigned flags,
 		    unsigned color, struct drm_clip_rect *clips,
 		    unsigned num_clips)
 {
@@ -58,14 +57,14 @@ int tinydrm_dirtyfb(struct drm_framebuffer *fb,
 	bool no_delay = deferred->no_delay;
 	unsigned long delay;
 
-	dev_dbg(tdev->base->dev, "%s(fb = %p, cma_obj = %p, clips = %p, num_clips = %u, no_delay = %u)\n", __func__, fb, cma_obj, clips, num_clips, no_delay);
+	dev_dbg(tdev->base->dev, "%s(fb = %p, vmem = %p, clips = %p, num_clips = %u, no_delay = %u)\n", __func__, fb, vmem, clips, num_clips, no_delay);
 
-	if (!cma_obj || !fb)
+	if (!vmem || !fb)
 		return -EINVAL;
 
 	spin_lock(&deferred->lock);
 	fb_clip->fb = fb;
-	fb_clip->cma_obj = cma_obj;
+	fb_clip->vmem = vmem;
 	tinydrm_merge_clips(&fb_clip->clip, clips, num_clips, flags,
 			    fb->width, fb->height);
 	if (tinydrm_is_full_clip(&fb_clip->clip, fb->width, fb->height))
