@@ -24,20 +24,13 @@ static void tinydrm_fbdev_dirty(struct fb_info *info,
 	struct drm_fb_helper *helper = info->par;
 	struct tinydrm_device *tdev = helper->dev->dev_private;
 	struct drm_framebuffer *fb = helper->fb;
-	struct drm_gem_cma_object *cma_obj;
 
 	if (tdev->plane.fb != fb)
 		return;
 
-	cma_obj = drm_fb_cma_get_gem_obj(fb, 0);
-	if (!cma_obj) {
-		dev_err_once(info->dev, "Can't get cma_obj\n");
-		return;
-	}
-
 	if (tdev->deferred)
 		tdev->deferred->no_delay = run_now;
-	tdev->dirtyfb(fb, cma_obj->vaddr, 0, 0, clip, 1);
+	tdev->dirtyfb(fb, info->screen_buffer, 0, 0, clip, 1);
 }
 
 static void tinydrm_fbdev_deferred_io(struct fb_info *info,
