@@ -23,13 +23,13 @@ static void tinydrm_framebuffer_destroy(struct drm_framebuffer *fb)
 	struct tinydrm_framebuffer *tinydrm_fb = to_tinydrm_framebuffer(fb);
 	struct tinydrm_device *tdev = fb->dev->dev_private;
 
-	DRM_DEBUG_KMS("drm_framebuffer = %p, tinydrm_fb->obj = %p\n", fb, tinydrm_fb->obj);
+	DRM_DEBUG_KMS("fb = %p, cma_obj = %p\n", fb, tinydrm_fb->cma_obj);
 
 	if (tdev->deferred)
 		flush_delayed_work(&tdev->deferred->dwork);
 
-	if (tinydrm_fb->obj)
-		drm_gem_object_unreference_unlocked(tinydrm_fb->obj);
+	if (tinydrm_fb->cma_obj)
+		drm_gem_object_unreference_unlocked(&tinydrm_fb->cma_obj->base);
 
 	drm_framebuffer_cleanup(fb);
 	kfree(tinydrm_fb);
@@ -78,7 +78,6 @@ tinydrm_fb_create(struct drm_device *ddev, struct drm_file *file_priv,
 	if (!tinydrm_fb)
 		return NULL;
 
-	tinydrm_fb->obj = obj;
 	tinydrm_fb->cma_obj = to_drm_gem_cma_obj(obj);
 
 	ret = drm_framebuffer_init(ddev, &tinydrm_fb->base, &tinydrm_fb_funcs);

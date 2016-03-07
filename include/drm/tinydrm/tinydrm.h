@@ -22,7 +22,6 @@ struct lcdreg;
 
 struct tinydrm_framebuffer {
 	struct drm_framebuffer base;
-struct drm_gem_object *obj;
 	struct drm_gem_cma_object *cma_obj;
 };
 
