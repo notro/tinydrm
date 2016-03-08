@@ -9,6 +9,7 @@
  */
 
 #include <drm/drmP.h>
+#include <drm/drm_crtc_helper.h>
 #include <drm/drm_fb_cma_helper.h>
 #include <drm/drm_fb_helper.h>
 #include <drm/drm_gem_cma_helper.h>
@@ -17,6 +18,22 @@
 #include "internal.h"
 
 #define DEFAULT_DEFIO_DELAY HZ/30
+
+struct tinydrm_fbdev {
+	struct drm_fb_helper fb_helper;
+	struct drm_framebuffer fb;
+	void *vmem;
+};
+
+static inline struct tinydrm_fbdev *helper_to_fbdev(struct drm_fb_helper *helper)
+{
+	return container_of(helper, struct tinydrm_fbdev, fb_helper);
+}
+
+static inline struct tinydrm_fbdev *fb_to_fbdev(struct drm_framebuffer *fb)
+{
+	return container_of(fb, struct tinydrm_fbdev, fb);
+}
 
 static void tinydrm_fbdev_dirty(struct fb_info *info,
 				struct drm_clip_rect *clip, bool run_now)
@@ -130,133 +147,199 @@ static ssize_t tinydrm_fbdev_fb_write(struct fb_info *info,
 	return ret;
 }
 
-static struct fb_ops tinydrm_fbdev_cma_ops = {
-	.owner          = THIS_MODULE,
-	.fb_fillrect    = tinydrm_fbdev_fb_fillrect,
-	.fb_copyarea    = tinydrm_fbdev_fb_copyarea,
-	.fb_imageblit   = tinydrm_fbdev_fb_imageblit,
-	.fb_write       = tinydrm_fbdev_fb_write,
-
-	.fb_check_var   = drm_fb_helper_check_var,
-	.fb_set_par     = drm_fb_helper_set_par,
-	.fb_blank       = drm_fb_helper_blank,
-	.fb_pan_display = drm_fb_helper_pan_display,
-	.fb_setcmap     = drm_fb_helper_setcmap,
-};
-
-static int tinydrm_fbdev_event_notify(struct notifier_block *self,
-				      unsigned long action, void *data)
+static void tinydrm_fbdev_fb_destroy(struct drm_framebuffer *fb)
 {
-	struct fb_event *event = data;
-	struct fb_info *info = event->info;
-	struct drm_fb_helper *helper = info->par;
-	struct tinydrm_device *tdev = helper->dev->dev_private;
-	unsigned long delay = DEFAULT_DEFIO_DELAY;
-	struct fb_ops *fbops;
-
-	DRM_DEBUG("info=%p\n", info);
-	DRM_DEBUG("helper->fbdev=%p\n", helper->fbdev);
-	DRM_DEBUG("helper->dev=%p\n", helper->dev);
-	DRM_DEBUG("tdev->base=%p\n", tdev->base);
-
-	/* Make sure it's a tinydrm fbdev */
-	if (!(info == helper->fbdev && helper->dev == tdev->base))
-		return NOTIFY_DONE;
-
-	DRM_DEBUG("xres=%u, yres=%u\n", info->var.xres, info->var.yres);
-	DRM_DEBUG("action=%lu, info=%p\n", action, info);
-
-	switch (action) {
-	case FB_EVENT_FB_REGISTERED:
-		/* console and fb_info are locked at this point */
-
-		/* This notifier can be registered multiple times */
-		if (info->fbdefio)
-			return NOTIFY_DONE;
-
-		info->flags |= FBINFO_VIRTFB;
-		strcpy(info->fix.id, "tinydrm");
-
-		/*
-		 * Without this change, the get_page() call in
-		 * fb_deferred_io_fault() results in an oops:
-		 *   Unable to handle kernel paging request at virtual address
-		 */
-		info->fix.smem_start = __pa(info->screen_base);
-
-		/*
-		 * A per device fbops structure is needed because
-		 * fb_deferred_io_cleanup() clears fbops.fb_mmap
-		 */
-		fbops = devm_kzalloc(info->device, sizeof(*fbops), GFP_KERNEL);
-		if (!fbops) {
-			dev_err(info->device, "Could not allocate fbops\n");
-			return notifier_from_errno(-ENOMEM);
-		}
-
-		*fbops = tinydrm_fbdev_cma_ops;
-		info->fbops = fbops;
-
-		/* A per device structure is needed for individual delays */
-		info->fbdefio = devm_kzalloc(info->device,
-					     sizeof(*info->fbdefio),
-					     GFP_KERNEL);
-		if (!info->fbdefio) {
-			dev_err(info->device, "Could not allocate fbdefio\n");
-			return notifier_from_errno(-ENOMEM);
-		}
-
-		if (tdev->deferred)
-			delay = msecs_to_jiffies(tdev->deferred->defer_ms);
-		/* delay=0 is turned into delay=HZ, so use 1 as a minimum */
-		info->fbdefio->delay = delay ? : 1;
-		info->fbdefio->deferred_io = tinydrm_fbdev_deferred_io;
-		fb_deferred_io_init(info);
-		break;
-	case FB_EVENT_FB_UNREGISTERED:
-		if (info->fbdefio) {
-			fb_deferred_io_cleanup(info);
-			info->fbdefio = NULL;
-		}
-		break;
-	}
-
-	return NOTIFY_DONE;
 }
 
-static struct notifier_block tinydrm_fbdev_event_notifier = {
-	.notifier_call  = tinydrm_fbdev_event_notify,
-	.priority = 100, /* place before the fbcon notifier which is 0 */
+static struct drm_framebuffer_funcs tinydrm_fbdev_fb_funcs = {
+	.destroy = tinydrm_fbdev_fb_destroy,
+};
+
+static int tinydrm_fbdev_create(struct drm_fb_helper *helper,
+				struct drm_fb_helper_surface_size *sizes)
+{
+	struct tinydrm_fbdev *fbdev = helper_to_fbdev(helper);
+	struct drm_mode_fb_cmd2 mode_cmd = { 0 };
+	struct drm_device *dev = helper->dev;
+	struct tinydrm_device *tdev = dev->dev_private;
+	struct fb_deferred_io *fbdefio;
+	struct drm_framebuffer *fb;
+	unsigned int bytes_per_pixel = DIV_ROUND_UP(sizes->surface_bpp, 8);
+	struct fb_ops *fbops;
+	struct fb_info *fbi;
+	size_t size;
+	char *screen_buffer;
+	int ret;
+
+	mode_cmd.width = sizes->surface_width;
+	mode_cmd.height = sizes->surface_height;
+	mode_cmd.pitches[0] = sizes->surface_width * bytes_per_pixel;
+	mode_cmd.pixel_format = drm_mode_legacy_fb_format(sizes->surface_bpp,
+							sizes->surface_depth);
+	size = mode_cmd.pitches[0] * mode_cmd.height;
+
+	/*
+	 * A per device fbops structure is needed because
+	 * fb_deferred_io_cleanup() clears fbops.fb_mmap
+	 */
+	fbops = devm_kzalloc(dev->dev, sizeof(*fbops), GFP_KERNEL);
+	if (!fbops) {
+		dev_err(dev->dev, "Failed to allocate fbops\n");
+		return -ENOMEM;
+	}
+
+	/* A per device structure is needed for individual delays */
+	fbdefio = devm_kzalloc(dev->dev, sizeof(*fbdefio), GFP_KERNEL);
+	if (!fbdefio) {
+		dev_err(dev->dev, "Could not allocate fbdefio\n");
+		return -ENOMEM;
+	}
+
+	fbi = drm_fb_helper_alloc_fbi(helper);
+	if (IS_ERR(fbi)) {
+		dev_err(dev->dev, "Could not allocate fbi\n");
+		return PTR_ERR(fbi);
+	}
+
+	screen_buffer = vzalloc(size);
+	if (!screen_buffer) {
+		dev_err(dev->dev, "Failed to allocate fbdev screen buffer.\n");
+		ret = -ENOMEM;
+		goto err_fb_info_destroy;
+	}
+
+	fb = &fbdev->fb;
+	helper->fb = fb;
+	drm_helper_mode_fill_fb_struct(fb, &mode_cmd);
+	ret = drm_framebuffer_init(dev, fb, &tinydrm_fbdev_fb_funcs);
+	if (ret) {
+		dev_err(dev->dev, "failed to init framebuffer: %d\n", ret);
+		vfree(screen_buffer);
+		goto err_fb_info_destroy;
+	}
+
+	DRM_DEBUG_KMS("fbdev FB ID: %d, vmem = %p\n", fb->base.id, fbdev->vmem);
+
+	fbi->par = helper;
+	fbi->flags = FBINFO_FLAG_DEFAULT | FBINFO_VIRTFB;
+	strcpy(fbi->fix.id, "tinydrm");
+
+	fbops->owner          = THIS_MODULE,
+	fbops->fb_fillrect    = tinydrm_fbdev_fb_fillrect,
+	fbops->fb_copyarea    = tinydrm_fbdev_fb_copyarea,
+	fbops->fb_imageblit   = tinydrm_fbdev_fb_imageblit,
+	fbops->fb_write       = tinydrm_fbdev_fb_write,
+	fbops->fb_check_var   = drm_fb_helper_check_var,
+	fbops->fb_set_par     = drm_fb_helper_set_par,
+	fbops->fb_blank       = drm_fb_helper_blank,
+	fbops->fb_setcmap     = drm_fb_helper_setcmap,
+	fbi->fbops = fbops;
+
+	drm_fb_helper_fill_fix(fbi, fb->pitches[0], fb->depth);
+	drm_fb_helper_fill_var(fbi, helper, sizes->fb_width, sizes->fb_height);
+
+	fbdev->vmem = screen_buffer;
+	fbi->screen_buffer = screen_buffer;
+	fbi->screen_size = size;
+	fbi->fix.smem_len = size;
+
+	if (tdev->deferred)
+		fbdefio->delay = msecs_to_jiffies(tdev->deferred->defer_ms);
+	else
+		fbdefio->delay = DEFAULT_DEFIO_DELAY;
+	/* delay=0 is turned into delay=HZ, so use 1 as a minimum */
+	if (!fbdefio->delay)
+		fbdefio->delay = 1;
+	fbdefio->deferred_io = tinydrm_fbdev_deferred_io;
+	fbi->fbdefio = fbdefio;
+	fb_deferred_io_init(fbi);
+
+	return 0;
+
+err_fb_info_destroy:
+	drm_fb_helper_release_fbi(helper);
+
+	return ret;
+}
+
+static const struct drm_fb_helper_funcs tinydrm_fb_helper_funcs = {
+	.fb_probe = tinydrm_fbdev_create,
 };
 
 int tinydrm_fbdev_init(struct tinydrm_device *tdev)
 {
-	struct drm_device *ddev = tdev->base;
-	struct drm_fbdev_cma *fbdev;
+	struct drm_device *dev = tdev->base;
+	struct drm_fb_helper *helper;
+	struct tinydrm_fbdev *fbdev;
+	int ret;
 
-	/*
-	 * There's no race problem with 2 devices being here at the same
-	 * time since the same notifier can be registered multiple times.
-	 */
-	fb_register_client(&tinydrm_fbdev_event_notifier);
-	fbdev = drm_fbdev_cma_init(ddev, 16, ddev->mode_config.num_crtc,
-				   ddev->mode_config.num_connector);
-	fb_unregister_client(&tinydrm_fbdev_event_notifier);
-	if (IS_ERR(fbdev))
-		return PTR_ERR(fbdev);
+	DRM_DEBUG_KMS("IN\n");
 
-	tdev->fbdev_cma = fbdev;
+	fbdev = devm_kzalloc(dev->dev, sizeof(*fbdev), GFP_KERNEL);
+	if (!fbdev) {
+		dev_err(dev->dev, "Failed to allocate drm fbdev.\n");
+		return -ENOMEM;
+	}
+
+	helper = &fbdev->fb_helper;
+
+	drm_fb_helper_prepare(dev, helper, &tinydrm_fb_helper_funcs);
+
+	ret = drm_fb_helper_init(dev, helper, 1, 1);
+	if (ret < 0) {
+		dev_err(dev->dev, "Failed to initialize drm fb helper.\n");
+		return ret;
+	}
+
+	ret = drm_fb_helper_single_add_all_connectors(helper);
+	if (ret < 0) {
+		dev_err(dev->dev, "Failed to add connectors.\n");
+		goto err_drm_fb_helper_fini;
+
+	}
+
+	ret = drm_fb_helper_initial_config(helper, 16);
+	if (ret < 0) {
+		dev_err(dev->dev, "Failed to set initial hw configuration.\n");
+		goto err_drm_fb_helper_fini;
+	}
+
+	tdev->fbdev = fbdev;
+	DRM_DEBUG_KMS("OUT\n");
 
 	return 0;
+
+err_drm_fb_helper_fini:
+	drm_fb_helper_fini(helper);
+
+	return ret;
 }
 
 void tinydrm_fbdev_fini(struct tinydrm_device *tdev)
 {
-	if (!tdev->fbdev_cma)
-		return;
+	struct tinydrm_fbdev *fbdev = tdev->fbdev;
+	struct drm_fb_helper *fb_helper = &fbdev->fb_helper;
 
-	fb_register_client(&tinydrm_fbdev_event_notifier);
-	drm_fbdev_cma_fini(tdev->fbdev_cma);
-	tdev->fbdev_cma = NULL;
-	fb_unregister_client(&tinydrm_fbdev_event_notifier);
+	DRM_DEBUG_KMS("IN\n");
+
+	drm_fb_helper_unregister_fbi(fb_helper);
+	fb_deferred_io_cleanup(fb_helper->fbdev);
+	drm_fb_helper_release_fbi(fb_helper);
+	drm_fb_helper_fini(fb_helper);
+
+	drm_framebuffer_unregister_private(&fbdev->fb);
+	drm_framebuffer_cleanup(&fbdev->fb);
+
+	vfree(fbdev->vmem);
+
+	tdev->fbdev = NULL;
+	DRM_DEBUG_KMS("OUT\n");
 }
+
+/* TODO: pass tdev instead ? */
+void tinydrm_fbdev_restore_mode(struct tinydrm_fbdev *fbdev)
+{
+	if (fbdev)
+		drm_fb_helper_restore_fbdev_mode_unlocked(&fbdev->fb_helper);
+}
+EXPORT_SYMBOL(tinydrm_fbdev_restore_mode);

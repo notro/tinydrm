@@ -16,6 +16,7 @@
 #include <drm/drm_panel.h>
 
 struct tinydrm_deferred;
+struct tinydrm_fbdev;
 struct spi_device;
 struct regulator;
 struct lcdreg;
@@ -30,7 +31,7 @@ struct tinydrm_device {
 	u32 width, height;
 	struct drm_panel panel;
 	struct drm_plane plane;
-	struct drm_fbdev_cma *fbdev_cma;
+	struct tinydrm_fbdev *fbdev;
 	struct tinydrm_deferred *deferred;
 	struct backlight_device *backlight;
 	struct regulator *regulator;

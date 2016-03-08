@@ -52,7 +52,7 @@ static void tinydrm_lastclose(struct drm_device *ddev)
 	struct tinydrm_device *tdev = ddev->dev_private;
 
 	DRM_DEBUG_KMS("\n");
-	tinydrm_fbdev_cma_restore_mode(tdev->fbdev_cma);
+	tinydrm_fbdev_restore_mode(tdev->fbdev);
 }
 
 static const struct file_operations tinydrm_fops = {
@@ -103,6 +103,9 @@ static struct drm_driver tinydrm_driver = {
 void tinydrm_release(struct tinydrm_device *tdev)
 {
 	DRM_DEBUG_KMS("\n");
+
+	if (tdev->deferred)
+		cancel_delayed_work_sync(&tdev->deferred->dwork);
 
 	tinydrm_fbdev_fini(tdev);
 
