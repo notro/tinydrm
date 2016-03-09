@@ -67,39 +67,12 @@ static void tinydrm_encoder_enable(struct drm_encoder *encoder)
 {
 }
 
-/*
- * TODO: Check if this code is needed. Copied from another driver
- *       If needed maybe it can be moved to crtc atomic check
- */
 static int tinydrm_encoder_atomic_check(struct drm_encoder *encoder,
 					struct drm_crtc_state *crtc_state,
 					struct drm_connector_state *conn_state)
 {
-	struct drm_display_mode *adjusted_mode = &crtc_state->adjusted_mode;
-	const struct drm_display_mode *mode = &crtc_state->mode;
-	struct drm_connector *connector = conn_state->connector;
-	const struct drm_display_mode *panel_mode;
-	struct drm_device *ddev = encoder->dev;
-
-	if (list_empty(&connector->modes)) {
-		dev_dbg(ddev->dev, "encoder: empty modes list\n");
-		return -EINVAL;
-	}
-
-	panel_mode = list_first_entry(&connector->modes,
-				      struct drm_display_mode, head);
-
-	/* We're not allowed to modify the resolution. */
-	if (mode->hdisplay != panel_mode->hdisplay ||
-	    mode->vdisplay != panel_mode->vdisplay)
-		return -EINVAL;
-
-	/* The flat panel mode is fixed, just copy it to the adjusted mode. */
-	drm_mode_copy(adjusted_mode, panel_mode);
-
 	return 0;
 }
-
 
 static const struct drm_encoder_helper_funcs tinydrm_encoder_helper_funcs = {
 	.disable = tinydrm_encoder_disable,
@@ -137,12 +110,16 @@ static const struct drm_crtc_funcs tinydrm_crtc_funcs = {
 int tinydrm_simple_crtc_create(struct drm_device *dev,
 	struct drm_plane *primary, struct drm_plane *cursor,
 	const struct drm_crtc_helper_funcs *crtc_helper_funcs,
-	const struct drm_connector_helper_funcs *connector_helper_funcs)
+	const struct drm_encoder_helper_funcs *enc_helper_funcs, int enc_type,
+	const struct drm_connector_helper_funcs *c_helper_funcs, int c_type)
 {
 	struct drm_connector *connector;
 	struct drm_encoder *encoder;
 	struct drm_crtc *crtc;
 	int ret;
+
+	if (!enc_helper_funcs)
+		enc_helper_funcs = &tinydrm_encoder_helper_funcs;
 
 	connector = kzalloc(sizeof(*connector), GFP_KERNEL);
 	encoder = kzalloc(sizeof(*encoder), GFP_KERNEL);
@@ -159,13 +136,14 @@ int tinydrm_simple_crtc_create(struct drm_device *dev,
 		goto error_free;
 
 	encoder->possible_crtcs = 1 << drm_crtc_index(crtc);
-	drm_encoder_helper_add(encoder, &tinydrm_encoder_helper_funcs);
-	ret = drm_encoder_init(dev, encoder, &tinydrm_encoder_funcs, DRM_MODE_ENCODER_VIRTUAL);
+	drm_encoder_helper_add(encoder, enc_helper_funcs);
+	ret = drm_encoder_init(dev, encoder, &tinydrm_encoder_funcs, enc_type);
 	if (ret)
 		goto error_free;
 
-	drm_connector_helper_add(connector, connector_helper_funcs);
-	ret = drm_connector_init(dev, connector, &tinydrm_connector_funcs, DRM_MODE_CONNECTOR_VIRTUAL);
+	drm_connector_helper_add(connector, c_helper_funcs);
+	ret = drm_connector_init(dev, connector, &tinydrm_connector_funcs,
+				 c_type);
 	if (ret)
 		goto error_free;
 

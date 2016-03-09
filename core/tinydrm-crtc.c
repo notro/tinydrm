@@ -72,5 +72,8 @@ static const struct drm_crtc_helper_funcs tinydrm_crtc_helper_funcs = {
 int tinydrm_crtc_create(struct tinydrm_device *tdev)
 {
 	return tinydrm_simple_crtc_create(tdev->base, &tdev->plane, NULL,
-		&tinydrm_crtc_helper_funcs, &tinydrm_connector_helper_funcs);
+					  &tinydrm_crtc_helper_funcs,
+					  NULL, DRM_MODE_ENCODER_NONE,
+					  &tinydrm_connector_helper_funcs,
+					  DRM_MODE_CONNECTOR_VIRTUAL);
 }

@@ -8,6 +8,7 @@
  */
 
 struct drm_connector_helper_funcs;
+struct drm_encoder_helper_funcs;
 struct drm_crtc_helper_funcs;
 
 struct drm_crtc *tinydrm_get_first_crtc(struct drm_device *dev);
@@ -15,7 +16,8 @@ struct drm_connector *tinydrm_get_first_connector(struct drm_device *dev);
 int tinydrm_simple_crtc_create(struct drm_device *dev,
 	struct drm_plane *primary, struct drm_plane *cursor,
 	const struct drm_crtc_helper_funcs *crtc_helper_funcs,
-	const struct drm_connector_helper_funcs *connector_helper_funcs);
+	const struct drm_encoder_helper_funcs *enc_helper_funcs, int enc_type,
+	const struct drm_connector_helper_funcs *c_helper_funcs, int c_type);
 int tinydrm_crtc_create(struct tinydrm_device *tdev);
 
 static inline bool tinydrm_active(struct tinydrm_device *tdev)
