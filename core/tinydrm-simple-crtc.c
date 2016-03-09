@@ -32,6 +32,11 @@ struct drm_connector *tinydrm_get_first_connector(struct drm_device *dev)
 	return NULL;
 }
 
+struct drm_encoder *tinydrm_connector_best_encoder(struct drm_connector *conn)
+{
+	return drm_encoder_find(conn->dev, conn->encoder_ids[0]);
+}
+
 static enum drm_connector_status
 tinydrm_connector_detect(struct drm_connector *connector, bool force)
 {
@@ -107,19 +112,42 @@ static const struct drm_crtc_funcs tinydrm_crtc_funcs = {
 	.atomic_destroy_state = drm_atomic_helper_crtc_destroy_state,
 };
 
+/**
+ * tinydrm_simple_crtc_create - Create a single crtc/encoder/connector setup
+ * @dev: DRM device
+ * @primary: Primary plane for CRTC
+ * @cursor: Cursor plane for CRTC
+ * @crtc_helper_funcs: CRTC helper functions
+ * @encoder_helper_funcs: Optional encoder helper functions
+ *                        The default implementation provides empty functions.
+ * @encoder_type: User visible type of the encoder
+ * @connector_helper_funcs: Connector helper functions
+ * @connector_type: User visible type of the connector
+ *
+ * Initialises a single crtc/encoder/connector setup using the provided
+ * planes and helper functions.
+ *
+ * Connector .detect() returns the status property unless if
+ * drm_device_is_unplugged() it will return disconnected.
+ *
+ * Returns:
+ * Zero on success, error code on failure.
+ */
 int tinydrm_simple_crtc_create(struct drm_device *dev,
 	struct drm_plane *primary, struct drm_plane *cursor,
 	const struct drm_crtc_helper_funcs *crtc_helper_funcs,
-	const struct drm_encoder_helper_funcs *enc_helper_funcs, int enc_type,
-	const struct drm_connector_helper_funcs *c_helper_funcs, int c_type)
+	const struct drm_encoder_helper_funcs *encoder_helper_funcs,
+	int encoder_type,
+	const struct drm_connector_helper_funcs *connector_helper_funcs,
+	int connector_type)
 {
 	struct drm_connector *connector;
 	struct drm_encoder *encoder;
 	struct drm_crtc *crtc;
 	int ret;
 
-	if (!enc_helper_funcs)
-		enc_helper_funcs = &tinydrm_encoder_helper_funcs;
+	if (!encoder_helper_funcs)
+		encoder_helper_funcs = &tinydrm_encoder_helper_funcs;
 
 	connector = kzalloc(sizeof(*connector), GFP_KERNEL);
 	encoder = kzalloc(sizeof(*encoder), GFP_KERNEL);
@@ -136,14 +164,15 @@ int tinydrm_simple_crtc_create(struct drm_device *dev,
 		goto error_free;
 
 	encoder->possible_crtcs = 1 << drm_crtc_index(crtc);
-	drm_encoder_helper_add(encoder, enc_helper_funcs);
-	ret = drm_encoder_init(dev, encoder, &tinydrm_encoder_funcs, enc_type);
+	drm_encoder_helper_add(encoder, encoder_helper_funcs);
+	ret = drm_encoder_init(dev, encoder, &tinydrm_encoder_funcs,
+			       encoder_type);
 	if (ret)
 		goto error_free;
 
-	drm_connector_helper_add(connector, c_helper_funcs);
+	drm_connector_helper_add(connector, connector_helper_funcs);
 	ret = drm_connector_init(dev, connector, &tinydrm_connector_funcs,
-				 c_type);
+				 connector_type);
 	if (ret)
 		goto error_free;
 
@@ -164,3 +193,22 @@ error_free:
 
 	return ret;
 }
+
+/*
+ * Another way is to create a new function subset:
+ *
+
+struct drm_simple_crtc_funcs  {
+	void (*disable)(struct drm_crtc *crtc);
+	void (*enable)(struct drm_crtc *crtc);
+	int (*get_modes)(struct drm_connector *connector);
+	enum drm_connector_status (*detect)(struct drm_connector *connector,
+					    bool force);
+[...]
+};
+
+int drm_simple_crtc_create(struct drm_device *dev, struct drm_plane *primary,
+			   struct drm_plane *cursor, int connector_type,
+			   const struct drm_simple_crtc_funcs *funcs);
+
+*/

@@ -34,11 +34,6 @@ static int tinydrm_connector_get_modes(struct drm_connector *connector)
 	return 1;
 }
 
-static struct drm_encoder *tinydrm_connector_best_encoder(struct drm_connector *connector)
-{
-	return drm_encoder_find(connector->dev, connector->encoder_ids[0]);
-}
-
 static const struct drm_connector_helper_funcs tinydrm_connector_helper_funcs = {
 	.get_modes = tinydrm_connector_get_modes,
 	.best_encoder = tinydrm_connector_best_encoder,
