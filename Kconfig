@@ -10,6 +10,9 @@ menuconfig DRM_TINYDRM
 	  Choose this option if you have a tinydrm supported display.
 	  If M is selected the module will be called tinydrm.
 
+config TINYDRM_MIPI_DBI
+	tristate
+
 config TINYDRM_ADAFRUIT_TFT
 	tristate "DRM driver for Adafruit SPI TFT displays"
 	depends on DRM_TINYDRM && SPI
@@ -20,8 +23,5 @@ config TINYDRM_ADAFRUIT_TFT
 	    2.8" PiTFT 320x240 for Raspberry Pi - ILI9340 (#1601)
 	    2.2" Color TFT LCD display - HX8340BN, 9-bit mode (#797)
 	    1.8" Color TFT LCD display - ST7735R (#358)
-
-config TINYDRM_MIPI_DBI
-	tristate
 
 source "drivers/gpu/drm/tinydrm/lcdreg/Kconfig"
