@@ -195,6 +195,33 @@ error_free:
 }
 
 /*
+ * If this were to be used as a DRM library module, it can be a problem that
+ * the connector detect() function is passive and can't probe the hardware.
+ *
+ * This can be solved by adding a detect function to the helper layer and a
+ * helper function:
+
+struct drm_connector_helper_funcs {
+[...]
+	enum drm_connector_status (*detect)(struct drm_connector *connector,
+					    bool force);
+};
+
+enum drm_connector_status drm_helper_connector_detect(struct drm_connector *connector,
+						      bool force)
+{
+	const struct drm_connector_helper_funcs *funcs = connector->helper_private;
+
+	if (funcs && funcs->detect)
+		return funcs->detect(connector, force);
+
+	return connector->status;
+}
+
+*/
+
+
+/*
  * Another way is to create a new function subset:
  *
 
