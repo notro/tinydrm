@@ -19,6 +19,7 @@
 static int tinydrm_load(struct drm_device *ddev, unsigned long flags)
 {
 	struct tinydrm_device *tdev = ddev->dev_private;
+	struct drm_connector *connector;
 	int ret;
 
 	DRM_DEBUG_KMS("\n");
@@ -33,10 +34,13 @@ static int tinydrm_load(struct drm_device *ddev, unsigned long flags)
 	if (ret)
 		return ret;
 
-	tinydrm_get_first_connector(ddev)->status = connector_status_connected;
+	connector = list_first_entry(&ddev->mode_config.connector_list,
+				     typeof(*connector), head);
+	connector->status = connector_status_connected;
+
 	drm_panel_init(&tdev->panel);
 	drm_panel_add(&tdev->panel);
-	drm_panel_attach(&tdev->panel, tinydrm_get_first_connector(ddev));
+	drm_panel_attach(&tdev->panel, connector);
 
 	drm_mode_config_reset(ddev);
 

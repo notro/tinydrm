@@ -2,7 +2,7 @@ ccflags-y += -I$(src)/../include
 
 obj-$(CONFIG_DRM_TINYDRM)		+= tinydrm.o
 tinydrm-y				+= tinydrm-core.o
-tinydrm-y				+= tinydrm-simple-crtc.o tinydrm-crtc.o
+tinydrm-y				+= tinydrm-crtc.o
 tinydrm-y				+= tinydrm-framebuffer.o
 tinydrm-y				+= tinydrm-plane.o
 tinydrm-y				+= tinydrm-helpers.o
