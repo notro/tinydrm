@@ -16,41 +16,6 @@
 
 #include "internal.h"
 
-static int tinydrm_load(struct drm_device *ddev, unsigned long flags)
-{
-	struct tinydrm_device *tdev = ddev->dev_private;
-	struct drm_connector *connector;
-	int ret;
-
-	DRM_DEBUG_KMS("\n");
-
-	tinydrm_mode_config_init(tdev);
-
-	ret = tinydrm_plane_init(tdev);
-	if (ret)
-		return ret;
-
-	ret = tinydrm_crtc_create(tdev);
-	if (ret)
-		return ret;
-
-	connector = list_first_entry(&ddev->mode_config.connector_list,
-				     typeof(*connector), head);
-	connector->status = connector_status_connected;
-
-	drm_panel_init(&tdev->panel);
-	drm_panel_add(&tdev->panel);
-	drm_panel_attach(&tdev->panel, connector);
-
-	drm_mode_config_reset(ddev);
-
-	ret = tinydrm_fbdev_init(tdev);
-	if (ret)
-		return ret;
-
-	return 0;
-}
-
 static void tinydrm_lastclose(struct drm_device *ddev)
 {
 	struct tinydrm_device *tdev = ddev->dev_private;
@@ -76,12 +41,7 @@ static const struct file_operations tinydrm_fops = {
 static struct drm_driver tinydrm_driver = {
 	.driver_features	= DRIVER_GEM | DRIVER_MODESET | DRIVER_PRIME
 				| DRIVER_ATOMIC,
-	.load			= tinydrm_load,
 	.lastclose		= tinydrm_lastclose,
-//	.unload			= tinydrm_unload,
-	.get_vblank_counter	= drm_vblank_count,
-//	.enable_vblank		= tinydrm_enable_vblank,
-//	.disable_vblank		= tinydrm_disable_vblank,
 	.gem_free_object	= drm_gem_cma_free_object,
 	.gem_vm_ops		= &drm_gem_cma_vm_ops,
 	.prime_handle_to_fd	= drm_gem_prime_handle_to_fd,
@@ -104,7 +64,7 @@ static struct drm_driver tinydrm_driver = {
 	.minor			= 0,
 };
 
-void tinydrm_release(struct tinydrm_device *tdev)
+void tinydrm_unregister(struct tinydrm_device *tdev)
 {
 	DRM_DEBUG_KMS("\n");
 
@@ -120,15 +80,16 @@ void tinydrm_release(struct tinydrm_device *tdev)
 	drm_dev_unregister(tdev->base);
 	drm_dev_unref(tdev->base);
 }
-EXPORT_SYMBOL(tinydrm_release);
+EXPORT_SYMBOL(tinydrm_unregister);
 
 int tinydrm_register(struct device *dev, struct tinydrm_device *tdev)
 {
 	struct drm_driver *driver = &tinydrm_driver;
+	struct drm_connector *connector;
 	struct drm_device *ddev;
 	int ret;
 
-	dev_info(dev, "%s\n", __func__);
+	DRM_DEBUG_KMS("\n");
 
 dev->coherent_dma_mask = DMA_BIT_MASK(32);
 
@@ -150,6 +111,29 @@ dev->coherent_dma_mask = DMA_BIT_MASK(32);
 	if (ret)
 		goto err_free;
 
+	tinydrm_mode_config_init(tdev);
+	ret = tinydrm_plane_init(tdev);
+	if (ret)
+		goto err_free;
+
+	ret = tinydrm_crtc_create(tdev);
+	if (ret)
+		goto err_free;
+
+	connector = list_first_entry(&ddev->mode_config.connector_list,
+				     typeof(*connector), head);
+	connector->status = connector_status_connected;
+
+	drm_panel_init(&tdev->panel);
+	drm_panel_add(&tdev->panel);
+	drm_panel_attach(&tdev->panel, connector);
+
+	drm_mode_config_reset(ddev);
+
+	ret = tinydrm_fbdev_init(tdev);
+	if (ret)
+		goto err_free;
+
 	DRM_INFO("Device: %s\n", dev_name(dev));
 	DRM_INFO("Initialized %s %d.%d.%d on minor %d\n",
 		 driver->name, driver->major, driver->minor, driver->patchlevel,
@@ -166,7 +150,7 @@ EXPORT_SYMBOL(tinydrm_register);
 
 static void devm_tinydrm_release(struct device *dev, void *res)
 {
-	tinydrm_release(*(struct tinydrm_device **)res);
+	tinydrm_unregister(*(struct tinydrm_device **)res);
 }
 
 int devm_tinydrm_register(struct device *dev, struct tinydrm_device *tdev)

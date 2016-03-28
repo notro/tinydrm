@@ -47,7 +47,7 @@ struct tinydrm_device {
 
 int devm_tinydrm_register(struct device *dev, struct tinydrm_device *tdev);
 int tinydrm_register(struct device *dev, struct tinydrm_device *tdev);
-void tinydrm_release(struct tinydrm_device *tdev);
+void tinydrm_unregister(struct tinydrm_device *tdev);
 
 static inline struct tinydrm_device *tinydrm_from_panel(struct drm_panel *panel)
 {
