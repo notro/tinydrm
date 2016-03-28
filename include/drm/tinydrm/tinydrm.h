@@ -10,9 +10,9 @@
 #ifndef __LINUX_TINYDRM_H
 #define __LINUX_TINYDRM_H
 
-
 #include <drm/drmP.h>
 #include <drm/drm_crtc.h>
+#include <drm/drm_gem_cma_helper.h>
 #include <drm/drm_panel.h>
 
 struct tinydrm_deferred;
@@ -45,9 +45,38 @@ struct tinydrm_device {
 		       unsigned num_clips);
 };
 
-int devm_tinydrm_register(struct device *dev, struct tinydrm_device *tdev);
-int tinydrm_register(struct device *dev, struct tinydrm_device *tdev);
-void tinydrm_unregister(struct tinydrm_device *tdev);
+extern const struct file_operations tinydrm_fops;
+void tinydrm_lastclose(struct drm_device *dev);
+
+#define TINYDRM_DRM_DRIVER(name_struct, name_str, desc_str, date_str) \
+static struct drm_driver name_struct = { \
+	.driver_features	= DRIVER_GEM | DRIVER_MODESET | DRIVER_PRIME \
+				| DRIVER_ATOMIC, \
+	.lastclose		= tinydrm_lastclose, \
+	.gem_free_object	= drm_gem_cma_free_object, \
+	.gem_vm_ops		= &drm_gem_cma_vm_ops, \
+	.prime_handle_to_fd	= drm_gem_prime_handle_to_fd, \
+	.prime_fd_to_handle	= drm_gem_prime_fd_to_handle, \
+	.gem_prime_import	= drm_gem_prime_import, \
+	.gem_prime_export	= drm_gem_prime_export, \
+	.gem_prime_get_sg_table	= drm_gem_cma_prime_get_sg_table, \
+	.gem_prime_import_sg_table = drm_gem_cma_prime_import_sg_table, \
+	.gem_prime_vmap		= drm_gem_cma_prime_vmap, \
+	.gem_prime_vunmap	= drm_gem_cma_prime_vunmap, \
+	.gem_prime_mmap		= drm_gem_cma_prime_mmap, \
+	.dumb_create		= drm_gem_cma_dumb_create, \
+	.dumb_map_offset	= drm_gem_cma_dumb_map_offset, \
+	.dumb_destroy		= drm_gem_dumb_destroy, \
+	.fops			= &tinydrm_fops, \
+	.name			= name_str, \
+	.desc			= desc_str, \
+	.date			= date_str, \
+	.major			= 1, \
+	.minor			= 0, \
+}
+
+int devm_tinydrm_register(struct device *dev, struct tinydrm_device *tdev,
+			  struct drm_driver *driver);
 
 static inline struct tinydrm_device *tinydrm_from_panel(struct drm_panel *panel)
 {

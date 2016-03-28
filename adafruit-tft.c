@@ -150,6 +150,8 @@ static const struct spi_device_id adafruit_tft_id[] = {
 };
 MODULE_DEVICE_TABLE(spi, adafruit_tft_id);
 
+TINYDRM_DRM_DRIVER(adafruit_tft, "adafruit-tft", "Adafruit TFT", "20160317");
+
 static int adafruit_tft_probe(struct spi_device *spi)
 {
 	const struct of_device_id *of_id;
@@ -235,7 +237,7 @@ static int adafruit_tft_probe(struct spi_device *spi)
 
 	spi_set_drvdata(spi, tdev);
 
-	return devm_tinydrm_register(dev, tdev);
+	return devm_tinydrm_register(dev, tdev, &adafruit_tft);
 }
 
 static struct spi_driver adafruit_tft_spi_driver = {

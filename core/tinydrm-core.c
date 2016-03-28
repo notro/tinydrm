@@ -10,21 +10,21 @@
 
 #include <drm/drmP.h>
 #include <drm/drm_atomic_helper.h>
-#include <drm/drm_gem_cma_helper.h>
 #include <drm/tinydrm/tinydrm.h>
 #include <linux/device.h>
 
 #include "internal.h"
 
-static void tinydrm_lastclose(struct drm_device *ddev)
+void tinydrm_lastclose(struct drm_device *dev)
 {
-	struct tinydrm_device *tdev = ddev->dev_private;
+	struct tinydrm_device *tdev = dev->dev_private;
 
 	DRM_DEBUG_KMS("\n");
 	tinydrm_fbdev_restore_mode(tdev->fbdev);
 }
+EXPORT_SYMBOL(tinydrm_lastclose);
 
-static const struct file_operations tinydrm_fops = {
+const struct file_operations tinydrm_fops = {
 	.owner		= THIS_MODULE,
 	.open		= drm_open,
 	.release	= drm_release,
@@ -37,34 +37,9 @@ static const struct file_operations tinydrm_fops = {
 	.llseek		= no_llseek,
 	.mmap		= drm_gem_cma_mmap,
 };
+EXPORT_SYMBOL(tinydrm_fops);
 
-static struct drm_driver tinydrm_driver = {
-	.driver_features	= DRIVER_GEM | DRIVER_MODESET | DRIVER_PRIME
-				| DRIVER_ATOMIC,
-	.lastclose		= tinydrm_lastclose,
-	.gem_free_object	= drm_gem_cma_free_object,
-	.gem_vm_ops		= &drm_gem_cma_vm_ops,
-	.prime_handle_to_fd	= drm_gem_prime_handle_to_fd,
-	.prime_fd_to_handle	= drm_gem_prime_fd_to_handle,
-	.gem_prime_import	= drm_gem_prime_import,
-	.gem_prime_export	= drm_gem_prime_export,
-	.gem_prime_get_sg_table	= drm_gem_cma_prime_get_sg_table,
-	.gem_prime_import_sg_table = drm_gem_cma_prime_import_sg_table,
-	.gem_prime_vmap		= drm_gem_cma_prime_vmap,
-	.gem_prime_vunmap	= drm_gem_cma_prime_vunmap,
-	.gem_prime_mmap		= drm_gem_cma_prime_mmap,
-	.dumb_create		= drm_gem_cma_dumb_create,
-	.dumb_map_offset	= drm_gem_cma_dumb_map_offset,
-	.dumb_destroy		= drm_gem_dumb_destroy,
-	.fops			= &tinydrm_fops,
-	.name			= "tinydrm",
-	.desc			= "tinydrm",
-	.date			= "20150916",
-	.major			= 1,
-	.minor			= 0,
-};
-
-void tinydrm_unregister(struct tinydrm_device *tdev)
+static void tinydrm_unregister(struct tinydrm_device *tdev)
 {
 	DRM_DEBUG_KMS("\n");
 
@@ -80,11 +55,10 @@ void tinydrm_unregister(struct tinydrm_device *tdev)
 	drm_dev_unregister(tdev->base);
 	drm_dev_unref(tdev->base);
 }
-EXPORT_SYMBOL(tinydrm_unregister);
 
-int tinydrm_register(struct device *dev, struct tinydrm_device *tdev)
+static int tinydrm_register(struct device *dev, struct tinydrm_device *tdev,
+			    struct drm_driver *driver)
 {
-	struct drm_driver *driver = &tinydrm_driver;
 	struct drm_connector *connector;
 	struct drm_device *ddev;
 	int ret;
@@ -146,14 +120,14 @@ err_free:
 
 	return ret;
 }
-EXPORT_SYMBOL(tinydrm_register);
 
 static void devm_tinydrm_release(struct device *dev, void *res)
 {
 	tinydrm_unregister(*(struct tinydrm_device **)res);
 }
 
-int devm_tinydrm_register(struct device *dev, struct tinydrm_device *tdev)
+int devm_tinydrm_register(struct device *dev, struct tinydrm_device *tdev,
+			  struct drm_driver *driver)
 {
 	struct tinydrm_device **ptr;
 	int ret;
@@ -162,7 +136,7 @@ int devm_tinydrm_register(struct device *dev, struct tinydrm_device *tdev)
 	if (!ptr)
 		return -ENOMEM;
 
-	ret = tinydrm_register(dev, tdev);
+	ret = tinydrm_register(dev, tdev, driver);
 	if (ret) {
 		devres_free(ptr);
 		return ret;
