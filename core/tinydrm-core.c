@@ -15,6 +15,12 @@
 
 #include "internal.h"
 
+static const struct drm_mode_config_funcs tinydrm_mode_config_funcs = {
+	.fb_create = tinydrm_fb_cma_dumb_create,
+	.atomic_check = drm_atomic_helper_check,
+	.atomic_commit = drm_atomic_helper_commit,
+};
+
 void tinydrm_lastclose(struct drm_device *dev)
 {
 	struct tinydrm_device *tdev = dev->dev_private;
@@ -85,7 +91,13 @@ dev->coherent_dma_mask = DMA_BIT_MASK(32);
 	if (ret)
 		goto err_free;
 
-	tinydrm_mode_config_init(tdev);
+	drm_mode_config_init(ddev);
+	ddev->mode_config.min_width = tdev->width;
+	ddev->mode_config.min_height = tdev->height;
+	ddev->mode_config.max_width = tdev->width;
+	ddev->mode_config.max_height = tdev->height;
+	ddev->mode_config.funcs = &tinydrm_mode_config_funcs;
+
 	ret = tinydrm_plane_init(tdev);
 	if (ret)
 		goto err_free;

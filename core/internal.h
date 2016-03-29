@@ -19,8 +19,6 @@ static inline bool tinydrm_active(struct tinydrm_device *tdev)
 	return false;
 }
 
-void tinydrm_mode_config_init(struct tinydrm_device *tdev);
-
 int tinydrm_plane_init(struct tinydrm_device *tdev);
 
 #ifdef CONFIG_DRM_KMS_FB_HELPER

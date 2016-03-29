@@ -56,9 +56,9 @@ static const struct drm_framebuffer_funcs tinydrm_fb_funcs = {
  *	.create_handle = tinydrm_framebuffer_create_handle, */
 };
 
-static struct drm_framebuffer *
-tinydrm_fb_create(struct drm_device *ddev, struct drm_file *file_priv,
-		  struct drm_mode_fb_cmd2 *mode_cmd)
+struct drm_framebuffer *tinydrm_fb_cma_dumb_create(struct drm_device *ddev,
+					struct drm_file *file_priv,
+					struct drm_mode_fb_cmd2 *mode_cmd)
 {
 	struct tinydrm_framebuffer *tinydrm_fb;
 	struct drm_gem_object *obj;
@@ -91,22 +91,4 @@ tinydrm_fb_create(struct drm_device *ddev, struct drm_file *file_priv,
 
 	return &tinydrm_fb->base;
 }
-
-static const struct drm_mode_config_funcs tinydrm_mode_config_funcs = {
-	.fb_create = tinydrm_fb_create,
-	.atomic_check = drm_atomic_helper_check,
-	.atomic_commit = drm_atomic_helper_commit,
-};
-
-void tinydrm_mode_config_init(struct tinydrm_device *tdev)
-{
-	struct drm_device *ddev = tdev->base;
-
-	drm_mode_config_init(ddev);
-
-	ddev->mode_config.min_width = tdev->width;
-	ddev->mode_config.min_height = tdev->height;
-	ddev->mode_config.max_width = tdev->width;
-	ddev->mode_config.max_height = tdev->height;
-	ddev->mode_config.funcs = &tinydrm_mode_config_funcs;
-}
+EXPORT_SYMBOL(tinydrm_fb_cma_dumb_create);

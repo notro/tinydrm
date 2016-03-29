@@ -75,6 +75,9 @@ static struct drm_driver name_struct = { \
 	.minor			= 0, \
 }
 
+struct drm_framebuffer *tinydrm_fb_cma_dumb_create(struct drm_device *ddev,
+					struct drm_file *file_priv,
+					struct drm_mode_fb_cmd2 *mode_cmd);
 int devm_tinydrm_register(struct device *dev, struct tinydrm_device *tdev,
 			  struct drm_driver *driver);
 
