@@ -59,9 +59,6 @@ static void tinydrm_unregister(struct tinydrm_device *tdev)
 
 	tinydrm_fbdev_fini(tdev);
 
-	drm_panel_detach(&tdev->panel);
-	drm_panel_remove(&tdev->panel);
-
 	drm_mode_config_cleanup(tdev->base);
 	drm_dev_unregister(tdev->base);
 	drm_dev_unref(tdev->base);
