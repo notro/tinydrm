@@ -1,9 +1,15 @@
+config DRM_SIMPLE_KMS_HELPER
+	tristate
+	depends on DRM
+	select DRM_KMS_HELPER
+	help
+	  Helpers for very simple KMS drivers.
+
 menuconfig DRM_TINYDRM
 	tristate "Support for small TFT LCD display modules"
 	depends on DRM
-	select DRM_KMS_HELPER
+	select DRM_SIMPLE_KMS_HELPER
 	select DRM_KMS_CMA_HELPER
-	select DRM_GEM_CMA_HELPER
 	select DRM_PANEL
 	select VIDEOMODE_HELPERS
 	help

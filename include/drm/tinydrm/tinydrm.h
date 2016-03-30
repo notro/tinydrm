@@ -14,6 +14,7 @@
 #include <drm/drm_crtc.h>
 #include <drm/drm_gem_cma_helper.h>
 #include <drm/drm_panel.h>
+#include <drm/drm_simple_kms_helper.h>
 
 struct tinydrm_deferred;
 struct tinydrm_fbdev;
@@ -29,8 +30,8 @@ struct tinydrm_framebuffer {
 struct tinydrm_device {
 	struct drm_device *base;
 	u32 width, height;
+	struct drm_simple_display_pipe pipe;
 	struct drm_panel panel;
-	struct drm_plane plane;
 	struct tinydrm_fbdev *fbdev;
 	struct tinydrm_deferred *deferred;
 	struct backlight_device *backlight;
@@ -78,6 +79,9 @@ static struct drm_driver name_struct = { \
 struct drm_framebuffer *tinydrm_fb_cma_dumb_create(struct drm_device *ddev,
 					struct drm_file *file_priv,
 					struct drm_mode_fb_cmd2 *mode_cmd);
+int tinydrm_display_pipe_init(struct tinydrm_device *tdev,
+			      const uint32_t *formats, unsigned int format_count);
+int tinydrm_panel_get_modes(struct drm_panel *panel);
 int devm_tinydrm_register(struct device *dev, struct tinydrm_device *tdev,
 			  struct drm_driver *driver);
 

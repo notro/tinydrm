@@ -42,7 +42,7 @@ static void tinydrm_fbdev_dirty(struct fb_info *info,
 	struct tinydrm_device *tdev = helper->dev->dev_private;
 	struct drm_framebuffer *fb = helper->fb;
 
-	if (tdev->plane.fb != fb)
+	if (tdev->pipe.plane.fb != fb)
 		return;
 
 	if (tdev->deferred)

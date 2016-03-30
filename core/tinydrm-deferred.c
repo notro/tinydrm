@@ -6,6 +6,7 @@ bool tinydrm_deferred_begin(struct tinydrm_device *tdev,
 			    struct tinydrm_fb_clip *fb_clip)
 {
 	struct tinydrm_deferred *deferred = tdev->deferred;
+	struct drm_crtc *crtc = &tdev->pipe.crtc;
 
 	spin_lock(&deferred->lock);
 	*fb_clip = deferred->fb_clip;
@@ -15,7 +16,7 @@ bool tinydrm_deferred_begin(struct tinydrm_device *tdev,
 	spin_unlock(&deferred->lock);
 
 	/* The crtc might have been disabled by the time we get here */
-	if (!tinydrm_active(tdev))
+	if (!(crtc->state && crtc->state->active))
 		return false;
 
 	/* On first update make sure to do the entire framebuffer */
@@ -38,10 +39,8 @@ EXPORT_SYMBOL(tinydrm_deferred_begin);
 
 void tinydrm_deferred_end(struct tinydrm_device *tdev)
 {
-	if (tdev->prepared && !tdev->enabled) {
-		drm_panel_enable(&tdev->panel);
-		tdev->enabled = true;
-	}
+	if (tdev->prepared && !tdev->enabled)
+		tinydrm_enable(tdev);
 }
 EXPORT_SYMBOL(tinydrm_deferred_end);
 

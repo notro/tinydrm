@@ -128,6 +128,7 @@ static int adafruit_tft_1601_panel_prepare(struct drm_panel *panel)
 }
 
 struct drm_panel_funcs adafruit_tft_1601_funcs = {
+	.get_modes = tinydrm_panel_get_modes,
 	.prepare = adafruit_tft_1601_panel_prepare,
 	.unprepare = mipi_dbi_panel_unprepare,
 	.enable = tinydrm_panel_enable_backlight,

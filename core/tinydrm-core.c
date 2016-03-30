@@ -15,6 +15,11 @@
 
 #include "internal.h"
 
+static const uint32_t tinydrm_formats[] = {
+	DRM_FORMAT_RGB565,
+	DRM_FORMAT_XRGB8888,
+};
+
 static const struct drm_mode_config_funcs tinydrm_mode_config_funcs = {
 	.fb_create = tinydrm_fb_cma_dumb_create,
 	.atomic_check = drm_atomic_helper_check,
@@ -62,73 +67,67 @@ static void tinydrm_unregister(struct tinydrm_device *tdev)
 	drm_dev_unref(tdev->base);
 }
 
-static int tinydrm_register(struct device *dev, struct tinydrm_device *tdev,
+static int tinydrm_register(struct device *parent, struct tinydrm_device *tdev,
 			    struct drm_driver *driver)
 {
-	struct drm_connector *connector;
-	struct drm_device *ddev;
+	struct drm_device *dev;
 	int ret;
 
 	DRM_DEBUG_KMS("\n");
 
-dev->coherent_dma_mask = DMA_BIT_MASK(32);
-
 	if (WARN_ON(!tdev->dirtyfb))
 		return -EINVAL;
 
-	ddev = drm_dev_alloc(driver, dev);
-	if (!ddev)
+	if (!parent->coherent_dma_mask) {
+		ret = dma_set_coherent_mask(parent, DMA_BIT_MASK(32));
+		if (ret) {
+			DRM_ERROR("Failed to set coherent_dma_mask\n");
+			return ret;
+		}
+	}
+
+	dev = drm_dev_alloc(driver, parent);
+	if (!dev)
 		return -ENOMEM;
 
-	tdev->base = ddev;
-	ddev->dev_private = tdev;
+	tdev->base = dev;
+	dev->dev_private = tdev;
 
-	ret = drm_dev_set_unique(ddev, dev_name(ddev->dev));
+	ret = drm_dev_set_unique(dev, dev_name(dev->dev));
 	if (ret)
 		goto err_free;
 
-	ret = drm_dev_register(ddev, 0);
+	ret = drm_dev_register(dev, 0);
 	if (ret)
 		goto err_free;
 
-	drm_mode_config_init(ddev);
-	ddev->mode_config.min_width = tdev->width;
-	ddev->mode_config.min_height = tdev->height;
-	ddev->mode_config.max_width = tdev->width;
-	ddev->mode_config.max_height = tdev->height;
-	ddev->mode_config.funcs = &tinydrm_mode_config_funcs;
+	drm_mode_config_init(dev);
+	dev->mode_config.min_width = tdev->width;
+	dev->mode_config.min_height = tdev->height;
+	dev->mode_config.max_width = tdev->width;
+	dev->mode_config.max_height = tdev->height;
+	dev->mode_config.funcs = &tinydrm_mode_config_funcs;
 
-	ret = tinydrm_plane_init(tdev);
+	ret = tinydrm_display_pipe_init(tdev, tinydrm_formats,
+					ARRAY_SIZE(tinydrm_formats));
 	if (ret)
 		goto err_free;
 
-	ret = tinydrm_crtc_create(tdev);
-	if (ret)
-		goto err_free;
-
-	connector = list_first_entry(&ddev->mode_config.connector_list,
-				     typeof(*connector), head);
-	connector->status = connector_status_connected;
-
-	drm_panel_init(&tdev->panel);
-	drm_panel_add(&tdev->panel);
-	drm_panel_attach(&tdev->panel, connector);
-
-	drm_mode_config_reset(ddev);
+	drm_mode_config_reset(dev);
 
 	ret = tinydrm_fbdev_init(tdev);
 	if (ret)
-		goto err_free;
+		DRM_ERROR("Failed to initialize fbdev: %d\n", ret);
 
-	DRM_INFO("Device: %s\n", dev_name(dev));
+	DRM_INFO("Device: %s\n", dev_name(dev->dev));
 	DRM_INFO("Initialized %s %d.%d.%d on minor %d\n",
 		 driver->name, driver->major, driver->minor, driver->patchlevel,
-		 ddev->primary->index);
+		 dev->primary->index);
 
 	return 0;
 
 err_free:
-	drm_dev_unref(ddev);
+	drm_dev_unref(dev);
 
 	return ret;
 }
