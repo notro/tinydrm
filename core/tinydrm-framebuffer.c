@@ -56,9 +56,9 @@ static const struct drm_framebuffer_funcs tinydrm_fb_funcs = {
  *	.create_handle = tinydrm_framebuffer_create_handle, */
 };
 
-struct drm_framebuffer *tinydrm_fb_cma_dumb_create(struct drm_device *ddev,
+struct drm_framebuffer *tinydrm_fb_cma_dumb_create(struct drm_device *dev,
 					struct drm_file *file_priv,
-					struct drm_mode_fb_cmd2 *mode_cmd)
+					const struct drm_mode_fb_cmd2 *mode_cmd)
 {
 	struct tinydrm_framebuffer *tinydrm_fb;
 	struct drm_gem_object *obj;
@@ -70,7 +70,7 @@ struct drm_framebuffer *tinydrm_fb_cma_dumb_create(struct drm_device *ddev,
 	DRM_DEBUG_KMS("height=%u\n", mode_cmd->height);
 	DRM_DEBUG_KMS("pitches[0]=%u\n", mode_cmd->pitches[0]);
 
-	obj = drm_gem_object_lookup(ddev, file_priv, mode_cmd->handles[0]);
+	obj = drm_gem_object_lookup(dev, file_priv, mode_cmd->handles[0]);
 	if (!obj)
 		return NULL;
 
@@ -80,7 +80,7 @@ struct drm_framebuffer *tinydrm_fb_cma_dumb_create(struct drm_device *ddev,
 
 	tinydrm_fb->cma_obj = to_drm_gem_cma_obj(obj);
 
-	ret = drm_framebuffer_init(ddev, &tinydrm_fb->base, &tinydrm_fb_funcs);
+	ret = drm_framebuffer_init(dev, &tinydrm_fb->base, &tinydrm_fb_funcs);
 	if (ret) {
 		kfree(tinydrm_fb);
 		drm_gem_object_unreference_unlocked(obj);

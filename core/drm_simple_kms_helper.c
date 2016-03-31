@@ -234,20 +234,20 @@ int drm_simple_display_pipe_init(struct drm_device *dev,
 	drm_plane_helper_add(plane, &drm_simple_kms_plane_helper_funcs);
 	ret = drm_universal_plane_init(dev, plane, 0, &drm_simple_kms_plane_funcs,
 				       formats, format_count,
-				       DRM_PLANE_TYPE_PRIMARY);
+				       DRM_PLANE_TYPE_PRIMARY, NULL);
 	if (ret)
 		return ret;
 
 	drm_crtc_helper_add(crtc, &drm_simple_kms_crtc_helper_funcs);
 	ret = drm_crtc_init_with_planes(dev, crtc, plane, NULL,
-					&drm_simple_kms_crtc_funcs);
+					&drm_simple_kms_crtc_funcs, NULL);
 	if (ret)
 		return ret;
 
 	encoder->possible_crtcs = 1 << drm_crtc_index(crtc);
 	drm_encoder_helper_add(encoder, &drm_simple_kms_encoder_helper_funcs);
 	ret = drm_encoder_init(dev, encoder, &drm_simple_kms_encoder_funcs,
-			       DRM_MODE_ENCODER_NONE);
+			       DRM_MODE_ENCODER_NONE, NULL);
 	if (ret)
 		return ret;
 
