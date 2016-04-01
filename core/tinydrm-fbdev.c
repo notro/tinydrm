@@ -33,111 +33,6 @@ static inline struct tinydrm_fbdev *fb_to_fbdev(struct drm_framebuffer *fb)
 	return container_of(fb, struct tinydrm_fbdev, fb);
 }
 
-static void tinydrm_fbdev_dirty(struct fb_info *info,
-				struct drm_clip_rect *clip, bool run_now)
-{
-	struct drm_fb_helper *helper = info->par;
-
-	helper->fb->funcs->dirty(helper->fb, NULL, 0, 0, clip, 1);
-}
-
-static void tinydrm_fbdev_deferred_io(struct fb_info *info,
-				      struct list_head *pagelist)
-{
-	unsigned long start, end, next, min, max;
-	struct drm_clip_rect clip;
-	struct page *page;
-int count = 0;
-
-	min = ULONG_MAX;
-	max = 0;
-	next = 0;
-	list_for_each_entry(page, pagelist, lru) {
-		start = page->index << PAGE_SHIFT;
-		end = start + PAGE_SIZE - 1;
-		min = min(min, start);
-		max = max(max, end);
-count++;
-	}
-
-	if (min < max) {
-		clip.x1 = 0;
-		clip.x2 = info->var.xres - 1;
-		clip.y1 = min / info->fix.line_length;
-		clip.y2 = min_t(u32, max / info->fix.line_length,
-				    info->var.yres - 1);
-		pr_debug("%s: x1=%u, x2=%u, y1=%u, y2=%u, count=%d\n", __func__, clip.x1, clip.x2, clip.y1, clip.y2, count);
-		tinydrm_fbdev_dirty(info, &clip, true);
-	}
-}
-
-static void tinydrm_fbdev_fb_fillrect(struct fb_info *info,
-				      const struct fb_fillrect *rect)
-{
-	struct drm_clip_rect clip = {
-		.x1 = rect->dx,
-		.x2 = rect->dx + rect->width - 1,
-		.y1 = rect->dy,
-		.y2 = rect->dy + rect->height - 1,
-	};
-
-	dev_dbg(info->dev, "%s: dx=%d, dy=%d, width=%d, height=%d\n",
-		__func__, rect->dx, rect->dy, rect->width, rect->height);
-	sys_fillrect(info, rect);
-	tinydrm_fbdev_dirty(info, &clip, false);
-}
-
-static void tinydrm_fbdev_fb_copyarea(struct fb_info *info,
-				      const struct fb_copyarea *area)
-{
-	struct drm_clip_rect clip = {
-		.x1 = area->dx,
-		.x2 = area->dx + area->width - 1,
-		.y1 = area->dy,
-		.y2 = area->dy + area->height - 1,
-	};
-
-	dev_dbg(info->dev, "%s: dx=%d, dy=%d, width=%d, height=%d\n",
-		__func__,  area->dx, area->dy, area->width, area->height);
-	sys_copyarea(info, area);
-	tinydrm_fbdev_dirty(info, &clip, false);
-}
-
-static void tinydrm_fbdev_fb_imageblit(struct fb_info *info,
-				       const struct fb_image *image)
-{
-	struct drm_clip_rect clip = {
-		.x1 = image->dx,
-		.x2 = image->dx + image->width - 1,
-		.y1 = image->dy,
-		.y2 = image->dy + image->height - 1,
-	};
-
-	dev_dbg(info->dev, "%s: dx=%d, dy=%d, width=%d, height=%d\n",
-		__func__,  image->dx, image->dy, image->width, image->height);
-	sys_imageblit(info, image);
-	tinydrm_fbdev_dirty(info, &clip, false);
-}
-
-static ssize_t tinydrm_fbdev_fb_write(struct fb_info *info,
-				      const char __user *buf, size_t count,
-				      loff_t *ppos)
-{
-	struct drm_clip_rect clip = {
-		.x1 = 0,
-		.x2 = info->var.xres - 1,
-		.y1 = 0,
-		.y2 = info->var.yres - 1,
-	};
-	ssize_t ret;
-
-	dev_dbg(info->dev, "%s:\n", __func__);
-	ret = fb_sys_write(info, buf, count, ppos);
-	tinydrm_fbdev_dirty(info, &clip, false);
-
-	return ret;
-}
-
 static int tinydrm_fbdev_fb_dirty(struct drm_framebuffer *fb,
 				     struct drm_file *file_priv,
 				     unsigned flags, unsigned color,
@@ -239,10 +134,10 @@ static int tinydrm_fbdev_create(struct drm_fb_helper *helper,
 	strcpy(fbi->fix.id, "tinydrm");
 
 	fbops->owner          = THIS_MODULE,
-	fbops->fb_fillrect    = tinydrm_fbdev_fb_fillrect,
-	fbops->fb_copyarea    = tinydrm_fbdev_fb_copyarea,
-	fbops->fb_imageblit   = tinydrm_fbdev_fb_imageblit,
-	fbops->fb_write       = tinydrm_fbdev_fb_write,
+	fbops->fb_fillrect    = drm_fb_helper_sys_fillrect,
+	fbops->fb_copyarea    = drm_fb_helper_sys_copyarea,
+	fbops->fb_imageblit   = drm_fb_helper_sys_imageblit,
+	fbops->fb_write       = drm_fb_helper_sys_write,
 	fbops->fb_check_var   = drm_fb_helper_check_var,
 	fbops->fb_set_par     = drm_fb_helper_set_par,
 	fbops->fb_blank       = drm_fb_helper_blank,
@@ -264,7 +159,7 @@ static int tinydrm_fbdev_create(struct drm_fb_helper *helper,
 	/* delay=0 is turned into delay=HZ, so use 1 as a minimum */
 	if (!fbdefio->delay)
 		fbdefio->delay = 1;
-	fbdefio->deferred_io = tinydrm_fbdev_deferred_io;
+	fbdefio->deferred_io = drm_fb_helper_deferred_io;
 	fbi->fbdefio = fbdefio;
 	fb_deferred_io_init(fbi);
 
