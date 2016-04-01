@@ -37,15 +37,8 @@ static void tinydrm_fbdev_dirty(struct fb_info *info,
 				struct drm_clip_rect *clip, bool run_now)
 {
 	struct drm_fb_helper *helper = info->par;
-	struct tinydrm_device *tdev = helper->dev->dev_private;
-	struct drm_framebuffer *fb = helper->fb;
 
-	if (tdev->pipe.plane.fb != fb)
-		return;
-
-	if (tdev->deferred)
-		tdev->deferred->no_delay = run_now;
-	tdev->dirtyfb(fb, info->screen_buffer, 0, 0, clip, 1);
+	helper->fb->funcs->dirty(helper->fb, NULL, 0, 0, clip, 1);
 }
 
 static void tinydrm_fbdev_deferred_io(struct fb_info *info,
@@ -145,12 +138,35 @@ static ssize_t tinydrm_fbdev_fb_write(struct fb_info *info,
 	return ret;
 }
 
+static int tinydrm_fbdev_fb_dirty(struct drm_framebuffer *fb,
+				     struct drm_file *file_priv,
+				     unsigned flags, unsigned color,
+				     struct drm_clip_rect *clips,
+				     unsigned num_clips)
+{
+
+
+	struct tinydrm_fbdev *fbdev = fb_to_fbdev(fb);
+	struct drm_fb_helper *helper = &fbdev->fb_helper;
+	struct tinydrm_device *tdev = helper->dev->dev_private;
+	struct fb_info *info = helper->fbdev;
+
+	if (tdev->pipe.plane.fb != fb)
+		return 0;
+
+	if (tdev->deferred)
+		tdev->deferred->no_delay = true;
+
+	return tdev->dirtyfb(fb, info->screen_buffer, 0, 0, clips, num_clips);
+}
+
 static void tinydrm_fbdev_fb_destroy(struct drm_framebuffer *fb)
 {
 }
 
 static struct drm_framebuffer_funcs tinydrm_fbdev_fb_funcs = {
 	.destroy = tinydrm_fbdev_fb_destroy,
+	.dirty = tinydrm_fbdev_fb_dirty,
 };
 
 static int tinydrm_fbdev_create(struct drm_fb_helper *helper,
