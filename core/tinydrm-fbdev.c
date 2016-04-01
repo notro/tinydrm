@@ -15,8 +15,6 @@
 #include <drm/drm_gem_cma_helper.h>
 #include <drm/tinydrm/tinydrm.h>
 
-#include "internal.h"
-
 #define DEFAULT_DEFIO_DELAY HZ/30
 
 struct tinydrm_fbdev {
@@ -314,6 +312,7 @@ err_drm_fb_helper_fini:
 
 	return ret;
 }
+EXPORT_SYMBOL(tinydrm_fbdev_init);
 
 void tinydrm_fbdev_fini(struct tinydrm_device *tdev)
 {
@@ -335,6 +334,7 @@ void tinydrm_fbdev_fini(struct tinydrm_device *tdev)
 	tdev->fbdev = NULL;
 	DRM_DEBUG_KMS("OUT\n");
 }
+EXPORT_SYMBOL(tinydrm_fbdev_fini);
 
 /* TODO: pass tdev instead ? */
 void tinydrm_fbdev_restore_mode(struct tinydrm_fbdev *fbdev)

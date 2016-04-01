@@ -22,11 +22,6 @@ struct spi_device;
 struct regulator;
 struct lcdreg;
 
-struct tinydrm_framebuffer {
-	struct drm_framebuffer base;
-	struct drm_gem_cma_object *cma_obj;
-};
-
 struct tinydrm_device {
 	struct drm_device *base;
 	u32 width, height;
@@ -121,6 +116,25 @@ static inline void tinydrm_disable(struct tinydrm_device *tdev)
 		tdev->enabled = false;
 	}
 }
+
+#ifdef CONFIG_DRM_KMS_FB_HELPER
+int tinydrm_fbdev_init(struct tinydrm_device *tdev);
+void tinydrm_fbdev_fini(struct tinydrm_device *tdev);
+void tinydrm_fbdev_restore_mode(struct tinydrm_fbdev *fbdev);
+#else
+static inline int tinydrm_fbdev_init(struct tinydrm_device *tdev)
+{
+	return 0;
+}
+
+static inline void tinydrm_fbdev_fini(struct tinydrm_device *tdev)
+{
+}
+
+static inline void tinydrm_fbdev_restore_mode(struct tinydrm_fbdev *fbdev)
+{
+}
+#endif
 
 struct backlight_device *tinydrm_of_find_backlight(struct device *dev);
 int tinydrm_panel_enable_backlight(struct drm_panel *panel);

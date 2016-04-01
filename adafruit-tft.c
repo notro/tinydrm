@@ -243,7 +243,7 @@ static int adafruit_tft_probe(struct spi_device *spi)
 
 static struct spi_driver adafruit_tft_spi_driver = {
 	.driver = {
-		.name = "ada-mipifb",
+		.name = "adafruit-tft",
 		.owner = THIS_MODULE,
 		.of_match_table = adafruit_tft_of_match,
 		.pm = &tinydrm_simple_pm_ops,

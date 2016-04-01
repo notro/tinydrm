@@ -1,7 +1,5 @@
 #include <drm/tinydrm/tinydrm.h>
 
-#include "internal.h"
-
 bool tinydrm_deferred_begin(struct tinydrm_device *tdev,
 			    struct tinydrm_fb_clip *fb_clip)
 {

@@ -12,8 +12,6 @@
 #include <linux/backlight.h>
 #include <linux/spi/spi.h>
 
-#include "internal.h"
-
 struct backlight_device *tinydrm_of_find_backlight(struct device *dev)
 {
 	struct backlight_device *backlight;

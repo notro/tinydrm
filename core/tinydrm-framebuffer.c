@@ -13,6 +13,11 @@
 #include <drm/drm_gem_cma_helper.h>
 #include <drm/tinydrm/tinydrm.h>
 
+struct tinydrm_framebuffer {
+	struct drm_framebuffer base;
+	struct drm_gem_cma_object *cma_obj;
+};
+
 static inline struct tinydrm_framebuffer *to_tinydrm_framebuffer(struct drm_framebuffer *fb)
 {
 	return container_of(fb, struct tinydrm_framebuffer, base);
@@ -56,6 +61,10 @@ static const struct drm_framebuffer_funcs tinydrm_fb_funcs = {
  *	.create_handle = tinydrm_framebuffer_create_handle, */
 };
 
+/*
+ * Maybe this could be turned into drm_fb_cma_dumb_create_with_funcs() and put
+ * alongside drm_fb_cma_create() in drm_fb_cma_helper.c
+ */
 struct drm_framebuffer *tinydrm_fb_cma_dumb_create(struct drm_device *dev,
 					struct drm_file *file_priv,
 					const struct drm_mode_fb_cmd2 *mode_cmd)

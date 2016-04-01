@@ -13,8 +13,6 @@
 #include <drm/tinydrm/tinydrm.h>
 #include <linux/device.h>
 
-#include "internal.h"
-
 static const uint32_t tinydrm_formats[] = {
 	DRM_FORMAT_RGB565,
 	DRM_FORMAT_XRGB8888,
