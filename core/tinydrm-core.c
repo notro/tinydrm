@@ -29,7 +29,7 @@ void tinydrm_lastclose(struct drm_device *dev)
 	struct tinydrm_device *tdev = dev->dev_private;
 
 	DRM_DEBUG_KMS("\n");
-	tinydrm_fbdev_restore_mode(tdev->fbdev);
+	tinydrm_fbdev_restore_mode(tdev);
 }
 EXPORT_SYMBOL(tinydrm_lastclose);
 

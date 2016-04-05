@@ -17,7 +17,6 @@
 #include <drm/drm_simple_kms_helper.h>
 
 struct tinydrm_deferred;
-struct tinydrm_fbdev;
 struct spi_device;
 struct regulator;
 struct lcdreg;
@@ -27,7 +26,7 @@ struct tinydrm_device {
 	u32 width, height;
 	struct drm_simple_display_pipe pipe;
 	struct drm_panel panel;
-	struct tinydrm_fbdev *fbdev;
+	struct drm_fbdev_cma *fbdev_cma;
 	struct tinydrm_deferred *deferred;
 	struct backlight_device *backlight;
 	struct regulator *regulator;
@@ -120,7 +119,7 @@ static inline void tinydrm_disable(struct tinydrm_device *tdev)
 #ifdef CONFIG_DRM_KMS_FB_HELPER
 int tinydrm_fbdev_init(struct tinydrm_device *tdev);
 void tinydrm_fbdev_fini(struct tinydrm_device *tdev);
-void tinydrm_fbdev_restore_mode(struct tinydrm_fbdev *fbdev);
+void tinydrm_fbdev_restore_mode(struct tinydrm_device *tdev);
 #else
 static inline int tinydrm_fbdev_init(struct tinydrm_device *tdev)
 {
@@ -131,7 +130,7 @@ static inline void tinydrm_fbdev_fini(struct tinydrm_device *tdev)
 {
 }
 
-static inline void tinydrm_fbdev_restore_mode(struct tinydrm_fbdev *fbdev)
+static inline void tinydrm_fbdev_restore_mode(struct tinydrm_device *tdev)
 {
 }
 #endif
