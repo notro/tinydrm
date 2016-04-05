@@ -89,46 +89,54 @@ int tinydrm_update_rgb565_lcdreg(struct tinydrm_device *tdev, struct drm_framebu
 	return ret;
 }
 
-static void mipi_dbi_deferred_update(struct work_struct *work)
+/* TODO remove when drm_clip_rect_merge() has a home */
+void drm_clip_rect_merge(struct drm_clip_rect *dst,
+			 struct drm_clip_rect *src, unsigned num_clips,
+			 unsigned flags, u32 width, u32 height);
+
+static int mipi_dbi_dirtyfb(struct drm_framebuffer *fb, void *vmem,
+			    unsigned flags, unsigned color,
+			    struct drm_clip_rect *clips, unsigned num_clips)
 {
-	struct tinydrm_device *tdev = work_to_tinydrm(work);
+	struct tinydrm_device *tdev = fb->dev->dev_private;
 	struct lcdreg *reg = tdev->lcdreg;
-	struct tinydrm_fb_clip fb_clip;
-	struct drm_clip_rect *clip = &fb_clip.clip;
+	struct drm_clip_rect clip = { 0 };
 	int ret;
 
-	dev_dbg(tdev->base->dev, "%s\n", __func__);
+	drm_clip_rect_merge(&clip, clips, num_clips, flags,
+			    fb->width, fb->height);
 
-	if (!tinydrm_deferred_begin(tdev, &fb_clip))
-		return;
+	dev_dbg(tdev->base->dev, "%s: vmem=%p, x1=%u, x2=%u, y1=%u, y2=%u\n",
+		__func__, vmem, clip.x1, clip.x2, clip.y1, clip.y2);
 
-	dev_dbg(tdev->base->dev, "%s: vmem=%p, x1=%u, x2=%u, y1=%u, y2=%u\n", __func__, fb_clip.vmem, clip->x1, clip->x2, clip->y1, clip->y2);
+	/* TODO: support partial updates */
+	clip.x1 = 0;
+	clip.x2 = fb->width - 1;
+	clip.y1 = 0;
+	clip.y2 = fb->height - 1;
 
 	lcdreg_writereg(reg, MIPI_DCS_SET_COLUMN_ADDRESS,
-			(clip->x1 >> 8) & 0xFF, clip->x1 & 0xFF,
-			(clip->x2 >> 8) & 0xFF, clip->x2 & 0xFF);
+			(clip.x1 >> 8) & 0xFF, clip.x1 & 0xFF,
+			(clip.x2 >> 8) & 0xFF, clip.x2 & 0xFF);
 	lcdreg_writereg(reg, MIPI_DCS_SET_PAGE_ADDRESS,
-			(clip->y1 >> 8) & 0xFF, clip->y1 & 0xFF,
-			(clip->y2 >> 8) & 0xFF, clip->y2 & 0xFF);
+			(clip.y1 >> 8) & 0xFF, clip.y1 & 0xFF,
+			(clip.y2 >> 8) & 0xFF, clip.y2 & 0xFF);
 
-	ret = tinydrm_update_rgb565_lcdreg(tdev, fb_clip.fb, fb_clip.vmem, clip);
+	ret = tinydrm_update_rgb565_lcdreg(tdev, fb, vmem, &clip);
 	if (ret)
-		dev_err_once(tdev->base->dev, "Failed to update display %d\n", ret);
+		dev_err_once(tdev->base->dev, "Failed to update display %d\n",
+			     ret);
 
-	tinydrm_deferred_end(tdev);
+	if (tdev->prepared && !tdev->enabled)
+		tinydrm_enable(tdev);
+
+	return ret;
 }
 
 int mipi_dbi_init(struct device *dev, struct tinydrm_device *tdev)
 {
-	tdev->deferred = devm_kzalloc(dev, sizeof(*tdev->deferred),
-				      GFP_KERNEL);
-	if (!tdev->deferred)
-		return -ENOMEM;
-
-	INIT_DELAYED_WORK(&tdev->deferred->dwork, mipi_dbi_deferred_update);
-	tinydrm_reset_clip(&tdev->deferred->fb_clip.clip);
 	tdev->lcdreg->def_width = 8;
-	tdev->dirtyfb = tinydrm_dirtyfb;
+	tdev->dirtyfb = mipi_dbi_dirtyfb;
 
 	return 0;
 }

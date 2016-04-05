@@ -24,9 +24,6 @@ static int tinydrm_fbdev_fb_dirty(struct drm_framebuffer *fb,
 	if (tdev->pipe.plane.fb != fb)
 		return 0;
 
-	if (tdev->deferred)
-		tdev->deferred->no_delay = true;
-
 	return tdev->dirtyfb(fb, cma->vaddr, flags, color, clips, num_clips);
 }
 
@@ -47,10 +44,10 @@ static int tinydrm_fbdev_create(struct drm_fb_helper *helper,
 	if (ret)
 		return ret;
 
-	if (tdev->deferred) {
+	if (tdev->fbdefio_delay_ms) {
 		unsigned long delay;
 
-		delay = msecs_to_jiffies(tdev->deferred->defer_ms);
+		delay = msecs_to_jiffies(tdev->fbdefio_delay_ms);
 		helper->fbdev->fbdefio->delay = delay ? delay : 1;
 	}
 

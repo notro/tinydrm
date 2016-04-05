@@ -52,9 +52,6 @@ static void tinydrm_unregister(struct tinydrm_device *tdev)
 {
 	DRM_DEBUG_KMS("\n");
 
-	if (tdev->deferred)
-		cancel_delayed_work_sync(&tdev->deferred->dwork);
-
 	tinydrm_fbdev_fini(tdev);
 
 	drm_mode_config_cleanup(tdev->base);

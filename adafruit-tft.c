@@ -234,7 +234,7 @@ static int adafruit_tft_probe(struct spi_device *spi)
 		return ret;
 
 	/* TODO: Make configurable */
-	tdev->deferred->defer_ms = 40;
+	tdev->fbdefio_delay_ms = 40;
 
 	spi_set_drvdata(spi, tdev);
 

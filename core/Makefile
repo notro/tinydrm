@@ -7,5 +7,4 @@ tinydrm-y				+= tinydrm-core.o
 tinydrm-y				+= tinydrm-display-pipe.o
 tinydrm-y				+= tinydrm-framebuffer.o
 tinydrm-y				+= tinydrm-helpers.o
-tinydrm-y				+= tinydrm-deferred.o
 tinydrm-$(CONFIG_DRM_KMS_FB_HELPER)	+= tinydrm-fbdev.o

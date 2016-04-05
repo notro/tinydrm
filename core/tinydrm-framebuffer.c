@@ -26,12 +26,8 @@ static inline struct tinydrm_framebuffer *to_tinydrm_framebuffer(struct drm_fram
 static void tinydrm_framebuffer_destroy(struct drm_framebuffer *fb)
 {
 	struct tinydrm_framebuffer *tinydrm_fb = to_tinydrm_framebuffer(fb);
-	struct tinydrm_device *tdev = fb->dev->dev_private;
 
 	DRM_DEBUG_KMS("fb = %p, cma_obj = %p\n", fb, tinydrm_fb->cma_obj);
-
-	if (tdev->deferred)
-		flush_delayed_work(&tdev->deferred->dwork);
 
 	if (tinydrm_fb->cma_obj)
 		drm_gem_object_unreference_unlocked(&tinydrm_fb->cma_obj->base);
