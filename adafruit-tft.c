@@ -63,7 +63,7 @@ static int adafruit_tft_1601_panel_prepare(struct drm_panel *panel)
 		return 0;
 
 	lcdreg_reset(reg);
-	ret = lcdreg_writereg(reg, ILI9340_SWRESET);
+	ret = lcdreg_writereg(reg, MIPI_DCS_SOFT_RESET);
 	if (ret) {
 		dev_err(tdev->base->dev, "Error writing lcdreg %d\n", ret);
 		return ret;
@@ -85,14 +85,14 @@ static int adafruit_tft_1601_panel_prepare(struct drm_panel *panel)
 	lcdreg_writereg(reg, ILI9340_VMCTRL1, 0x3e, 0x28);
 	lcdreg_writereg(reg, ILI9340_VMCTRL2, 0x86);
 
-	lcdreg_writereg(reg, ILI9340_PIXSET, 0x55);
+	lcdreg_writereg(reg, MIPI_DCS_SET_PIXEL_FORMAT, 0x55);
 	lcdreg_writereg(reg, ILI9340_FRMCTR1, 0x00, 0x18);
 	lcdreg_writereg(reg, ILI9340_DISCTRL, 0x08, 0x82, 0x27);
 
 	/* 3Gamma Function Disable */
 	lcdreg_writereg(reg, 0xF2, 0x00);
 
-	lcdreg_writereg(reg, ILI9340_GAMSET, 0x01);
+	lcdreg_writereg(reg, MIPI_DCS_SET_GAMMA_CURVE, 0x01);
 	lcdreg_writereg(reg, ILI9340_PGAMCTRL,
 			0x0F, 0x31, 0x2B, 0x0C, 0x0E, 0x08, 0x4E, 0xF1,
 			0x37, 0x07, 0x10, 0x03, 0x0E, 0x09, 0x00);
@@ -118,9 +118,9 @@ static int adafruit_tft_1601_panel_prepare(struct drm_panel *panel)
 	addr_mode |= ILI9340_MADCTL_BGR;
 	lcdreg_writereg(reg, MIPI_DCS_SET_ADDRESS_MODE, addr_mode);
 
-	lcdreg_writereg(reg, ILI9340_SLPOUT);
+	lcdreg_writereg(reg, MIPI_DCS_EXIT_SLEEP_MODE);
 	msleep(120);
-	lcdreg_writereg(reg, ILI9340_DISPON);
+	lcdreg_writereg(reg, MIPI_DCS_SET_DISPLAY_ON);
 
 	mipi_dbi_debug_dump_regs(reg);
 

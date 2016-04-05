@@ -12,44 +12,6 @@
 #ifndef __LINUX_ILI9340_H
 #define __LINUX_ILI9340_H
 
-
-#define ILI9340_NOP        0x00
-#define ILI9340_SWRESET    0x01
-#define ILI9340_RDDIDIF    0x04
-#define ILI9340_RDDST      0x09
-#define ILI9340_RDDPM      0x0A
-#define ILI9340_RDDMADCTL  0x0B
-#define ILI9340_RDDCOLMOD  0x0C
-#define ILI9340_RDDIM      0x0D
-#define ILI9340_RDDSM      0x0E
-#define ILI9340_RDDSDR     0x0F
-
-#define ILI9340_SLPIN      0x10
-#define ILI9340_SLPOUT     0x11
-#define ILI9340_PTLON      0x12
-#define ILI9340_NORON      0x13
-
-#define ILI9340_DINVOFF    0x20
-#define ILI9340_DINVON     0x21
-#define ILI9340_GAMSET     0x26
-#define ILI9340_DISPOFF    0x28
-#define ILI9340_DISPON     0x29
-#define ILI9340_CASET      0x2A
-#define ILI9340_PASET      0x2B
-#define ILI9340_RAMWR      0x2C
-#define ILI9340_RGBSET     0x2D
-#define ILI9340_RAMRD      0x2E
-
-#define ILI9340_PLTAR      0x30
-#define ILI9340_VSCRDEF    0x33
-#define ILI9340_TEOFF      0x34
-#define ILI9340_TEON       0x35
-#define ILI9340_MADCTL     0x36
-#define ILI9340_VSCRSADD   0x37
-#define ILI9340_IDMOFF     0x38
-#define ILI9340_IDMON      0x39
-#define ILI9340_PIXSET     0x3A
-
 #define ILI9340_FRMCTR1    0xB1
 #define ILI9340_FRMCTR2    0xB2
 #define ILI9340_FRMCTR3    0xB3
