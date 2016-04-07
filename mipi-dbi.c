@@ -1,4 +1,3 @@
-//#define DEBUG
 /*
  * MIPI Display Bus Interface (DBI) LCD controller support
  *
@@ -44,8 +43,9 @@ void tinydrm_xrgb8888_to_rgb565(u32 *src, u16 *dst, unsigned num_pixels, bool sw
 // TODO: Pass in regnr
 int tinydrm_update_rgb565_lcdreg(struct tinydrm_device *tdev, struct drm_framebuffer *fb, void *vmem, struct drm_clip_rect *clip)
 {
-	unsigned num_pixels = (clip->x2 - clip->x1 + 1) *
-			      (clip->y2 - clip->y1 + 1);
+	unsigned width = clip->x2 - clip->x1 + 1;
+	unsigned height = clip->y2 - clip->y1 + 1;
+	unsigned num_pixels = width * height;
 	struct lcdreg_transfer tr = {
 		.index = 1,
 		.width = 16,
@@ -55,13 +55,26 @@ int tinydrm_update_rgb565_lcdreg(struct tinydrm_device *tdev, struct drm_framebu
 	u16 *buf = NULL;
 	int ret;
 
-	dev_err_once(tdev->base->dev, "pixel_format = %s, bpw = 0x%08x\n", drm_get_format_name(fb->pixel_format), tdev->lcdreg->bits_per_word_mask);
+	dev_dbg(tdev->base->dev, "%s: x1=%u, x2=%u, y1=%u, y2=%u : width=%u, height=%u\n",
+		__func__, clip->x1, clip->x2, clip->y1, clip->y2, width, height);
+	dev_dbg_once(tdev->base->dev, "pixel_format = %s, bpw = 0x%08x\n",
+		     drm_get_format_name(fb->pixel_format),
+		     tdev->lcdreg->bits_per_word_mask);
+
+	if (width != fb->width) {
+		dev_err(tdev->base->dev,
+			"Only full width clips are supported: x1=%u, x2=%u\n",
+			clip->x1, clip->x2);
+		return -EINVAL;
+	}
 
 	switch (fb->pixel_format) {
 	case DRM_FORMAT_RGB565:
+		vmem += clip->y1 * width * 2;
 		tr.buf = vmem;
 		break;
 	case DRM_FORMAT_XRGB8888:
+		vmem += clip->y1 * width * 4;
 		buf = kmalloc(num_pixels * sizeof(u16), GFP_KERNEL);
 		if (!buf)
 			return -ENOMEM;
@@ -89,7 +102,8 @@ int tinydrm_update_rgb565_lcdreg(struct tinydrm_device *tdev, struct drm_framebu
 	return ret;
 }
 
-/* TODO remove when drm_clip_rect_merge() has a home */
+/* TODO remove when the drm_clip_rect functions have a home */
+void drm_clip_rect_sanetize(struct drm_clip_rect *clip, u32 width, u32 height);
 void drm_clip_rect_merge(struct drm_clip_rect *dst,
 			 struct drm_clip_rect *src, unsigned num_clips,
 			 unsigned flags, u32 width, u32 height);
@@ -105,15 +119,14 @@ static int mipi_dbi_dirtyfb(struct drm_framebuffer *fb, void *vmem,
 
 	drm_clip_rect_merge(&clip, clips, num_clips, flags,
 			    fb->width, fb->height);
+	drm_clip_rect_sanetize(&clip, fb->width, fb->height);
 
 	dev_dbg(tdev->base->dev, "%s: vmem=%p, x1=%u, x2=%u, y1=%u, y2=%u\n",
 		__func__, vmem, clip.x1, clip.x2, clip.y1, clip.y2);
 
-	/* TODO: support partial updates */
+	/* Only full width is supported */
 	clip.x1 = 0;
 	clip.x2 = fb->width - 1;
-	clip.y1 = 0;
-	clip.y2 = fb->height - 1;
 
 	lcdreg_writereg(reg, MIPI_DCS_SET_COLUMN_ADDRESS,
 			(clip.x1 >> 8) & 0xFF, clip.x1 & 0xFF,
