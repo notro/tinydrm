@@ -23,7 +23,7 @@ struct drm_simple_kms_connector {
 static inline struct drm_simple_kms_connector *
 to_simple_connector(struct drm_connector *connector)
 {
-        return container_of(connector, struct drm_simple_kms_connector, base);
+	return container_of(connector, struct drm_simple_kms_connector, base);
 }
 
 static int drm_simple_kms_connector_get_modes(struct drm_connector *connector)

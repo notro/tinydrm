@@ -81,7 +81,7 @@ static int __maybe_unused tinydrm_pm_resume(struct device *dev)
 }
 
 const struct dev_pm_ops tinydrm_simple_pm_ops = {
-        SET_SYSTEM_SLEEP_PM_OPS(tinydrm_pm_suspend, tinydrm_pm_resume)
+	SET_SYSTEM_SLEEP_PM_OPS(tinydrm_pm_suspend, tinydrm_pm_resume)
 };
 EXPORT_SYMBOL(tinydrm_simple_pm_ops);
 

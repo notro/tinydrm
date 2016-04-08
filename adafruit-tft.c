@@ -101,19 +101,19 @@ static int adafruit_tft_1601_panel_prepare(struct drm_panel *panel)
 			0x48, 0x08, 0x0F, 0x0C, 0x31, 0x36, 0x0F);
 
 	switch (adafruit_tft_get_rotation(reg->dev)) {
-		default:
-			addr_mode = ILI9340_MADCTL_MV | ILI9340_MADCTL_MY |
-				    ILI9340_MADCTL_MX;
-			break;
-		case 90:
-			addr_mode = ILI9340_MADCTL_MY;;
-			break;
-		case 180:
-			addr_mode = ILI9340_MADCTL_MV;
-			break;
-		case 270:
-			addr_mode = ILI9340_MADCTL_MX;
-			break;
+	default:
+		addr_mode = ILI9340_MADCTL_MV | ILI9340_MADCTL_MY |
+			    ILI9340_MADCTL_MX;
+		break;
+	case 90:
+		addr_mode = ILI9340_MADCTL_MY;
+		break;
+	case 180:
+		addr_mode = ILI9340_MADCTL_MV;
+		break;
+	case 270:
+		addr_mode = ILI9340_MADCTL_MX;
+		break;
 	}
 	addr_mode |= ILI9340_MADCTL_BGR;
 	lcdreg_writereg(reg, MIPI_DCS_SET_ADDRESS_MODE, addr_mode);
@@ -147,7 +147,7 @@ static const struct spi_device_id adafruit_tft_id[] = {
 	{ "tft1601", ADAFRUIT_1601 },
 	{ "tft797",  ADAFRUIT_797 },
 	{ "tft358",  ADAFRUIT_358 },
-        { }
+	{ },
 };
 MODULE_DEVICE_TABLE(spi, adafruit_tft_id);
 
@@ -217,10 +217,10 @@ static int adafruit_tft_probe(struct spi_device *spi)
 
 	DRM_DEBUG_DRIVER("rotation = %u\n", adafruit_tft_get_rotation(dev));
 	switch (adafruit_tft_get_rotation(dev)) {
-		case 90:
-		case 270:
-			swap(tdev->width, tdev->height);
-			break;
+	case 90:
+	case 270:
+		swap(tdev->width, tdev->height);
+		break;
 	}
 
 	reg = devm_lcdreg_spi_init(spi, &cfg);
