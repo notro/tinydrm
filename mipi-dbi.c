@@ -136,6 +136,8 @@ static int mipi_dbi_dirtyfb(struct drm_framebuffer *fb, void *vmem,
 	clip.x1 = 0;
 	clip.x2 = fb->width;
 
+	tinydrm_debugfs_update_begin(tdev, &clip);
+
 	lcdreg_writereg(reg, MIPI_DCS_SET_COLUMN_ADDRESS,
 			(clip.x1 >> 8) & 0xFF, clip.x1 & 0xFF,
 			(clip.x2 >> 8) & 0xFF, (clip.x2 - 1) & 0xFF);
@@ -151,6 +153,8 @@ static int mipi_dbi_dirtyfb(struct drm_framebuffer *fb, void *vmem,
 
 	if (tdev->prepared && !tdev->enabled)
 		tinydrm_enable(tdev);
+
+	tinydrm_debugfs_update_end(tdev, 0, 16);
 
 	return ret;
 }

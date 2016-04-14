@@ -33,7 +33,11 @@ struct tinydrm_device {
 	bool prepared;
 	bool enabled;
 	void *dev_private;
-
+#ifdef CONFIG_DEBUG_FS
+	struct dentry *debugfs;
+	struct list_head update_list;
+	struct mutex update_list_lock;
+#endif
 	int (*dirtyfb)(struct drm_framebuffer *fb, void *vmem, unsigned flags,
 		       unsigned color, struct drm_clip_rect *clips,
 		       unsigned num_clips);
@@ -130,6 +134,28 @@ static inline void tinydrm_fbdev_fini(struct tinydrm_device *tdev)
 }
 
 static inline void tinydrm_fbdev_restore_mode(struct tinydrm_device *tdev)
+{
+}
+#endif
+
+#ifdef CONFIG_DEBUG_FS
+void tinydrm_debugfs_update_begin(struct tinydrm_device *tdev,
+				  const struct drm_clip_rect *clip);
+void tinydrm_debugfs_update_end(struct tinydrm_device *tdev, size_t len,
+				unsigned bits_per_pixel);
+void devm_tinydrm_debugfs_init(struct tinydrm_device *tdev);
+#else
+void tinydrm_debugfs_update_begin(struct tinydrm_device *tdev,
+				  const struct drm_clip_rect *clip)
+{
+}
+
+void tinydrm_debugfs_update_end(struct tinydrm_device *tdev, size_t len,
+				unsigned bits_per_pixel)
+{
+}
+
+void devm_tinydrm_debugfs_init(struct tinydrm_device *tdev)
 {
 }
 #endif

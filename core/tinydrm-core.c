@@ -106,6 +106,7 @@ static int tinydrm_register(struct device *parent, struct tinydrm_device *tdev,
 		goto err_free;
 
 	drm_mode_config_reset(dev);
+	devm_tinydrm_debugfs_init(tdev);
 
 	ret = tinydrm_fbdev_init(tdev);
 	if (ret)

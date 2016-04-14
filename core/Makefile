@@ -8,3 +8,4 @@ tinydrm-y				+= tinydrm-display-pipe.o
 tinydrm-y				+= tinydrm-framebuffer.o
 tinydrm-y				+= tinydrm-helpers.o
 tinydrm-$(CONFIG_DRM_KMS_FB_HELPER)	+= tinydrm-fbdev.o
+tinydrm-$(CONFIG_DEBUG_FS)		+= tinydrm-debugfs.o
