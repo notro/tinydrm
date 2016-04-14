@@ -10,6 +10,7 @@
  */
 
 #include <drm/drm_gem_cma_helper.h>
+#include <drm/drm_rect.h>
 #include <drm/tinydrm/lcdreg.h>
 #include <drm/tinydrm/tinydrm.h>
 #include <linux/module.h>
@@ -45,8 +46,8 @@ int tinydrm_update_rgb565_lcdreg(struct lcdreg *reg, u32 regnr,
 				 struct drm_framebuffer *fb, void *vmem,
 				 struct drm_clip_rect *clip)
 {
-	unsigned width = clip->x2 - clip->x1 + 1;
-	unsigned height = clip->y2 - clip->y1 + 1;
+	unsigned width = drm_clip_rect_width(clip);
+	unsigned height = drm_clip_rect_height(clip);
 	unsigned num_pixels = width * height;
 	struct lcdreg_transfer tr = {
 		.index = 1,
@@ -57,8 +58,10 @@ int tinydrm_update_rgb565_lcdreg(struct lcdreg *reg, u32 regnr,
 	u16 *buf = NULL;
 	int ret;
 
-	dev_dbg(reg->dev, "%s: x1=%u, x2=%u, y1=%u, y2=%u : width=%u, height=%u\n",
-		__func__, clip->x1, clip->x2, clip->y1, clip->y2, width, height);
+	dev_dbg(reg->dev,
+		"%s: x1=%u, x2=%u, y1=%u, y2=%u : width=%u, height=%u\n",
+		__func__, clip->x1, clip->x2, clip->y1, clip->y2,
+		width, height);
 	dev_dbg_once(reg->dev, "pixel_format = %s, bpw = 0x%08x\n",
 		     drm_get_format_name(fb->pixel_format),
 		     reg->bits_per_word_mask);
@@ -103,38 +106,42 @@ int tinydrm_update_rgb565_lcdreg(struct lcdreg *reg, u32 regnr,
 	return ret;
 }
 
-/* TODO remove when the drm_clip_rect functions have a home */
-void drm_clip_rect_sanetize(struct drm_clip_rect *clip, u32 width, u32 height);
-void drm_clip_rect_merge(struct drm_clip_rect *dst,
-			 struct drm_clip_rect *src, unsigned num_clips,
-			 unsigned flags, u32 width, u32 height);
-
 static int mipi_dbi_dirtyfb(struct drm_framebuffer *fb, void *vmem,
 			    unsigned flags, unsigned color,
 			    struct drm_clip_rect *clips, unsigned num_clips)
 {
 	struct tinydrm_device *tdev = fb->dev->dev_private;
 	struct lcdreg *reg = tdev->lcdreg;
-	struct drm_clip_rect clip = { 0 };
+	struct drm_clip_rect full_clip = {
+		.x1 = 0,
+		.x2 = fb->width,
+		.y1 = 0,
+		.y2 = fb->height,
+	};
+	struct drm_clip_rect clip;
 	int ret;
 
+	drm_clip_rect_reset(&clip);
 	drm_clip_rect_merge(&clip, clips, num_clips, flags,
 			    fb->width, fb->height);
-	drm_clip_rect_sanetize(&clip, fb->width, fb->height);
+	if (!drm_clip_rect_intersect(&clip, &full_clip)) {
+		DRM_DEBUG_KMS("Empty clip\n");
+		return -EINVAL;
+	}
 
 	dev_dbg(tdev->base->dev, "%s: vmem=%p, x1=%u, x2=%u, y1=%u, y2=%u\n",
 		__func__, vmem, clip.x1, clip.x2, clip.y1, clip.y2);
 
 	/* Only full width is supported */
 	clip.x1 = 0;
-	clip.x2 = fb->width - 1;
+	clip.x2 = fb->width;
 
 	lcdreg_writereg(reg, MIPI_DCS_SET_COLUMN_ADDRESS,
 			(clip.x1 >> 8) & 0xFF, clip.x1 & 0xFF,
-			(clip.x2 >> 8) & 0xFF, clip.x2 & 0xFF);
+			(clip.x2 >> 8) & 0xFF, (clip.x2 - 1) & 0xFF);
 	lcdreg_writereg(reg, MIPI_DCS_SET_PAGE_ADDRESS,
 			(clip.y1 >> 8) & 0xFF, clip.y1 & 0xFF,
-			(clip.y2 >> 8) & 0xFF, clip.y2 & 0xFF);
+			(clip.y2 >> 8) & 0xFF, (clip.y2 - 1) & 0xFF);
 
 	ret = tinydrm_update_rgb565_lcdreg(reg, MIPI_DCS_WRITE_MEMORY_START,
 					   fb, vmem, &clip);
