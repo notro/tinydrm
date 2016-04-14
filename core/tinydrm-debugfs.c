@@ -132,8 +132,8 @@ void tinydrm_debugfs_update_end(struct tinydrm_device *tdev, size_t len,
 		goto out_unlock; /* enabled during an update */
 
 	if (!len)
-		len = (entry->clip.x2 - entry->clip.x1 + 1) *
-		      (entry->clip.y2 - entry->clip.y1 + 1) *
+		len = drm_clip_rect_width(&entry->clip) *
+		      drm_clip_rect_height(&entry->clip) *
 		      bits_per_pixel / 8;
 	entry->end = local_clock();
 	entry->len = len;
