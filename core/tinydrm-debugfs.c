@@ -1,4 +1,3 @@
-#define DEBUG
 /*
  * Copyright (C) 2016 Noralf Trønnes
  *
