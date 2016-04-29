@@ -7,7 +7,6 @@
  * (at your option) any later version.
  */
 
-#include <drm/drm_rect.h>
 #include <drm/tinydrm/tinydrm.h>
 #include <linux/debugfs.h>
 #include <linux/module.h>
@@ -132,8 +131,8 @@ void tinydrm_debugfs_update_end(struct tinydrm_device *tdev, size_t len,
 		goto out_unlock; /* enabled during an update */
 
 	if (!len)
-		len = drm_clip_rect_width(&entry->clip) *
-		      drm_clip_rect_height(&entry->clip) *
+		len = (entry->clip.x2 - entry->clip.x1) *
+		      (entry->clip.y2 - entry->clip.y1) *
 		      bits_per_pixel / 8;
 	entry->end = local_clock();
 	entry->len = len;
@@ -208,8 +207,8 @@ static int tinydrm_debugfs_update_seq_show(struct seq_file *s, void *v)
 		       entry->clip.y1 == 0 &&
 		       entry->clip.y2 == tdev->height;
 		seq_printf(s, ", %s(%ux%u+%u+%u)", full ? "   full" : "partial",
-			   drm_clip_rect_width(&entry->clip),
-			   drm_clip_rect_height(&entry->clip),
+			   entry->clip.x2 - entry->clip.x1,
+			   entry->clip.y2 - entry->clip.y1,
 			   entry->clip.x1, entry->clip.y1);
 
 		if (previous_start) {

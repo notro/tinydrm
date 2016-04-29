@@ -10,7 +10,6 @@
  */
 
 #include <drm/drm_gem_cma_helper.h>
-#include <drm/drm_rect.h>
 #include <drm/tinydrm/lcdreg.h>
 #include <drm/tinydrm/tinydrm.h>
 #include <linux/module.h>
@@ -46,8 +45,8 @@ int tinydrm_update_rgb565_lcdreg(struct lcdreg *reg, u32 regnr,
 				 struct drm_framebuffer *fb, void *vmem,
 				 struct drm_clip_rect *clip)
 {
-	unsigned width = drm_clip_rect_width(clip);
-	unsigned height = drm_clip_rect_height(clip);
+	unsigned width = clip->x2 - clip->x1;
+	unsigned height = clip->y2 - clip->y1;
 	unsigned num_pixels = width * height;
 	struct lcdreg_transfer tr = {
 		.index = 1,
@@ -112,22 +111,11 @@ static int mipi_dbi_dirtyfb(struct drm_framebuffer *fb, void *vmem,
 {
 	struct tinydrm_device *tdev = fb->dev->dev_private;
 	struct lcdreg *reg = tdev->lcdreg;
-	struct drm_clip_rect full_clip = {
-		.x1 = 0,
-		.x2 = fb->width,
-		.y1 = 0,
-		.y2 = fb->height,
-	};
 	struct drm_clip_rect clip;
 	int ret;
 
-	drm_clip_rect_reset(&clip);
-	drm_clip_rect_merge(&clip, clips, num_clips, flags,
+	tinydrm_merge_clips(&clip, clips, num_clips, flags,
 			    fb->width, fb->height);
-	if (!drm_clip_rect_intersect(&clip, &full_clip)) {
-		DRM_DEBUG_KMS("Empty clip\n");
-		return -EINVAL;
-	}
 
 	dev_dbg(tdev->base->dev, "%s: vmem=%p, x1=%u, x2=%u, y1=%u, y2=%u\n",
 		__func__, vmem, clip.x1, clip.x2, clip.y1, clip.y2);

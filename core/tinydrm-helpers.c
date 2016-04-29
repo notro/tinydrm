@@ -12,6 +12,43 @@
 #include <linux/backlight.h>
 #include <linux/spi/spi.h>
 
+void tinydrm_merge_clips(struct drm_clip_rect *dst,
+			 struct drm_clip_rect *src, unsigned num_clips,
+			 unsigned flags, u32 width, u32 height)
+{
+	unsigned int i;
+
+	if (!src || !num_clips) {
+		dst->x1 = 0;
+		dst->x2 = width;
+		dst->y1 = 0;
+		dst->y2 = height;
+		return;
+	}
+
+	dst->x1 = dst->y1 = ~0;
+	dst->x2 = dst->y2 = 0;
+
+	for (i = 0; i < num_clips; i++) {
+		if (flags & DRM_MODE_FB_DIRTY_ANNOTATE_COPY)
+			i++;
+		dst->x1 = min(dst->x1, src[i].x1);
+		dst->x2 = max(dst->x2, src[i].x2);
+		dst->y1 = min(dst->y1, src[i].y1);
+		dst->y2 = max(dst->y2, src[i].y2);
+	}
+
+	if (dst->x2 > width || dst->y2 > height ||
+	    dst->x1 >= dst->x2 || dst->y1 >= dst->y2) {
+		DRM_DEBUG_KMS("Illegal clip: x1=%u, x2=%u, y1=%u, y2=%u\n",
+			      dst->x1, dst->x2, dst->y1, dst->y2);
+		dst->x1 = dst->y1 = 0;
+		dst->x2 = width;
+		dst->y2 = height;
+	}
+}
+EXPORT_SYMBOL(tinydrm_merge_clips);
+
 struct backlight_device *tinydrm_of_find_backlight(struct device *dev)
 {
 	struct backlight_device *backlight;

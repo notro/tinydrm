@@ -46,6 +46,11 @@ static int tinydrm_framebuffer_dirty(struct drm_framebuffer *fb,
 	struct tinydrm_device *tdev = fb->dev->dev_private;
 
 	dev_dbg(fb->dev->dev, "%s\n", __func__);
+	if (tdev->next_update_full) {
+		clips = NULL;
+		num_clips = 0;
+		tdev->next_update_full = false;
+	}
 
 	return tdev->dirtyfb(fb, tfb->cma_obj->vaddr, flags, color, clips, num_clips);
 }

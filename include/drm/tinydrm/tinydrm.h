@@ -32,6 +32,7 @@ struct tinydrm_device {
 	struct lcdreg *lcdreg;
 	bool prepared;
 	bool enabled;
+	bool next_update_full;
 	void *dev_private;
 #ifdef CONFIG_DEBUG_FS
 	struct dentry *debugfs;
@@ -160,6 +161,9 @@ void devm_tinydrm_debugfs_init(struct tinydrm_device *tdev)
 }
 #endif
 
+void tinydrm_merge_clips(struct drm_clip_rect *dst,
+			 struct drm_clip_rect *src, unsigned num_clips,
+			 unsigned flags, u32 width, u32 height);
 struct backlight_device *tinydrm_of_find_backlight(struct device *dev);
 int tinydrm_panel_enable_backlight(struct drm_panel *panel);
 int tinydrm_panel_disable_backlight(struct drm_panel *panel);

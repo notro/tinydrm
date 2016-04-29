@@ -24,6 +24,12 @@ static int tinydrm_fbdev_fb_dirty(struct drm_framebuffer *fb,
 	if (tdev->pipe.plane.fb != fb)
 		return 0;
 
+	if (tdev->next_update_full) {
+		clips = NULL;
+		num_clips = 0;
+		tdev->next_update_full = false;
+	}
+
 	return tdev->dirtyfb(fb, cma->vaddr, flags, color, clips, num_clips);
 }
 

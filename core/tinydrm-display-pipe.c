@@ -36,9 +36,22 @@ static void tinydrm_display_pipe_disable(struct drm_simple_display_pipe *pipe)
 	tinydrm_disable(tdev);
 }
 
+static void
+tinydrm_display_pipe_plane_update(struct drm_simple_display_pipe *pipe,
+				  struct drm_plane_state *plane_state)
+{
+	struct tinydrm_device *tdev;
+
+	tdev = container_of(pipe, struct tinydrm_device, pipe);
+	DRM_DEBUG_KMS("next_update_full == %u\n", tdev->next_update_full);
+/* TODO: Should a worker should do this update now instead of waiting for the next dirty()? */
+	tdev->next_update_full = true;
+}
+
 struct drm_simple_display_pipe_funcs tinydrm_display_pipe_funcs = {
 	.enable = tinydrm_display_pipe_enable,
 	.disable = tinydrm_display_pipe_disable,
+	.plane_update = tinydrm_display_pipe_plane_update,
 };
 
 int tinydrm_display_pipe_init(struct tinydrm_device *tdev,
@@ -48,6 +61,7 @@ int tinydrm_display_pipe_init(struct tinydrm_device *tdev,
 	struct drm_connector *connector;
 	int ret;
 
+	tdev->next_update_full = true;
 	connector = drm_simple_kms_panel_connector_create(dev, &tdev->panel,
 						DRM_MODE_CONNECTOR_VIRTUAL);
 	if (IS_ERR(connector))
