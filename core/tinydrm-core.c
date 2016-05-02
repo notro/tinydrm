@@ -19,7 +19,7 @@ static const uint32_t tinydrm_formats[] = {
 };
 
 static const struct drm_mode_config_funcs tinydrm_mode_config_funcs = {
-	.fb_create = tinydrm_fb_cma_dumb_create,
+	.fb_create = tinydrm_fb_create,
 	.atomic_check = drm_atomic_helper_check,
 	.atomic_commit = drm_atomic_helper_commit,
 };

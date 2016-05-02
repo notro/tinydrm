@@ -8,6 +8,10 @@
  */
 
 #include <drm/drmP.h>
+#include <drm/drm_fb_cma_helper.h>
+
+
+
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_crtc_helper.h>
 #include <drm/drm_gem_cma_helper.h>
@@ -55,7 +59,7 @@ static int tinydrm_framebuffer_dirty(struct drm_framebuffer *fb,
 	return tdev->dirtyfb(fb, tfb->cma_obj->vaddr, flags, color, clips, num_clips);
 }
 
-static const struct drm_framebuffer_funcs tinydrm_fb_funcs = {
+static const struct drm_framebuffer_funcs tinydrm_fb_funcsX = {
 	.destroy = tinydrm_framebuffer_destroy,
 	.dirty = tinydrm_framebuffer_dirty,
 /*	TODO?
@@ -90,7 +94,7 @@ struct drm_framebuffer *tinydrm_fb_cma_dumb_create(struct drm_device *dev,
 
 	tinydrm_fb->cma_obj = to_drm_gem_cma_obj(obj);
 
-	ret = drm_framebuffer_init(dev, &tinydrm_fb->base, &tinydrm_fb_funcs);
+	ret = drm_framebuffer_init(dev, &tinydrm_fb->base, &tinydrm_fb_funcsX);
 	if (ret) {
 		kfree(tinydrm_fb);
 		drm_gem_object_unreference_unlocked(obj);
@@ -102,3 +106,42 @@ struct drm_framebuffer *tinydrm_fb_cma_dumb_create(struct drm_device *dev,
 	return &tinydrm_fb->base;
 }
 EXPORT_SYMBOL(tinydrm_fb_cma_dumb_create);
+
+
+
+
+static int tinydrm_fb_dirty(struct drm_framebuffer *fb,
+			    struct drm_file *file_priv,
+			    unsigned flags, unsigned color,
+			    struct drm_clip_rect *clips,
+			    unsigned num_clips)
+{
+	struct drm_gem_cma_object *cma = drm_fb_cma_get_gem_obj(fb, 0);
+	struct tinydrm_device *tdev = fb->dev->dev_private;
+
+	if (tdev->pipe.plane.fb != fb)
+		return 0;
+
+	if (tdev->next_update_full) {
+		clips = NULL;
+		num_clips = 0;
+		tdev->next_update_full = false;
+	}
+
+	return tdev->dirtyfb(fb, cma->vaddr, flags, color, clips, num_clips);
+}
+
+static struct drm_framebuffer_funcs tinydrm_fb_funcs = {
+	.destroy	= drm_fb_cma_destroy,
+	.create_handle	= drm_fb_cma_create_handle,
+	.dirty		= tinydrm_fb_dirty,
+};
+
+struct drm_framebuffer *tinydrm_fb_create(struct drm_device *dev,
+				struct drm_file *file_priv,
+				const struct drm_mode_fb_cmd2 *mode_cmd)
+{
+	return drm_fb_cma_create_with_funcs(dev, file_priv, mode_cmd,
+					    &tinydrm_fb_funcs);
+}
+EXPORT_SYMBOL(tinydrm_fb_create);

@@ -74,9 +74,9 @@ static struct drm_driver name_struct = { \
 	.minor			= 0, \
 }
 
-struct drm_framebuffer *tinydrm_fb_cma_dumb_create(struct drm_device *dev,
-					struct drm_file *file_priv,
-					const struct drm_mode_fb_cmd2 *mode_cmd);
+struct drm_framebuffer *tinydrm_fb_create(struct drm_device *dev,
+				struct drm_file *file_priv,
+				const struct drm_mode_fb_cmd2 *mode_cmd);
 int tinydrm_display_pipe_init(struct tinydrm_device *tdev,
 			      const uint32_t *formats, unsigned int format_count);
 int tinydrm_panel_get_modes(struct drm_panel *panel);
