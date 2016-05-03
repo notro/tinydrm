@@ -34,11 +34,5 @@ int drm_simple_display_pipe_init(struct drm_device *dev,
 				 struct drm_simple_display_pipe_funcs *funcs,
 				 const uint32_t *formats, unsigned int format_count,
 				 struct drm_connector *connector);
-struct drm_connector *
-drm_simple_kms_panel_connector_create(struct drm_device *dev,
-				      struct drm_panel *panel,
-				      int connector_type);
-
-
 
 #endif /* __LINUX_DRM_SIMPLE_KMS_HELPER_H */

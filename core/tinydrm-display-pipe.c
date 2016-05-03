@@ -7,9 +7,12 @@
  * (at your option) any later version.
  */
 
+#include <linux/module.h>
+
 #include <drm/drm_crtc.h>
 #include <drm/drm_modes.h>
 #include <drm/drm_panel.h>
+#include <drm/drm_panel_helper.h>
 #include <drm/drm_simple_kms_helper.h>
 #include <drm/tinydrm/tinydrm.h>
 
@@ -62,8 +65,8 @@ int tinydrm_display_pipe_init(struct tinydrm_device *tdev,
 	int ret;
 
 	tdev->next_update_full = true;
-	connector = drm_simple_kms_panel_connector_create(dev, &tdev->panel,
-						DRM_MODE_CONNECTOR_VIRTUAL);
+	connector = drm_panel_connector_create(dev, &tdev->panel,
+					       DRM_MODE_CONNECTOR_VIRTUAL);
 	if (IS_ERR(connector))
 		return PTR_ERR(connector);
 
