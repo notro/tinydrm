@@ -40,8 +40,8 @@ static void tinydrm_display_pipe_disable(struct drm_simple_display_pipe *pipe)
 }
 
 static void
-tinydrm_display_pipe_plane_update(struct drm_simple_display_pipe *pipe,
-				  struct drm_plane_state *plane_state)
+tinydrm_display_pipe_update(struct drm_simple_display_pipe *pipe,
+			    struct drm_plane_state *pstate)
 {
 	struct tinydrm_device *tdev;
 
@@ -54,7 +54,7 @@ tinydrm_display_pipe_plane_update(struct drm_simple_display_pipe *pipe,
 struct drm_simple_display_pipe_funcs tinydrm_display_pipe_funcs = {
 	.enable = tinydrm_display_pipe_enable,
 	.disable = tinydrm_display_pipe_disable,
-	.plane_update = tinydrm_display_pipe_plane_update,
+	.update = tinydrm_display_pipe_update,
 };
 
 int tinydrm_display_pipe_init(struct tinydrm_device *tdev,

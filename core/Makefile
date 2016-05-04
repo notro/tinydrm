@@ -1,7 +1,5 @@
 ccflags-y += -I$(src)/../include
 
-obj-$(CONFIG_DRM_SIMPLE_KMS_HELPER) += drm_simple_kms_helper.o
-
 obj-$(CONFIG_DRM_TINYDRM)		+= tinydrm.o
 tinydrm-y				+= tinydrm-core.o
 tinydrm-y				+= tinydrm-display-pipe.o
