@@ -143,7 +143,7 @@ tinydrm_display_pipe_update(struct drm_simple_display_pipe *pipe,
 	tdev->next_update_full = true;
 }
 
-struct drm_simple_display_pipe_funcs tinydrm_display_pipe_funcs = {
+static const struct drm_simple_display_pipe_funcs tinydrm_display_pipe_funcs = {
 	.enable = tinydrm_display_pipe_enable,
 	.disable = tinydrm_display_pipe_disable,
 	.update = tinydrm_display_pipe_update,
