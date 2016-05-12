@@ -1,7 +1,7 @@
 menuconfig DRM_TINYDRM
 	tristate "Support for small TFT LCD display modules"
 	depends on DRM
-	select DRM_SIMPLE_KMS_HELPER
+	select DRM_KMS_HELPER
 	select DRM_KMS_CMA_HELPER
 	select DRM_PANEL
 	select VIDEOMODE_HELPERS

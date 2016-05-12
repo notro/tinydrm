@@ -33,7 +33,7 @@ static int tinydrm_fbdev_fb_dirty(struct drm_framebuffer *fb,
 	return tdev->dirtyfb(fb, cma->vaddr, flags, color, clips, num_clips);
 }
 
-static struct drm_framebuffer_funcs tinydrm_fbdev_fb_funcs = {
+static const struct drm_framebuffer_funcs tinydrm_fbdev_fb_funcs = {
 	.destroy	= drm_fb_cma_destroy,
 	.create_handle	= drm_fb_cma_create_handle,
 	.dirty		= tinydrm_fbdev_fb_dirty,
