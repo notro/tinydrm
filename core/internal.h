@@ -1,0 +1,1 @@
+extern const struct drm_framebuffer_funcs tinydrm_fb_funcs;

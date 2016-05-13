@@ -12,13 +12,17 @@
 #ifndef __LINUX_MIPI_DBI_H
 #define __LINUX_MIPI_DBI_H
 
+struct drm_framebuffer;
 struct tinydrm_device;
-struct drm_panel;
+struct drm_clip_rect;
 struct lcdreg;
 
 int mipi_dbi_init(struct device *dev, struct tinydrm_device *tdev);
+int mipi_dbi_dirty(struct drm_framebuffer *fb, void *vmem,
+		   unsigned flags, unsigned color,
+		   struct drm_clip_rect *clips, unsigned num_clips);
 bool mipi_dbi_display_is_on(struct lcdreg *reg);
 void mipi_dbi_debug_dump_regs(struct lcdreg *reg);
-int mipi_dbi_panel_unprepare(struct drm_panel *panel);
+int mipi_dbi_unprepare(struct tinydrm_device *tdev);
 
 #endif /* __LINUX_MIPI_DBI_H */

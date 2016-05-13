@@ -10,6 +10,7 @@
 #include <drm/drmP.h>
 #include <drm/tinydrm/tinydrm.h>
 #include <linux/backlight.h>
+#include <linux/pm.h>
 #include <linux/spi/spi.h>
 
 void tinydrm_merge_clips(struct drm_clip_rect *dst,
@@ -68,10 +69,8 @@ struct backlight_device *tinydrm_of_find_backlight(struct device *dev)
 }
 EXPORT_SYMBOL(tinydrm_of_find_backlight);
 
-int tinydrm_panel_enable_backlight(struct drm_panel *panel)
+int tinydrm_enable_backlight(struct tinydrm_device *tdev)
 {
-	struct tinydrm_device *tdev = tinydrm_from_panel(panel);
-
 	if (tdev->backlight) {
 		if (tdev->backlight->props.brightness == 0)
 			tdev->backlight->props.brightness =
@@ -82,12 +81,10 @@ int tinydrm_panel_enable_backlight(struct drm_panel *panel)
 
 	return 0;
 }
-EXPORT_SYMBOL(tinydrm_panel_enable_backlight);
+EXPORT_SYMBOL(tinydrm_enable_backlight);
 
-int tinydrm_panel_disable_backlight(struct drm_panel *panel)
+int tinydrm_disable_backlight(struct tinydrm_device *tdev)
 {
-	struct tinydrm_device *tdev = tinydrm_from_panel(panel);
-
 	if (tdev->backlight) {
 		tdev->backlight->props.state |= BL_CORE_SUSPENDED;
 		backlight_update_status(tdev->backlight);
@@ -95,7 +92,7 @@ int tinydrm_panel_disable_backlight(struct drm_panel *panel)
 
 	return 0;
 }
-EXPORT_SYMBOL(tinydrm_panel_disable_backlight);
+EXPORT_SYMBOL(tinydrm_disable_backlight);
 
 static int __maybe_unused tinydrm_pm_suspend(struct device *dev)
 {
@@ -112,7 +109,7 @@ static int __maybe_unused tinydrm_pm_resume(struct device *dev)
 	struct tinydrm_device *tdev = dev_get_drvdata(dev);
 
 	tinydrm_prepare(tdev);
-	/* The panel is enabled after the first display update */
+	/* Will be enabled after the first display update */
 
 	return 0;
 }

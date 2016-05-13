@@ -38,9 +38,8 @@ static u32 adafruit_tft_get_rotation(struct device *dev)
 	return rotation;
 }
 
-static int adafruit_tft_1601_panel_prepare(struct drm_panel *panel)
+static int adafruit_tft_1601_prepare(struct tinydrm_device *tdev)
 {
-	struct tinydrm_device *tdev = tinydrm_from_panel(panel);
 	struct lcdreg *reg = tdev->lcdreg;
 	u8 addr_mode;
 	int ret;
@@ -127,12 +126,12 @@ static int adafruit_tft_1601_panel_prepare(struct drm_panel *panel)
 	return 0;
 }
 
-struct drm_panel_funcs adafruit_tft_1601_funcs = {
-	.get_modes = tinydrm_panel_get_modes,
-	.prepare = adafruit_tft_1601_panel_prepare,
-	.unprepare = mipi_dbi_panel_unprepare,
-	.enable = tinydrm_panel_enable_backlight,
-	.disable = tinydrm_panel_disable_backlight,
+static const struct tinydrm_funcs adafruit_tft_1601_funcs = {
+	.prepare = adafruit_tft_1601_prepare,
+	.unprepare = mipi_dbi_unprepare,
+	.enable = tinydrm_enable_backlight,
+	.disable = tinydrm_disable_backlight,
+	.dirty = mipi_dbi_dirty,
 };
 
 static const struct of_device_id adafruit_tft_of_match[] = {
@@ -198,18 +197,20 @@ static int adafruit_tft_probe(struct spi_device *spi)
 		cfg.mode = LCDREG_SPI_4WIRE;
 		tdev->width = 320;
 		tdev->height = 240;
-		tdev->panel.funcs = &adafruit_tft_1601_funcs;
+		tdev->width_mm = 58;
+		tdev->height_mm = 43;
+		tdev->funcs = &adafruit_tft_1601_funcs;
 		break;
 	case ADAFRUIT_797:
 		cfg.mode = LCDREG_SPI_3WIRE;
 		tdev->width = 176;
 		tdev->height = 220;
-		/* TODO: tdev->panel.funcs = &adafruit_tft_797_funcs*/
+		/* TODO: tdev->funcs = &adafruit_tft_797_funcs*/
 		break;
 	case ADAFRUIT_358:
 		tdev->width = 128;
 		tdev->height = 160;
-		/* TODO: tdev->panel.funcs = &adafruit_tft_358_funcs */
+		/* TODO: tdev->funcs = &adafruit_tft_358_funcs */
 		break;
 	default:
 		return -EINVAL;

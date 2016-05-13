@@ -105,9 +105,9 @@ int tinydrm_update_rgb565_lcdreg(struct lcdreg *reg, u32 regnr,
 	return ret;
 }
 
-static int mipi_dbi_dirtyfb(struct drm_framebuffer *fb, void *vmem,
-			    unsigned flags, unsigned color,
-			    struct drm_clip_rect *clips, unsigned num_clips)
+int mipi_dbi_dirty(struct drm_framebuffer *fb, void *vmem,
+		   unsigned flags, unsigned color,
+		   struct drm_clip_rect *clips, unsigned num_clips)
 {
 	struct tinydrm_device *tdev = fb->dev->dev_private;
 	struct lcdreg *reg = tdev->lcdreg;
@@ -139,18 +139,15 @@ static int mipi_dbi_dirtyfb(struct drm_framebuffer *fb, void *vmem,
 		dev_err_once(tdev->base->dev, "Failed to update display %d\n",
 			     ret);
 
-	if (tdev->prepared && !tdev->enabled)
-		tinydrm_enable(tdev);
-
 	tinydrm_debugfs_update_end(tdev, 0, 16);
 
 	return ret;
 }
+EXPORT_SYMBOL(mipi_dbi_dirty);
 
 int mipi_dbi_init(struct device *dev, struct tinydrm_device *tdev)
 {
 	tdev->lcdreg->def_width = 8;
-	tdev->dirtyfb = mipi_dbi_dirtyfb;
 
 	return 0;
 }
@@ -227,9 +224,8 @@ void mipi_dbi_debug_dump_regs(struct lcdreg *reg)
 }
 EXPORT_SYMBOL(mipi_dbi_debug_dump_regs);
 
-int mipi_dbi_panel_unprepare(struct drm_panel *panel)
+int mipi_dbi_unprepare(struct tinydrm_device *tdev)
 {
-	struct tinydrm_device *tdev = tinydrm_from_panel(panel);
 	struct lcdreg *reg = tdev->lcdreg;
 
 	/*
@@ -247,6 +243,6 @@ int mipi_dbi_panel_unprepare(struct drm_panel *panel)
 
 	return 0;
 }
-EXPORT_SYMBOL(mipi_dbi_panel_unprepare);
+EXPORT_SYMBOL(mipi_dbi_unprepare);
 
 MODULE_LICENSE("GPL");

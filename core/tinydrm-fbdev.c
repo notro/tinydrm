@@ -12,32 +12,7 @@
 #include <drm/drm_fb_helper.h>
 #include <drm/tinydrm/tinydrm.h>
 
-static int tinydrm_fbdev_fb_dirty(struct drm_framebuffer *fb,
-				  struct drm_file *file_priv,
-				  unsigned flags, unsigned color,
-				  struct drm_clip_rect *clips,
-				  unsigned num_clips)
-{
-	struct drm_gem_cma_object *cma = drm_fb_cma_get_gem_obj(fb, 0);
-	struct tinydrm_device *tdev = fb->dev->dev_private;
-
-	if (tdev->pipe.plane.fb != fb)
-		return 0;
-
-	if (tdev->next_update_full) {
-		clips = NULL;
-		num_clips = 0;
-		tdev->next_update_full = false;
-	}
-
-	return tdev->dirtyfb(fb, cma->vaddr, flags, color, clips, num_clips);
-}
-
-static const struct drm_framebuffer_funcs tinydrm_fbdev_fb_funcs = {
-	.destroy	= drm_fb_cma_destroy,
-	.create_handle	= drm_fb_cma_create_handle,
-	.dirty		= tinydrm_fbdev_fb_dirty,
-};
+#include "internal.h"
 
 static int tinydrm_fbdev_create(struct drm_fb_helper *helper,
 				struct drm_fb_helper_surface_size *sizes)
@@ -46,7 +21,7 @@ static int tinydrm_fbdev_create(struct drm_fb_helper *helper,
 	int ret;
 
 	ret = drm_fbdev_cma_create_with_funcs(helper, sizes,
-					      &tinydrm_fbdev_fb_funcs);
+					      &tinydrm_fb_funcs);
 	if (ret)
 		return ret;
 

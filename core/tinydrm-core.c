@@ -1,4 +1,3 @@
-//#define DEBUG
 /*
  * Copyright (C) 2016 Noralf Trønnes
  *
@@ -66,9 +65,6 @@ static int tinydrm_register(struct device *parent, struct tinydrm_device *tdev,
 	int ret;
 
 	DRM_DEBUG_KMS("\n");
-
-	if (WARN_ON(!tdev->dirtyfb))
-		return -EINVAL;
 
 	if (!parent->coherent_dma_mask) {
 		ret = dma_set_coherent_mask(parent, DMA_BIT_MASK(32));
