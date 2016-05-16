@@ -9,6 +9,7 @@
 
 #include <drm/drmP.h>
 #include <drm/drm_atomic_helper.h>
+#include <drm/drm_fb_cma_helper.h>
 #include <drm/tinydrm/tinydrm.h>
 #include <linux/device.h>
 
@@ -28,7 +29,7 @@ void tinydrm_lastclose(struct drm_device *dev)
 	struct tinydrm_device *tdev = dev->dev_private;
 
 	DRM_DEBUG_KMS("\n");
-	tinydrm_fbdev_restore_mode(tdev);
+	drm_fbdev_cma_restore_mode(tdev->fbdev_cma);
 }
 EXPORT_SYMBOL(tinydrm_lastclose);
 

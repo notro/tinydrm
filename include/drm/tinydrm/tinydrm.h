@@ -130,24 +130,8 @@ static inline void tinydrm_disable(struct tinydrm_device *tdev)
 	}
 }
 
-#ifdef CONFIG_DRM_KMS_FB_HELPER
 int tinydrm_fbdev_init(struct tinydrm_device *tdev);
 void tinydrm_fbdev_fini(struct tinydrm_device *tdev);
-void tinydrm_fbdev_restore_mode(struct tinydrm_device *tdev);
-#else
-static inline int tinydrm_fbdev_init(struct tinydrm_device *tdev)
-{
-	return 0;
-}
-
-static inline void tinydrm_fbdev_fini(struct tinydrm_device *tdev)
-{
-}
-
-static inline void tinydrm_fbdev_restore_mode(struct tinydrm_device *tdev)
-{
-}
-#endif
 
 #ifdef CONFIG_DEBUG_FS
 void tinydrm_debugfs_update_begin(struct tinydrm_device *tdev,
