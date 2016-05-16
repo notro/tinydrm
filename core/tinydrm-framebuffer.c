@@ -23,26 +23,28 @@ static int tinydrm_fb_dirty(struct drm_framebuffer *fb,
 	int ret;
 
 	if (!tdev->funcs || !tdev->funcs->dirty)
-		return 0;
+		return -ENOSYS;
 
 	if (!tdev->prepared)
 		return -EINVAL;
 
-	/* fbdev keeps flushing even when we're not interested */
-	if (tdev->pipe.plane.fb != fb)
-		return 0;
+	if (WARN_ON_ONCE(!cma->vaddr))
+		return -EINVAL;
 
-	if (tdev->next_dirty_full) {
-		clips = NULL;
-		num_clips = 0;
-		tdev->next_dirty_full = false;
-	}
+	mutex_lock(&tdev->dirty_lock);
+
+	/* fbdev can flush even when we're not interested */
+	if (tdev->pipe.plane.fb != fb)
+		goto out_unlock;
 
 	ret = tdev->funcs->dirty(fb, cma->vaddr, flags, color, clips, num_clips);
 	if (ret)
 		return ret;
 
 	tinydrm_enable(tdev);
+
+out_unlock:
+	mutex_unlock(&tdev->dirty_lock);
 
 	return 0;
 }

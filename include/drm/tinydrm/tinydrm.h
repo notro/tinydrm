@@ -43,7 +43,8 @@ struct tinydrm_device {
 	struct drm_simple_display_pipe pipe;
 	struct drm_connector connector;
 	struct drm_fbdev_cma *fbdev_cma;
-	bool next_dirty_full;
+	struct work_struct dirty_work;
+	struct mutex dirty_lock;
 	bool prepared;
 	bool enabled;
 #ifdef CONFIG_DEBUG_FS

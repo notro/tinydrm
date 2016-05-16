@@ -62,12 +62,17 @@ static const struct drm_connector_funcs tinydrm_connector_funcs = {
 	.atomic_destroy_state = drm_atomic_helper_connector_destroy_state,
 };
 
+static inline struct tinydrm_device *
+pipe_to_tinydrm(struct drm_simple_display_pipe *pipe)
+{
+	return container_of(pipe, struct tinydrm_device, pipe);
+}
+
 static void tinydrm_display_pipe_enable(struct drm_simple_display_pipe *pipe,
 					struct drm_crtc_state *crtc_state)
 {
-	struct tinydrm_device *tdev;
+	struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
 
-	tdev = container_of(pipe, struct tinydrm_device, pipe);
 	DRM_DEBUG_KMS("prepared=%u, enabled=%u\n", tdev->prepared, tdev->enabled);
 
 	/* TODO why not do this in probe? */
@@ -78,24 +83,36 @@ static void tinydrm_display_pipe_enable(struct drm_simple_display_pipe *pipe,
 
 static void tinydrm_display_pipe_disable(struct drm_simple_display_pipe *pipe)
 {
-	struct tinydrm_device *tdev;
+	struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
 
-	tdev = container_of(pipe, struct tinydrm_device, pipe);
 	DRM_DEBUG_KMS("prepared=%u, enabled=%u\n", tdev->prepared, tdev->enabled);
 
 	tinydrm_disable(tdev);
 }
 
-static void
-tinydrm_display_pipe_update(struct drm_simple_display_pipe *pipe,
-			    struct drm_plane_state *pstate)
+static void tinydrm_dirty_work(struct work_struct *work)
 {
-	struct tinydrm_device *tdev;
+	struct tinydrm_device *tdev = container_of(work, struct tinydrm_device,
+						  dirty_work);
+	struct drm_framebuffer *fb = tdev->pipe.plane.fb;
 
-	tdev = container_of(pipe, struct tinydrm_device, pipe);
-	DRM_DEBUG_KMS("next_dirty_full == %u\n", tdev->next_dirty_full);
-/* TODO: Should a worker should do this update at once instead of waiting for the next dirty()? */
-	tdev->next_dirty_full = true;
+	if (!fb)
+		return;
+
+	fb->funcs->dirty(fb, NULL, 0, 0, NULL, 0);
+}
+
+static void tinydrm_display_pipe_update(struct drm_simple_display_pipe *pipe,
+					struct drm_plane_state *old_state)
+{
+	struct drm_framebuffer *fb = pipe->plane.state->fb;
+
+	if (fb && (fb != old_state->fb)) {
+		struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
+
+		pipe->plane.fb = fb;
+		schedule_work(&tdev->dirty_work);
+	}
 }
 
 static const struct drm_simple_display_pipe_funcs tinydrm_display_pipe_funcs = {
@@ -111,6 +128,9 @@ int tinydrm_display_pipe_init(struct tinydrm_device *tdev,
 	struct drm_device *dev = tdev->base;
 	struct drm_connector *connector = &tdev->connector;
 	int ret;
+
+	mutex_init(&tdev->dirty_lock);
+	INIT_WORK(&tdev->dirty_work, tinydrm_dirty_work);
 
 	drm_connector_helper_add(connector, &tinydrm_connector_hfuncs);
 	ret = drm_connector_init(dev, connector, &tinydrm_connector_funcs,
