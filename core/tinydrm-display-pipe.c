@@ -96,10 +96,8 @@ static void tinydrm_dirty_work(struct work_struct *work)
 						  dirty_work);
 	struct drm_framebuffer *fb = tdev->pipe.plane.fb;
 
-	if (!fb)
-		return;
-
-	fb->funcs->dirty(fb, NULL, 0, 0, NULL, 0);
+	if (fb)
+		fb->funcs->dirty(fb, NULL, 0, 0, NULL, 0);
 }
 
 static void tinydrm_display_pipe_update(struct drm_simple_display_pipe *pipe,
