@@ -105,7 +105,8 @@ int tinydrm_update_rgb565_lcdreg(struct lcdreg *reg, u32 regnr,
 	return ret;
 }
 
-int mipi_dbi_dirty(struct drm_framebuffer *fb, void *vmem,
+int mipi_dbi_dirty(struct drm_framebuffer *fb,
+		   struct drm_gem_cma_object *cma_obj,
 		   unsigned flags, unsigned color,
 		   struct drm_clip_rect *clips, unsigned num_clips)
 {
@@ -117,8 +118,8 @@ int mipi_dbi_dirty(struct drm_framebuffer *fb, void *vmem,
 	tinydrm_merge_clips(&clip, clips, num_clips, flags,
 			    fb->width, fb->height);
 
-	dev_dbg(tdev->base->dev, "%s: vmem=%p, x1=%u, x2=%u, y1=%u, y2=%u\n",
-		__func__, vmem, clip.x1, clip.x2, clip.y1, clip.y2);
+	dev_dbg(tdev->base->dev, "%s: vaddr=%p, x1=%u, x2=%u, y1=%u, y2=%u\n",
+		__func__, cma_obj->vaddr, clip.x1, clip.x2, clip.y1, clip.y2);
 
 	/* Only full width is supported */
 	clip.x1 = 0;
@@ -134,7 +135,7 @@ int mipi_dbi_dirty(struct drm_framebuffer *fb, void *vmem,
 			(clip.y2 >> 8) & 0xFF, (clip.y2 - 1) & 0xFF);
 
 	ret = tinydrm_update_rgb565_lcdreg(reg, MIPI_DCS_WRITE_MEMORY_START,
-					   fb, vmem, &clip);
+					   fb, cma_obj->vaddr, &clip);
 	if (ret)
 		dev_err_once(tdev->base->dev, "Failed to update display %d\n",
 			     ret);

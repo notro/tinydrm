@@ -24,9 +24,10 @@ struct tinydrm_funcs {
 	int (*unprepare)(struct tinydrm_device *tdev);
 	int (*enable)(struct tinydrm_device *tdev);
 	int (*disable)(struct tinydrm_device *tdev);
-	int (*dirty)(struct drm_framebuffer *fb, void *vmem, unsigned flags,
-		     unsigned color, struct drm_clip_rect *clips,
-		     unsigned num_clips);
+	int (*dirty)(struct drm_framebuffer *fb,
+		     struct drm_gem_cma_object *cma_obj,
+		     unsigned flags, unsigned color,
+		     struct drm_clip_rect *clips, unsigned num_clips);
 };
 
 struct tinydrm_device {

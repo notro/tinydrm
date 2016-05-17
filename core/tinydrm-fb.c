@@ -19,7 +19,7 @@ static int tinydrm_fb_dirty(struct drm_framebuffer *fb,
 			    struct drm_clip_rect *clips,
 			    unsigned num_clips)
 {
-	struct drm_gem_cma_object *cma = drm_fb_cma_get_gem_obj(fb, 0);
+	struct drm_gem_cma_object *cma_obj = drm_fb_cma_get_gem_obj(fb, 0);
 	struct tinydrm_device *tdev = fb->dev->dev_private;
 	int ret;
 
@@ -29,7 +29,7 @@ static int tinydrm_fb_dirty(struct drm_framebuffer *fb,
 	if (!tdev->prepared)
 		return -EINVAL;
 
-	if (WARN_ON_ONCE(!cma->vaddr))
+	if (WARN_ON_ONCE(!cma_obj->vaddr))
 		return -EINVAL;
 
 	mutex_lock(&tdev->dirty_lock);
@@ -38,7 +38,7 @@ static int tinydrm_fb_dirty(struct drm_framebuffer *fb,
 	if (tdev->pipe.plane.fb != fb)
 		goto out_unlock;
 
-	ret = tdev->funcs->dirty(fb, cma->vaddr, flags, color, clips, num_clips);
+	ret = tdev->funcs->dirty(fb, cma_obj, flags, color, clips, num_clips);
 	if (ret)
 		return ret;
 
