@@ -56,9 +56,9 @@ static const struct drm_framebuffer_funcs tinydrm_fb_funcs = {
 	.dirty		= tinydrm_fb_dirty,
 };
 
-struct drm_framebuffer *tinydrm_fb_create(struct drm_device *dev,
-				struct drm_file *file_priv,
-				const struct drm_mode_fb_cmd2 *mode_cmd)
+struct drm_framebuffer *
+tinydrm_fb_create(struct drm_device *dev, struct drm_file *file_priv,
+		  const struct drm_mode_fb_cmd2 *mode_cmd)
 {
 	return drm_fb_cma_create_with_funcs(dev, file_priv, mode_cmd,
 					    &tinydrm_fb_funcs);

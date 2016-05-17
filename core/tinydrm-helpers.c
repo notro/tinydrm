@@ -27,8 +27,10 @@ void tinydrm_merge_clips(struct drm_clip_rect *dst,
 		return;
 	}
 
-	dst->x1 = dst->y1 = ~0;
-	dst->x2 = dst->y2 = 0;
+	dst->x1 = ~0;
+	dst->y1 = ~0;
+	dst->x2 = 0;
+	dst->y2 = 0;
 
 	for (i = 0; i < num_clips; i++) {
 		if (flags & DRM_MODE_FB_DIRTY_ANNOTATE_COPY)
@@ -43,7 +45,8 @@ void tinydrm_merge_clips(struct drm_clip_rect *dst,
 	    dst->x1 >= dst->x2 || dst->y1 >= dst->y2) {
 		DRM_DEBUG_KMS("Illegal clip: x1=%u, x2=%u, y1=%u, y2=%u\n",
 			      dst->x1, dst->x2, dst->y1, dst->y2);
-		dst->x1 = dst->y1 = 0;
+		dst->x1 = 0;
+		dst->y1 = 0;
 		dst->x2 = width;
 		dst->y2 = height;
 	}
