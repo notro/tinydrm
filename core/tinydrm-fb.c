@@ -29,9 +29,6 @@ static int tinydrm_fb_dirty(struct drm_framebuffer *fb,
 	if (!tdev->prepared)
 		return -EINVAL;
 
-	if (WARN_ON_ONCE(!cma_obj->vaddr))
-		return -EINVAL;
-
 	mutex_lock(&tdev->dirty_lock);
 
 	/* fbdev can flush even when we're not interested */
