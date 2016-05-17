@@ -1,7 +1,6 @@
 ccflags-y += -I$(src)/../include
 
-tinydrm-y := tinydrm-core.o tinydrm-display-pipe.o tinydrm-framebuffer.o \
-	     tinydrm-helpers.o
+tinydrm-y := tinydrm-core.o tinydrm-pipe.o tinydrm-fb.o tinydrm-helpers.o
 
 tinydrm-$(CONFIG_DEBUG_FS) += tinydrm-debugfs.o
 
