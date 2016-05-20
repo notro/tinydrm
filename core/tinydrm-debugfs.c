@@ -14,14 +14,16 @@
 #include <linux/uaccess.h>
 
 /**
- * DOC: perf
+ * DOC: Performance reporting
  *
  * tinydrm can provide performance reporting when built with CONFIG_DEBUG_FS.
  * Each device gets a directory <debugfs>/tinydrm/<devname> which contains
  * two files:
+ *
  * - collect_updates: Writing a positive number <n> to this file (re)starts the
  *                    process of colleting update statistics for the last <n>
  *                    updates. Writing a zero stops it.
+ *
  * - updates: Reading this file will provide a list of the last <n> updates.
  *            Reading will not clear the list.
  *
@@ -29,10 +31,10 @@
  *     # cd /sys/kernel/debug/tinydrm/spi0.0
  *     # echo 4 > collect_updates
  *     # cat updates
- *     [ 2140.061740]  2798 KiB/s,    151 KiB in  54 ms,    full(320x240+0+0)
- *     [ 2140.161710]  2798 KiB/s,    151 KiB in  54 ms,    full(320x240+0+0),  99 ms since last, 10 fps
- *     [ 2140.301724]  2798 KiB/s,    151 KiB in  54 ms,    full(320x240+0+0), 140 ms since last,  7 fps
- *     [ 2140.361702]  3552 KiB/s,     10 KiB in   3 ms, partial(320x16+0+224),  59 ms since last
+ *     [ 2140.061740] 2798 KiB/s, 151 KiB in 54 ms,    full(320x240+0+0)
+ *     [ 2140.161710] 2798 KiB/s, 151 KiB in 54 ms,    full(320x240+0+0),  99 ms since last, 10 fps
+ *     [ 2140.301724] 2798 KiB/s, 151 KiB in 54 ms,    full(320x240+0+0), 140 ms since last,  7 fps
+ *     [ 2140.361702] 3552 KiB/s,  10 KiB in  3 ms, partial(320x16+0+224),  59 ms since last
  *
  * To get this functionality the driver has to call devm_tinydrm_debugfs_init()
  * to set it up and then bracket the display update with calls to

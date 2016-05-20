@@ -13,17 +13,29 @@
 #include <linux/pm.h>
 #include <linux/spi/spi.h>
 
+/**
+ * tinydrm_merge_clips - merge clip rectangles
+ * @dst: destination clip rectangle
+ * @src: source clip rectangle(s)
+ * @num_clips: number of @src clip rectangles
+ * @flags: dirty fb ioctl flags
+ * @max_width: maximum width of @dst
+ * @max_height: maximum height of @dst
+ *
+ * This function merges @src clip rectangle(s) into @dst. If @src is NULL,
+ * @max_width and @min_width is used to set a full @dst clip rectangle.
+ */
 void tinydrm_merge_clips(struct drm_clip_rect *dst,
 			 struct drm_clip_rect *src, unsigned num_clips,
-			 unsigned flags, u32 width, u32 height)
+			 unsigned flags, u32 max_width, u32 max_height)
 {
 	unsigned int i;
 
 	if (!src || !num_clips) {
 		dst->x1 = 0;
-		dst->x2 = width;
+		dst->x2 = max_width;
 		dst->y1 = 0;
-		dst->y2 = height;
+		dst->y2 = max_height;
 		return;
 	}
 
@@ -41,18 +53,31 @@ void tinydrm_merge_clips(struct drm_clip_rect *dst,
 		dst->y2 = max(dst->y2, src[i].y2);
 	}
 
-	if (dst->x2 > width || dst->y2 > height ||
+	if (dst->x2 > max_width || dst->y2 > max_height ||
 	    dst->x1 >= dst->x2 || dst->y1 >= dst->y2) {
 		DRM_DEBUG_KMS("Illegal clip: x1=%u, x2=%u, y1=%u, y2=%u\n",
 			      dst->x1, dst->x2, dst->y1, dst->y2);
 		dst->x1 = 0;
 		dst->y1 = 0;
-		dst->x2 = width;
-		dst->y2 = height;
+		dst->x2 = max_width;
+		dst->y2 = max_height;
 	}
 }
 EXPORT_SYMBOL(tinydrm_merge_clips);
 
+#ifdef CONFIG_BACKLIGHT_CLASS_DEVICE
+/**
+ * tinydrm_of_find_backlight - find backlight device in device-tree
+ * @dev: device
+ *
+ * This function looks for a DT node pointed to by a property named 'backlight'
+ * and uses of_find_backlight_by_node() to get the backlight device.
+ *
+ * Returns:
+ * NULL if there's no backlight property.
+ * Error pointer -EPROBE_DEFER if the DT node is found, but no backlight device is found.
+ * If the backlight device is found, a pointer to the structure is returned.
+ */
 struct backlight_device *tinydrm_of_find_backlight(struct device *dev)
 {
 	struct backlight_device *backlight;
@@ -72,6 +97,13 @@ struct backlight_device *tinydrm_of_find_backlight(struct device *dev)
 }
 EXPORT_SYMBOL(tinydrm_of_find_backlight);
 
+/**
+ * tinydrm_enable_backlight - tinydrm enable backlight helper
+ * @tdev: tinydrm device
+ *
+ * Helper to enable &tinydrm_device ->backlight for the &tinydrm_funcs ->enable
+ * callback.
+ */
 int tinydrm_enable_backlight(struct tinydrm_device *tdev)
 {
 	if (tdev->backlight) {
@@ -86,6 +118,13 @@ int tinydrm_enable_backlight(struct tinydrm_device *tdev)
 }
 EXPORT_SYMBOL(tinydrm_enable_backlight);
 
+/**
+ * tinydrm_disable_backlight - tinydrm disable backlight helper
+ * @tdev: tinydrm device
+ *
+ * Helper to disable &tinydrm_device ->backlight for the &tinydrm_funcs
+ * ->disable callback.
+ */
 int tinydrm_disable_backlight(struct tinydrm_device *tdev)
 {
 	if (tdev->backlight) {
@@ -96,6 +135,7 @@ int tinydrm_disable_backlight(struct tinydrm_device *tdev)
 	return 0;
 }
 EXPORT_SYMBOL(tinydrm_disable_backlight);
+#endif
 
 static int __maybe_unused tinydrm_pm_suspend(struct device *dev)
 {
@@ -112,16 +152,29 @@ static int __maybe_unused tinydrm_pm_resume(struct device *dev)
 	struct tinydrm_device *tdev = dev_get_drvdata(dev);
 
 	tinydrm_prepare(tdev);
-	/* Will be enabled after the first display update */
+	/* Will be enabled after the first .dirty() call */
 
 	return 0;
 }
 
+/*
+ * tinydrm_simple_pm_ops - tinydrm simple power management operations
+ *
+ * This provides simple suspend/resume power management and can be assigned
+ * to the drivers &device_driver ->pm property.
+ */
 const struct dev_pm_ops tinydrm_simple_pm_ops = {
 	SET_SYSTEM_SLEEP_PM_OPS(tinydrm_pm_suspend, tinydrm_pm_resume)
 };
 EXPORT_SYMBOL(tinydrm_simple_pm_ops);
 
+/**
+ * tinydrm_spi_shutdown - SPI driver shutdown callback helper
+ * @spi: SPI device
+ *
+ * This is a helper function for the &spi_driver ->shutdown callback which
+ * makes sure that the tinydrm device is disabled and unprepared on shutdown.
+ */
 void tinydrm_spi_shutdown(struct spi_device *spi)
 {
 	struct tinydrm_device *tdev = spi_get_drvdata(spi);

@@ -13,6 +13,19 @@
 #include <drm/drm_fb_helper.h>
 #include <drm/tinydrm/tinydrm.h>
 
+/**
+ * DOC: Framebuffer
+ *
+ * The tinydrm &drm_framebuffer is backed by a &drm_gem_cma_object buffer
+ * object. Userspace creates this buffer by calling the
+ * DRM_IOCTL_MODE_CREATE_DUMB ioctl. To flush the buffer to the display,
+ * userpace calls the DRM_IOCTL_MODE_DIRTYFB ioctl on the framebuffer which
+ * in turn calls the &tinydrm_funcs ->dirty hook.
+ *
+ * This functionality is available by using tinydrm_fb_create() as the
+ * &drm_mode_config_funcs ->fb_create callback.
+ */
+
 static int tinydrm_fb_dirty(struct drm_framebuffer *fb,
 			    struct drm_file *file_priv,
 			    unsigned flags, unsigned color,
@@ -53,6 +66,16 @@ static const struct drm_framebuffer_funcs tinydrm_fb_funcs = {
 	.dirty		= tinydrm_fb_dirty,
 };
 
+/**
+ * tinydrm_fb_create - tinydrm .fb_create() helper
+ * @dev: DRM device
+ * @file_priv: DRM file info
+ * @mode_cmd: metadata from the userspace fb creation request
+ *
+ * Helper for the &drm_mode_config_funcs ->fb_create callback.
+ * It sets up a &drm_framebuffer backed by the &drm_gem_cma_object buffer
+ * object provided in @mode_cmd.
+ */
 struct drm_framebuffer *
 tinydrm_fb_create(struct drm_device *dev, struct drm_file *file_priv,
 		  const struct drm_mode_fb_cmd2 *mode_cmd)
@@ -61,6 +84,20 @@ tinydrm_fb_create(struct drm_device *dev, struct drm_file *file_priv,
 					    &tinydrm_fb_funcs);
 }
 EXPORT_SYMBOL(tinydrm_fb_create);
+
+/**
+ * DOC: fbdev emulation
+ *
+ * tinydrm provides fbdev emulation using the drm_fb_cma_helper library.
+ * It is backed by it's own &drm_framebuffer and CMA buffer object.
+ * Framebuffer flushing is handled by the fb helper library which in turn
+ * calls the &tinydrm_funcs ->dirty hook.
+ *
+ * fbdev support is initialized using tinydrm_fbdev_init().
+ *
+ * The tinydrm_lastclose() function ensures that fbdev operation is restored
+ * when userspace closes the drm device.
+ */
 
 static int tinydrm_fbdev_create(struct drm_fb_helper *helper,
 				struct drm_fb_helper_surface_size *sizes)
@@ -87,6 +124,12 @@ static const struct drm_fb_helper_funcs tinydrm_fb_helper_funcs = {
 	.fb_probe = tinydrm_fbdev_create,
 };
 
+/**
+ * tinydrm_fbdev_init - initialize tinydrm fbdev emulation
+ * @tdev: tinydrm device
+ *
+ * Initialize tinydrm fbdev emulation. Tear down with tinydrm_fbdev_fini().
+ */
 int tinydrm_fbdev_init(struct tinydrm_device *tdev)
 {
 	struct drm_device *dev = tdev->base;
@@ -109,6 +152,12 @@ int tinydrm_fbdev_init(struct tinydrm_device *tdev)
 }
 EXPORT_SYMBOL(tinydrm_fbdev_init);
 
+/**
+ * tinydrm_fbdev_fini - finalize tinydrm fbdev emulation
+ * @tdev: tinydrm device
+ *
+ * This function tears down the fbdev emulation
+ */
 void tinydrm_fbdev_fini(struct tinydrm_device *tdev)
 {
 	drm_fbdev_cma_fini(tdev->fbdev_cma);

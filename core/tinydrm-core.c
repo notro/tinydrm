@@ -14,6 +14,13 @@
 #include <linux/device.h>
 #include <linux/dma-buf.h>
 
+/**
+ * DOC: Overview
+ *
+ * This library provides helpers for displays with onboard graphics memory
+ * connected through a slow interface.
+ */
+
 static const uint32_t tinydrm_formats[] = {
 	DRM_FORMAT_RGB565,
 	DRM_FORMAT_XRGB8888,
@@ -25,6 +32,14 @@ static const struct drm_mode_config_funcs tinydrm_mode_config_funcs = {
 	.atomic_commit = drm_atomic_helper_commit,
 };
 
+/**
+ * tinydrm_lastclose - DRM .lastclose() helper
+ * @dev: DRM device
+ *
+ * This function ensures that fbdev is restored when drm_lastclose() is called
+ * on the last drm_release(). tinydrm drivers should use this as their
+ * &drm_driver ->lastclose callback.
+ */
 void tinydrm_lastclose(struct drm_device *dev)
 {
 	struct tinydrm_device *tdev = dev->dev_private;
@@ -41,10 +56,9 @@ EXPORT_SYMBOL(tinydrm_lastclose);
  *
  * This function frees the backing memory of the CMA GEM object, cleans up the
  * GEM object state and frees the memory used to store the object itself using
- * drm_gem_cma_free_object(). It also handles PRIME buffers with the kernel
- * virtual address set through the use of
- * tinydrm_gem_cma_prime_import_sg_table(). tinydrm drivers should set this as
- * their &drm_driver ->gem_free_object callback.
+ * drm_gem_cma_free_object(). It also handles PRIME buffers which has the kernel
+ * virtual address set by tinydrm_gem_cma_prime_import_sg_table(). tinydrm
+ * drivers should set this as their &drm_driver ->gem_free_object callback.
  */
 void tinydrm_gem_cma_free_object(struct drm_gem_object *gem_obj)
 {
@@ -198,7 +212,16 @@ static void devm_tinydrm_release(struct device *dev, void *res)
 	tinydrm_unregister(*(struct tinydrm_device **)res);
 }
 
-int devm_tinydrm_register(struct device *dev, struct tinydrm_device *tdev,
+/**
+ * devm_tinydrm_register - Register tinydrm device
+ * @parent: Parent device object
+ * @tdev: tinydrm device
+ * @driver: DRM driver
+ *
+ * This function registers a tinydrm device.
+ * Resources will be automatically freed on driver detach (devres).
+ */
+int devm_tinydrm_register(struct device *parent, struct tinydrm_device *tdev,
 			  struct drm_driver *driver)
 {
 	struct tinydrm_device **ptr;
@@ -208,14 +231,14 @@ int devm_tinydrm_register(struct device *dev, struct tinydrm_device *tdev,
 	if (!ptr)
 		return -ENOMEM;
 
-	ret = tinydrm_register(dev, tdev, driver);
+	ret = tinydrm_register(parent, tdev, driver);
 	if (ret) {
 		devres_free(ptr);
 		return ret;
 	}
 
 	*ptr = tdev;
-	devres_add(dev, ptr);
+	devres_add(parent, ptr);
 
 	return 0;
 }
