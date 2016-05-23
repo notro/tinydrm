@@ -107,10 +107,14 @@ EXPORT_SYMBOL(tinydrm_of_find_backlight);
 int tinydrm_enable_backlight(struct tinydrm_device *tdev)
 {
 	if (tdev->backlight) {
+		unsigned int old_state = tdev->backlight->props.state;
+
 		if (tdev->backlight->props.brightness == 0)
 			tdev->backlight->props.brightness =
 					tdev->backlight->props.max_brightness;
 		tdev->backlight->props.state &= ~BL_CORE_SUSPENDED;
+		DRM_DEBUG_KMS("Backlight state: 0x%x -> 0x%x\n", old_state,
+			      tdev->backlight->props.state);
 		backlight_update_status(tdev->backlight);
 	}
 
@@ -128,7 +132,11 @@ EXPORT_SYMBOL(tinydrm_enable_backlight);
 int tinydrm_disable_backlight(struct tinydrm_device *tdev)
 {
 	if (tdev->backlight) {
+		unsigned int old_state = tdev->backlight->props.state;
+
 		tdev->backlight->props.state |= BL_CORE_SUSPENDED;
+		DRM_DEBUG_KMS("Backlight state: 0x%x -> 0x%x\n", old_state,
+			      tdev->backlight->props.state);
 		backlight_update_status(tdev->backlight);
 	}
 
