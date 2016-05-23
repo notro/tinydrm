@@ -118,12 +118,12 @@ int mipi_dbi_dirty(struct drm_framebuffer *fb,
 	tinydrm_merge_clips(&clip, clips, num_clips, flags,
 			    fb->width, fb->height);
 
-	dev_dbg(tdev->base->dev, "%s: vaddr=%p, x1=%u, x2=%u, y1=%u, y2=%u\n",
-		__func__, cma_obj->vaddr, clip.x1, clip.x2, clip.y1, clip.y2);
-
 	/* Only full width is supported */
 	clip.x1 = 0;
 	clip.x2 = fb->width;
+
+	DRM_DEBUG("Flushing [FB:%d] x1=%u, x2=%u, y1=%u, y2=%u\n", fb->base.id,
+		  clip.x1, clip.x2, clip.y1, clip.y2);
 
 	tinydrm_debugfs_update_begin(tdev, &clip);
 
@@ -225,7 +225,7 @@ void mipi_dbi_debug_dump_regs(struct lcdreg *reg)
 }
 EXPORT_SYMBOL(mipi_dbi_debug_dump_regs);
 
-int mipi_dbi_unprepare(struct tinydrm_device *tdev)
+void mipi_dbi_unprepare(struct tinydrm_device *tdev)
 {
 	struct lcdreg *reg = tdev->lcdreg;
 
@@ -241,8 +241,6 @@ int mipi_dbi_unprepare(struct tinydrm_device *tdev)
 
 	if (tdev->regulator)
 		regulator_disable(tdev->regulator);
-
-	return 0;
 }
 EXPORT_SYMBOL(mipi_dbi_unprepare);
 

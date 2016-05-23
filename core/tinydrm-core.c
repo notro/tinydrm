@@ -8,9 +8,13 @@
  */
 
 #include <drm/drmP.h>
+#include <drm/drm_atomic.h>
 #include <drm/drm_atomic_helper.h>
+#include <drm/drm_crtc_helper.h>
 #include <drm/drm_fb_cma_helper.h>
+#include <drm/drm_fb_helper.h>
 #include <drm/tinydrm/tinydrm.h>
+#include <linux/console.h>
 #include <linux/device.h>
 #include <linux/dma-buf.h>
 
@@ -19,6 +23,10 @@
  *
  * This library provides helpers for displays with onboard graphics memory
  * connected through a slow interface.
+ *
+ * In order for the display to turn off at shutdown, the device driver shutdown
+ * callback has to be set. This function should call tinydrm_shutdown().
+ *
  */
 
 static const uint32_t tinydrm_formats[] = {
@@ -135,13 +143,15 @@ EXPORT_SYMBOL(tinydrm_fops);
 
 static void tinydrm_unregister(struct tinydrm_device *tdev)
 {
+	struct drm_device *dev = tdev->base;
+
 	DRM_DEBUG_KMS("\n");
 
+	tinydrm_shutdown(tdev);
 	tinydrm_fbdev_fini(tdev);
-
-	drm_mode_config_cleanup(tdev->base);
-	drm_dev_unregister(tdev->base);
-	drm_dev_unref(tdev->base);
+	drm_mode_config_cleanup(dev);
+	drm_dev_unregister(dev);
+	drm_dev_unref(dev);
 }
 
 static int tinydrm_register(struct device *parent, struct tinydrm_device *tdev,
@@ -243,5 +253,110 @@ int devm_tinydrm_register(struct device *parent, struct tinydrm_device *tdev,
 	return 0;
 }
 EXPORT_SYMBOL(devm_tinydrm_register);
+
+/**
+ * tinydrm_shutdown - Shutdown tinydrm
+ * @tdev: tinydrm device
+ *
+ * This function makes sure that tinydrm is disabled and unprepared.
+ * Used by drivers in their shutdown callback to turn off the display
+ * on machine shutdown and reboot.
+ */
+void tinydrm_shutdown(struct tinydrm_device *tdev)
+{
+	/* TODO Is there a drm function to disable output? */
+	tdev->pipe.funcs->disable(&tdev->pipe);
+}
+EXPORT_SYMBOL(tinydrm_shutdown);
+
+static void tinydrm_fbdev_suspend(struct tinydrm_device *tdev)
+{
+	if (!tdev->fbdev_helper)
+		return;
+
+	console_lock();
+	drm_fb_helper_set_suspend(tdev->fbdev_helper, 1);
+	console_unlock();
+}
+
+static void tinydrm_fbdev_resume(struct tinydrm_device *tdev)
+{
+	if (!tdev->fbdev_helper)
+		return;
+
+        console_lock();
+        drm_fb_helper_set_suspend(tdev->fbdev_helper, 0);
+        console_unlock();
+}
+
+/**
+ * tinydrm_suspend - Suspend tinydrm
+ * @tdev: tinydrm device
+ *
+ * Used in driver PM operations to suspend tinydrm.
+ * Suspends fbdev and DRM.
+ * Resume with tinydrm_resume().
+ *
+ * Returns:
+ * Zero on success, negative error code on failure.
+ */
+int tinydrm_suspend(struct tinydrm_device *tdev)
+{
+	struct drm_device *dev = tdev->base;
+	struct drm_atomic_state *state;
+
+	if (tdev->suspend_state) {
+		DRM_ERROR("Failed to suspend: state already set\n");
+		return -EINVAL;
+	}
+
+	tinydrm_fbdev_suspend(tdev);
+	state = drm_atomic_helper_suspend(dev);
+	if (IS_ERR(state)) {
+		tinydrm_fbdev_resume(tdev);
+		return PTR_ERR(state);
+	}
+
+	tdev->suspend_state = state;
+
+	return 0;
+}
+EXPORT_SYMBOL(tinydrm_suspend);
+
+/**
+ * tinydrm_resume - Resume tinydrm
+ * @tdev: tinydrm device
+ *
+ * Used in driver PM operations to resume tinydrm.
+ * Suspend with tinydrm_suspend().
+ *
+ * Returns:
+ * Zero on success, negative error code on failure.
+ */
+int tinydrm_resume(struct tinydrm_device *tdev)
+{
+	struct drm_atomic_state *state = tdev->suspend_state;
+	struct drm_device *dev = tdev->base;
+	int ret;
+
+	if (!state) {
+		DRM_ERROR("Failed to resume: state is not set\n");
+		return -EINVAL;
+	}
+
+	tdev->suspend_state = NULL;
+
+	ret = drm_atomic_helper_resume(dev, state);
+	if (ret) {
+		DRM_ERROR("Error resuming state: %d\n", ret);
+		drm_atomic_state_free(state);
+		return ret;
+	}
+
+	tinydrm_fbdev_resume(tdev);
+
+	return 0;
+}
+EXPORT_SYMBOL(tinydrm_resume);
 
 MODULE_LICENSE("GPL");

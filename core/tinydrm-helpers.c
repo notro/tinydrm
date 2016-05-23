@@ -106,17 +106,20 @@ EXPORT_SYMBOL(tinydrm_of_find_backlight);
  */
 int tinydrm_enable_backlight(struct tinydrm_device *tdev)
 {
-	if (tdev->backlight) {
-		unsigned int old_state = tdev->backlight->props.state;
+	unsigned int old_state;
 
-		if (tdev->backlight->props.brightness == 0)
-			tdev->backlight->props.brightness =
-					tdev->backlight->props.max_brightness;
-		tdev->backlight->props.state &= ~BL_CORE_SUSPENDED;
-		DRM_DEBUG_KMS("Backlight state: 0x%x -> 0x%x\n", old_state,
-			      tdev->backlight->props.state);
-		backlight_update_status(tdev->backlight);
-	}
+	if (!tdev->backlight)
+		return 0;
+
+	if (!tdev->backlight->props.brightness)
+		tdev->backlight->props.brightness =
+				tdev->backlight->props.max_brightness;
+
+	old_state = tdev->backlight->props.state;
+	tdev->backlight->props.state &= ~BL_CORE_SUSPENDED;
+	DRM_DEBUG_KMS("Backlight state: 0x%x -> 0x%x\n", old_state,
+		      tdev->backlight->props.state);
+	backlight_update_status(tdev->backlight);
 
 	return 0;
 }
@@ -129,18 +132,18 @@ EXPORT_SYMBOL(tinydrm_enable_backlight);
  * Helper to disable &tinydrm_device ->backlight for the &tinydrm_funcs
  * ->disable callback.
  */
-int tinydrm_disable_backlight(struct tinydrm_device *tdev)
+void tinydrm_disable_backlight(struct tinydrm_device *tdev)
 {
-	if (tdev->backlight) {
-		unsigned int old_state = tdev->backlight->props.state;
+	unsigned int old_state;
 
-		tdev->backlight->props.state |= BL_CORE_SUSPENDED;
-		DRM_DEBUG_KMS("Backlight state: 0x%x -> 0x%x\n", old_state,
-			      tdev->backlight->props.state);
-		backlight_update_status(tdev->backlight);
-	}
+	if (!tdev->backlight)
+		return;
 
-	return 0;
+	old_state = tdev->backlight->props.state;
+	tdev->backlight->props.state |= BL_CORE_SUSPENDED;
+	DRM_DEBUG_KMS("Backlight state: 0x%x -> 0x%x\n", old_state,
+		      tdev->backlight->props.state);
+	backlight_update_status(tdev->backlight);
 }
 EXPORT_SYMBOL(tinydrm_disable_backlight);
 #endif
@@ -149,20 +152,14 @@ static int __maybe_unused tinydrm_pm_suspend(struct device *dev)
 {
 	struct tinydrm_device *tdev = dev_get_drvdata(dev);
 
-	tinydrm_disable(tdev);
-	tinydrm_unprepare(tdev);
-
-	return 0;
+	return tdev ? tinydrm_suspend(tdev) : -EINVAL;
 }
 
 static int __maybe_unused tinydrm_pm_resume(struct device *dev)
 {
 	struct tinydrm_device *tdev = dev_get_drvdata(dev);
 
-	tinydrm_prepare(tdev);
-	/* Will be enabled after the first .dirty() call */
-
-	return 0;
+	return tdev ? tinydrm_resume(tdev) : -EINVAL;
 }
 
 /*
@@ -187,7 +184,7 @@ void tinydrm_spi_shutdown(struct spi_device *spi)
 {
 	struct tinydrm_device *tdev = spi_get_drvdata(spi);
 
-	tinydrm_disable(tdev);
-	tinydrm_unprepare(tdev);
+	if (tdev)
+		tinydrm_shutdown(tdev);
 }
 EXPORT_SYMBOL(tinydrm_spi_shutdown);

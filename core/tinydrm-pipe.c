@@ -85,22 +85,42 @@ static void tinydrm_display_pipe_enable(struct drm_simple_display_pipe *pipe,
 					struct drm_crtc_state *crtc_state)
 {
 	struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
+	int ret = 0;
 
-	DRM_DEBUG_KMS("prepared=%u, enabled=%u\n", tdev->prepared, tdev->enabled);
+	DRM_DEBUG_KMS("\n");
 
-	/* TODO why not do this in probe? */
-	/* The panel must be prepared on the first crtc enable after probe */
-	tinydrm_prepare(tdev);
-	/* The panel is enabled after the first display update */
+	mutex_lock(&tdev->dev_lock);
+
+	if (tdev->funcs && tdev->funcs->prepare)
+		ret = tdev->funcs->prepare(tdev);
+
+	if (ret)
+		DRM_ERROR("Failed to enable pipeline: %d\n", ret);
+	else
+		tdev->prepared = true;
+
+	/* The panel is enabled after the first .dirty() */
+
+	mutex_unlock(&tdev->dev_lock);
 }
 
 static void tinydrm_display_pipe_disable(struct drm_simple_display_pipe *pipe)
 {
 	struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
 
-	DRM_DEBUG_KMS("prepared=%u, enabled=%u\n", tdev->prepared, tdev->enabled);
+	DRM_DEBUG_KMS("\n");
 
-	tinydrm_disable(tdev);
+	mutex_lock(&tdev->dev_lock);
+
+	if (tdev->enabled && tdev->funcs && tdev->funcs->disable)
+		tdev->funcs->disable(tdev);
+	tdev->enabled = false;
+
+	if (tdev->prepared && tdev->funcs && tdev->funcs->unprepare)
+		tdev->funcs->unprepare(tdev);
+	tdev->prepared = false;
+
+	mutex_unlock(&tdev->dev_lock);
 }
 
 static void tinydrm_dirty_work(struct work_struct *work)
@@ -121,6 +141,7 @@ static void tinydrm_display_pipe_update(struct drm_simple_display_pipe *pipe,
 	if (fb && (fb != old_state->fb)) {
 		struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
 
+		DRM_DEBUG_KMS("Flush framebuffer [FB:%d]\n", fb->base.id);
 		pipe->plane.fb = fb;
 		schedule_work(&tdev->dirty_work);
 	}
@@ -149,7 +170,7 @@ int tinydrm_display_pipe_init(struct tinydrm_device *tdev,
 	struct drm_connector *connector = &tdev->connector;
 	int ret;
 
-	mutex_init(&tdev->dirty_lock);
+	mutex_init(&tdev->dev_lock);
 	INIT_WORK(&tdev->dirty_work, tinydrm_dirty_work);
 
 	drm_connector_helper_add(connector, &tinydrm_connector_hfuncs);

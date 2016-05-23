@@ -27,46 +27,33 @@ struct lcdreg;
  * @disable: disable display (optional)
  * @dirty: flush the framebuffer (optional, but not very useful without it)
  *
- * The .prepare() function is called the first time the display pipeline is
- * enabled and on PM resume if tinydrm_simple_pm_ops is used.
- * This is typically used to initialize the display controller to a state
- * where it can receive framebuffer updates.
+ * The .prepare() function is called when the display pipeline is enabled.
+ * This is typically used to power on and initialize the display controller
+ * to a state where it can receive framebuffer updates.
  *
- * After the first time the framebuffer is flushed and the display has been
- * updated, the .enable() function is called. This will typically enable
+ * After the first time the framebuffer has been flushed and the display has
+ * been updated, the .enable() function is called. This will typically enable
  * backlight or by other means switch on display output.
  *
- * The .disable() function is called when the display pipeline is disabled.
- * This will typically disable backlight or by other means switch off the
- * display output.
- *
- * The .unprepare() function is called on device unregister and on PM suspend
- * if tinydrm_simple_pm_ops is used.
- *
- * These functions are not called directly, but is called through the
- * tinydrm_prepare(), tinydrm_unprepare(), tinydrm_enable() and
- * tinydrm_disable() functions.
- * They ensure that the callbacks are only called once per state change.
- *
- * In order for the display to turn off at shutdown, the device driver shutdown
- * callback has to be set. This function should call tinydrm_disable() and
- * tinydrm_unprepare().
+ * The .disable() function will typically disable backlight and .unprepare()
+ * will power off the display. They are called in that order when the display
+ * pipeline is disabled.
  *
  * The .dirty() function is called when the &drm_framebuffer is flushed, either
  * by userspace or by the fbdev emulation layer.
- * It has a one-to-one mapping of the &drm_framebuffer_funcs ->dirty callback
- * except that it also provides the &drm_gem_cma_object buffer object.
- * The entire framebuffer should be flushed if clips is NULL.
- * See &drm_mode_fb_dirty_cmd for more information about the arguments.
- * When the pipeline detects that the current framebuffer has changed,
- * it schedules a worker to flush this new framebuffer ensuring that the
- * display is in sync.
+ * It has a one-to-one mapping to the &drm_framebuffer_funcs ->dirty callback
+ * except that it also provides the &drm_gem_cma_object buffer object that is
+ * backing the framebuffer. The entire framebuffer should be flushed if clips
+ * is NULL. See &drm_mode_fb_dirty_cmd for more information about the
+ * arguments. When the pipeline detects that the current framebuffer has
+ * changed, it schedules a worker to flush this new framebuffer ensuring that
+ * the display is in sync.
  */
 struct tinydrm_funcs {
 	int (*prepare)(struct tinydrm_device *tdev);
-	int (*unprepare)(struct tinydrm_device *tdev);
+	void (*unprepare)(struct tinydrm_device *tdev);
 	int (*enable)(struct tinydrm_device *tdev);
-	int (*disable)(struct tinydrm_device *tdev);
+	void (*disable)(struct tinydrm_device *tdev);
 	int (*dirty)(struct drm_framebuffer *fb,
 		     struct drm_gem_cma_object *cma_obj,
 		     unsigned flags, unsigned color,
@@ -82,8 +69,11 @@ struct tinydrm_funcs {
  * @base: DRM device
  * @pipe: Display pipe structure
  * @fbdev_cma: fbdev CMA structure (optional)
+ * @fbdev_helper: fbdev helper (optional)
+ * @suspend_state: atomic state when suspended
  * @dirty_work: framebuffer flusher
- * @dirty_lock: protects the .dirty() operation
+ * @dev_lock: serializes &tinydrm_funcs operations and protects
+ *            prepared/enabled state changes
  * @prepared: device prepared state
  * @enabled: device enabled state
  * @funcs: tinydrm device operations (optional)
@@ -102,8 +92,10 @@ struct tinydrm_device {
 	struct drm_simple_display_pipe pipe;
 	struct drm_connector connector;
 	struct drm_fbdev_cma *fbdev_cma;
+	struct drm_fb_helper *fbdev_helper;
+	struct drm_atomic_state *suspend_state;
 	struct work_struct dirty_work;
-	struct mutex dirty_lock;
+	struct mutex dev_lock;
 	bool prepared;
 	bool enabled;
 	const struct tinydrm_funcs *funcs;
@@ -167,75 +159,9 @@ int tinydrm_display_pipe_init(struct tinydrm_device *tdev,
 			      unsigned int format_count);
 int devm_tinydrm_register(struct device *dev, struct tinydrm_device *tdev,
 			  struct drm_driver *driver);
-
-/**
- * tinydrm_prepare - power on display
- * @tdev: tinydrm device
- *
- * A call to this function makes sure that the display is powered on and in a
- * state where it can receive framebuffer updates through the &tinydrm_funcs
- * ->dirty function. It calls the &tinydrm_funcs ->prepare callback if the
- * device is in an unprepared state.
- */
-static inline void tinydrm_prepare(struct tinydrm_device *tdev)
-{
-	if (!tdev->prepared) {
-		if (tdev->funcs && tdev->funcs->prepare)
-			tdev->funcs->prepare(tdev);
-		tdev->prepared = true;
-	}
-}
-
-/**
- * tinydrm_unprepare - power off display
- * @tdev: tinydrm device
- *
- * A call to this function will make sure that the display is completly
- * powered off. It calls the &tinydrm_funcs ->prepare callback if the
- * device is in an prepared state.
- */
-static inline void tinydrm_unprepare(struct tinydrm_device *tdev)
-{
-	if (tdev->prepared) {
-		if (tdev->funcs && tdev->funcs->unprepare)
-			tdev->funcs->unprepare(tdev);
-		tdev->prepared = false;
-	}
-}
-
-/**
- * tinydrm_enable - enable display output
- * @tdev: tinydrm device
- *
- * A call to this function will make sure that the the display output is
- * enabled. It calls the &tinydrm_funcs ->enable callback if the device
- * is in a disabled state.
- */
-static inline void tinydrm_enable(struct tinydrm_device *tdev)
-{
-	if (!tdev->enabled) {
-		if (tdev->funcs && tdev->funcs->enable)
-			tdev->funcs->enable(tdev);
-		tdev->enabled = true;
-	}
-}
-
-/**
- * tinydrm_disable - disable display output
- * @tdev: tinydrm device
- *
- * A call to this function will make sure that the the display output is
- * disabled. It calls the &tinydrm_funcs ->disable callback if the device
- * is in an enabled state.
- */
-static inline void tinydrm_disable(struct tinydrm_device *tdev)
-{
-	if (tdev->enabled) {
-		if (tdev->funcs && tdev->funcs->disable)
-			tdev->funcs->disable(tdev);
-		tdev->enabled = false;
-	}
-}
+void tinydrm_shutdown(struct tinydrm_device *tdev);
+int tinydrm_suspend(struct tinydrm_device *tdev);
+int tinydrm_resume(struct tinydrm_device *tdev);
 
 int tinydrm_fbdev_init(struct tinydrm_device *tdev);
 void tinydrm_fbdev_fini(struct tinydrm_device *tdev);
@@ -269,7 +195,7 @@ void tinydrm_merge_clips(struct drm_clip_rect *dst,
 #ifdef CONFIG_BACKLIGHT_CLASS_DEVICE
 struct backlight_device *tinydrm_of_find_backlight(struct device *dev);
 int tinydrm_enable_backlight(struct tinydrm_device *tdev);
-int tinydrm_disable_backlight(struct tinydrm_device *tdev);
+void tinydrm_disable_backlight(struct tinydrm_device *tdev);
 #else
 static inline struct backlight_device *
 tinydrm_of_find_backlight(struct device *dev)

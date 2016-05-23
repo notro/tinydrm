@@ -34,15 +34,17 @@ static int tinydrm_fb_dirty(struct drm_framebuffer *fb,
 {
 	struct drm_gem_cma_object *cma_obj = drm_fb_cma_get_gem_obj(fb, 0);
 	struct tinydrm_device *tdev = fb->dev->dev_private;
-	int ret;
+	int ret = 0;
 
 	if (!tdev->funcs || !tdev->funcs->dirty)
 		return -ENOSYS;
 
-	if (!tdev->prepared)
-		return -EINVAL;
+	mutex_lock(&tdev->dev_lock);
 
-	mutex_lock(&tdev->dirty_lock);
+	if (!tdev->prepared) {
+		ret = -EINVAL;
+		goto out_unlock;
+	}
 
 	/* fbdev can flush even when we're not interested */
 	if (tdev->pipe.plane.fb != fb)
@@ -50,14 +52,19 @@ static int tinydrm_fb_dirty(struct drm_framebuffer *fb,
 
 	ret = tdev->funcs->dirty(fb, cma_obj, flags, color, clips, num_clips);
 	if (ret)
-		return ret;
+		goto out_unlock;
 
-	tinydrm_enable(tdev);
+	if (!tdev->enabled) {
+		if (tdev->funcs && tdev->funcs->enable)
+			if (tdev->funcs->enable(tdev))
+				DRM_ERROR("Failed to enable display\n");
+		tdev->enabled = true;
+	}
 
 out_unlock:
-	mutex_unlock(&tdev->dirty_lock);
+	mutex_unlock(&tdev->dev_lock);
 
-	return 0;
+	return ret;
 }
 
 static const struct drm_framebuffer_funcs tinydrm_fb_funcs = {
@@ -110,6 +117,8 @@ static int tinydrm_fbdev_create(struct drm_fb_helper *helper,
 	if (ret)
 		return ret;
 
+	tdev->fbdev_helper = helper;
+
 	if (tdev->fbdefio_delay_ms) {
 		unsigned long delay;
 
@@ -135,7 +144,7 @@ int tinydrm_fbdev_init(struct tinydrm_device *tdev)
 	struct drm_device *dev = tdev->base;
 	struct drm_fbdev_cma *fbdev;
 
-	DRM_DEBUG_KMS("IN\n");
+	DRM_DEBUG_KMS("\n");
 
 	fbdev = drm_fbdev_cma_init_with_funcs(dev, 16,
 					      dev->mode_config.num_crtc,
@@ -146,7 +155,8 @@ int tinydrm_fbdev_init(struct tinydrm_device *tdev)
 
 	tdev->fbdev_cma = fbdev;
 
-	DRM_DEBUG_KMS("OUT\n");
+	DRM_DEBUG_KMS("fbdev framebuffer: [FB:%d]\n",
+		      tdev->fbdev_helper->fb->base.id);
 
 	return 0;
 }
@@ -162,5 +172,6 @@ void tinydrm_fbdev_fini(struct tinydrm_device *tdev)
 {
 	drm_fbdev_cma_fini(tdev->fbdev_cma);
 	tdev->fbdev_cma = NULL;
+	tdev->fbdev_helper = NULL;
 }
 EXPORT_SYMBOL(tinydrm_fbdev_fini);

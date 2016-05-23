@@ -25,6 +25,6 @@ int mipi_dbi_dirty(struct drm_framebuffer *fb,
 		   struct drm_clip_rect *clips, unsigned num_clips);
 bool mipi_dbi_display_is_on(struct lcdreg *reg);
 void mipi_dbi_debug_dump_regs(struct lcdreg *reg);
-int mipi_dbi_unprepare(struct tinydrm_device *tdev);
+void mipi_dbi_unprepare(struct tinydrm_device *tdev);
 
 #endif /* __LINUX_MIPI_DBI_H */
