@@ -159,6 +159,7 @@ int tinydrm_display_pipe_init(struct tinydrm_device *tdev,
 			      unsigned int format_count);
 int devm_tinydrm_register(struct device *dev, struct tinydrm_device *tdev,
 			  struct drm_driver *driver);
+int tinydrm_modeset_init(struct tinydrm_device *tdev);
 void tinydrm_shutdown(struct tinydrm_device *tdev);
 int tinydrm_suspend(struct tinydrm_device *tdev);
 int tinydrm_resume(struct tinydrm_device *tdev);

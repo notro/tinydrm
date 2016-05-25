@@ -176,6 +176,12 @@ static int adafruit_tft_probe(struct spi_device *spi)
 		id = spi_id->driver_data;
 	}
 
+	if (!dev->coherent_dma_mask) {
+		ret = dma_coerce_mask_and_coherent(dev, DMA_BIT_MASK(32));
+		if (ret)
+			dev_warn(dev, "Failed to set dma mask %d\n", ret);
+	}
+
 	tdev = devm_kzalloc(dev, sizeof(*tdev), GFP_KERNEL);
 	if (!tdev)
 		return -ENOMEM;
@@ -237,9 +243,21 @@ static int adafruit_tft_probe(struct spi_device *spi)
 	/* TODO: Make configurable */
 	tdev->fbdefio_delay_ms = 40;
 
+	ret = devm_tinydrm_register(dev, tdev, &adafruit_tft);
+	if (ret)
+		return ret;
+
+	ret = tinydrm_modeset_init(tdev);
+	if (ret)
+		return ret;
+
 	spi_set_drvdata(spi, tdev);
 
-	return devm_tinydrm_register(dev, tdev, &adafruit_tft);
+	DRM_DEBUG_DRIVER("Initialized %s:%s on minor %d\n",
+			 tdev->base->driver->name, dev_name(dev),
+			 tdev->base->primary->index);
+
+	return 0;
 }
 
 static struct spi_driver adafruit_tft_spi_driver = {

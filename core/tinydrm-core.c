@@ -160,22 +160,9 @@ static int tinydrm_register(struct device *parent, struct tinydrm_device *tdev,
 	struct drm_device *dev;
 	int ret;
 
-	DRM_DEBUG_KMS("\n");
-
-	if (!parent->coherent_dma_mask) {
-		ret = dma_set_coherent_mask(parent, DMA_BIT_MASK(32));
-		if (ret) {
-			DRM_ERROR("Failed to set coherent_dma_mask\n");
-			return ret;
-		}
-	}
-
 	dev = drm_dev_alloc(driver, parent);
 	if (!dev)
 		return -ENOMEM;
-
-	tdev->base = dev;
-	dev->dev_private = tdev;
 
 	ret = drm_dev_set_unique(dev, dev_name(dev->dev));
 	if (ret)
@@ -185,29 +172,8 @@ static int tinydrm_register(struct device *parent, struct tinydrm_device *tdev,
 	if (ret)
 		goto err_free;
 
-	drm_mode_config_init(dev);
-	dev->mode_config.min_width = tdev->width;
-	dev->mode_config.min_height = tdev->height;
-	dev->mode_config.max_width = tdev->width;
-	dev->mode_config.max_height = tdev->height;
-	dev->mode_config.funcs = &tinydrm_mode_config_funcs;
-
-	ret = tinydrm_display_pipe_init(tdev, tinydrm_formats,
-					ARRAY_SIZE(tinydrm_formats));
-	if (ret)
-		goto err_free;
-
-	drm_mode_config_reset(dev);
-	devm_tinydrm_debugfs_init(tdev);
-
-	ret = tinydrm_fbdev_init(tdev);
-	if (ret)
-		DRM_ERROR("Failed to initialize fbdev: %d\n", ret);
-
-	DRM_INFO("Device: %s\n", dev_name(dev->dev));
-	DRM_INFO("Initialized %s %d.%d.%d on minor %d\n",
-		 driver->name, driver->major, driver->minor, driver->patchlevel,
-		 dev->primary->index);
+	tdev->base = dev;
+	dev->dev_private = tdev;
 
 	return 0;
 
@@ -254,6 +220,34 @@ int devm_tinydrm_register(struct device *parent, struct tinydrm_device *tdev,
 }
 EXPORT_SYMBOL(devm_tinydrm_register);
 
+int tinydrm_modeset_init(struct tinydrm_device *tdev)
+{
+	struct drm_device *dev = tdev->base;
+	int ret;
+
+	drm_mode_config_init(dev);
+	dev->mode_config.min_width = tdev->width;
+	dev->mode_config.min_height = tdev->height;
+	dev->mode_config.max_width = tdev->width;
+	dev->mode_config.max_height = tdev->height;
+	dev->mode_config.funcs = &tinydrm_mode_config_funcs;
+
+	ret = tinydrm_display_pipe_init(tdev, tinydrm_formats,
+					ARRAY_SIZE(tinydrm_formats));
+	if (ret)
+		return ret;
+
+	drm_mode_config_reset(dev);
+	devm_tinydrm_debugfs_init(tdev);
+
+	ret = tinydrm_fbdev_init(tdev);
+	if (ret)
+		DRM_ERROR("Failed to initialize fbdev: %d\n", ret);
+
+	return 0;
+}
+EXPORT_SYMBOL(tinydrm_modeset_init);
+
 /**
  * tinydrm_shutdown - Shutdown tinydrm
  * @tdev: tinydrm device
@@ -265,7 +259,8 @@ EXPORT_SYMBOL(devm_tinydrm_register);
 void tinydrm_shutdown(struct tinydrm_device *tdev)
 {
 	/* TODO Is there a drm function to disable output? */
-	tdev->pipe.funcs->disable(&tdev->pipe);
+	if (tdev->pipe.funcs)
+		tdev->pipe.funcs->disable(&tdev->pipe);
 }
 EXPORT_SYMBOL(tinydrm_shutdown);
 
