@@ -21,7 +21,7 @@
  * two files:
  *
  * - collect_updates: Writing a positive number <n> to this file (re)starts the
- *                    process of colleting update statistics for the last <n>
+ *                    process of collecting update statistics for the last <n>
  *                    updates. Writing a zero stops it.
  *
  * - updates: Reading this file will provide a list of the last <n> updates.
