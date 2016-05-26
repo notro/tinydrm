@@ -20,17 +20,17 @@
  * Each device gets a directory <debugfs>/tinydrm/<devname> which contains
  * two files:
  *
- * - collect_updates: Writing a positive number <n> to this file (re)starts the
- *                    process of collecting update statistics for the last <n>
- *                    updates. Writing a zero stops it.
+ * - collect_dirty: Writing a positive number <n> to this file (re)starts the
+ *                  process of collecting update statistics for the last <n>
+ *                  updates. Writing a zero stops it.
  *
- * - updates: Reading this file will provide a list of the last <n> updates.
- *            Reading will not clear the list.
+ * - dirty: Reading this file will provide a list of the last <n> updates.
+ *          Reading will not clear the list.
  *
  * Example use:
  *     # cd /sys/kernel/debug/tinydrm/spi0.0
- *     # echo 4 > collect_updates
- *     # cat updates
+ *     # echo 4 > collect_dirty
+ *     # cat dirty
  *     [ 2140.061740] 2798 KiB/s, 151 KiB in 54 ms,    full(320x240+0+0)
  *     [ 2140.161710] 2798 KiB/s, 151 KiB in 54 ms,    full(320x240+0+0),  99 ms since last, 10 fps
  *     [ 2140.301724] 2798 KiB/s, 151 KiB in 54 ms,    full(320x240+0+0), 140 ms since last,  7 fps
@@ -38,29 +38,36 @@
  *
  * To get this functionality the driver has to call devm_tinydrm_debugfs_init()
  * to set it up and then bracket the display update with calls to
- * tinydrm_debugfs_update_begin() and tinydrm_debugfs_update_end().
+ * tinydrm_debugfs_dirty_begin() and tinydrm_debugfs_dirty_end().
  *
  */
 
-#define MAX_UPDATE_ENTRIES 40 /* PAGE_SIZE(4k) / 100(linelength) */
+#define MAX_DIRTY_ENTRIES 40 /* PAGE_SIZE(4k) / 100(linelength) */
 
-struct tinydrm_update_entry {
+struct tinydrm_dirty_entry {
 	struct list_head list;
 	struct drm_clip_rect clip;
+	bool full;
 	size_t len;
 	u64 start;
 	u64 end;
 };
 
+struct tinydrm_debugfs_dirty {
+	struct dentry *debugfs;
+	struct list_head list;
+	struct mutex list_lock;
+};
+
 static struct dentry *tinydrm_debugfs_root;
 
-static struct tinydrm_update_entry *
-tinydrm_debugfs_update_get_entry(struct tinydrm_device *tdev)
+static struct tinydrm_dirty_entry *
+tinydrm_debugfs_dirty_get_entry(struct tinydrm_debugfs_dirty *dirty)
 {
-	struct tinydrm_update_entry *entry;
+	struct tinydrm_dirty_entry *entry;
 
-	entry = list_last_entry(&tdev->update_list,
-				struct tinydrm_update_entry, list);
+	entry = list_last_entry(&dirty->list,
+				struct tinydrm_dirty_entry, list);
 	if (entry->start) {
 		if (entry->end)
 			return NULL; /* buffer is full */
@@ -68,7 +75,7 @@ tinydrm_debugfs_update_get_entry(struct tinydrm_device *tdev)
 			return entry; /* in progress */
 	}
 	/* The buffer hasn't been filled yet */
-	list_for_each_entry(entry, &tdev->update_list, list) {
+	list_for_each_entry(entry, &dirty->list, list) {
 		if (!entry->end)
 			return entry;
 	}
@@ -78,54 +85,66 @@ tinydrm_debugfs_update_get_entry(struct tinydrm_device *tdev)
 }
 
 /**
- * tinydrm_debugfs_update_begin - Display update is starting
+ * tinydrm_debugfs_dirty_begin - Display update is starting
  * @tdev: tinydrm device
+ * @fb: framebuffer
  * @clip: The part of the display that is to be updated.
  */
-void tinydrm_debugfs_update_begin(struct tinydrm_device *tdev,
-				  const struct drm_clip_rect *clip)
+void tinydrm_debugfs_dirty_begin(struct tinydrm_device *tdev,
+				 struct drm_framebuffer *fb,
+				 const struct drm_clip_rect *clip)
 {
-	struct tinydrm_update_entry *entry;
+	struct tinydrm_debugfs_dirty *dirty = tdev->debugfs_dirty;
+	struct tinydrm_dirty_entry *entry;
 
-	mutex_lock(&tdev->update_list_lock);
+	if (!dirty)
+		return;
 
-	if (list_empty(&tdev->update_list))
+	mutex_lock(&dirty->list_lock);
+
+	if (list_empty(&dirty->list))
 		goto out_unlock;
 
-	entry = tinydrm_debugfs_update_get_entry(tdev);
+	entry = tinydrm_debugfs_dirty_get_entry(dirty);
 	if (!entry) {
-		list_rotate_left(&tdev->update_list);
-		entry = list_last_entry(&tdev->update_list,
-					struct tinydrm_update_entry, list);
+		list_rotate_left(&dirty->list);
+		entry = list_last_entry(&dirty->list,
+					struct tinydrm_dirty_entry, list);
 	}
 
 	entry->clip = *clip;
+	entry->full = clip->x1 == 0 && clip->x2 == fb->width &&
+		      clip->y1 == 0 && clip->y2 == fb->height;
 	entry->start = local_clock();
 	entry->end = 0;
 
 out_unlock:
-	mutex_unlock(&tdev->update_list_lock);
+	mutex_unlock(&dirty->list_lock);
 }
-EXPORT_SYMBOL(tinydrm_debugfs_update_begin);
+EXPORT_SYMBOL(tinydrm_debugfs_dirty_begin);
 
 /**
- * tinydrm_debugfs_update_end - Display update has ended
+ * tinydrm_debugfs_dirty_end - Display update has ended
  * @tdev: tinydrm device
  * @len: Length of transfer buffer
  * @bits_per_pixel: Used to calculate transfer length if @len is zero by
  *                  multiplying with number of pixels in clip.
  */
-void tinydrm_debugfs_update_end(struct tinydrm_device *tdev, size_t len,
-				unsigned bits_per_pixel)
+void tinydrm_debugfs_dirty_end(struct tinydrm_device *tdev, size_t len,
+			       unsigned bits_per_pixel)
 {
-	struct tinydrm_update_entry *entry;
+	struct tinydrm_debugfs_dirty *dirty = tdev->debugfs_dirty;
+	struct tinydrm_dirty_entry *entry;
 
-	mutex_lock(&tdev->update_list_lock);
+	if (!dirty)
+		return;
 
-	if (list_empty(&tdev->update_list))
+	mutex_lock(&dirty->list_lock);
+
+	if (list_empty(&dirty->list))
 		goto out_unlock;
 
-	entry = tinydrm_debugfs_update_get_entry(tdev);
+	entry = tinydrm_debugfs_dirty_get_entry(dirty);
 	if (WARN_ON(!entry))
 		goto out_unlock;
 
@@ -140,39 +159,39 @@ void tinydrm_debugfs_update_end(struct tinydrm_device *tdev, size_t len,
 	entry->len = len;
 
 out_unlock:
-	mutex_unlock(&tdev->update_list_lock);
+	mutex_unlock(&dirty->list_lock);
 }
-EXPORT_SYMBOL(tinydrm_debugfs_update_end);
+EXPORT_SYMBOL(tinydrm_debugfs_dirty_end);
 
-static void *tinydrm_debugfs_update_seq_start(struct seq_file *s, loff_t *pos)
+static void *tinydrm_debugfs_dirty_seq_start(struct seq_file *s, loff_t *pos)
 {
 	return *pos ? NULL : SEQ_START_TOKEN;
 }
 
-static void *tinydrm_debugfs_update_seq_next(struct seq_file *s, void *v,
-					     loff_t *pos)
+static void *tinydrm_debugfs_dirty_seq_next(struct seq_file *s, void *v,
+					    loff_t *pos)
 {
 	return NULL;
 }
 
-static void tinydrm_debugfs_update_seq_stop(struct seq_file *s, void *v)
+static void tinydrm_debugfs_dirty_seq_stop(struct seq_file *s, void *v)
 {
 }
 
-static int tinydrm_debugfs_update_seq_show(struct seq_file *s, void *v)
+static int tinydrm_debugfs_dirty_seq_show(struct seq_file *s, void *v)
 {
-	struct tinydrm_device *tdev = s->private;
-	struct tinydrm_update_entry *entry;
+	struct tinydrm_debugfs_dirty *dirty = s->private;
+	struct tinydrm_dirty_entry *entry;
 	u64 previous_start = 0;
+	bool previous_full = false;
 
-	mutex_lock(&tdev->update_list_lock);
+	mutex_lock(&dirty->list_lock);
 
-	list_for_each_entry(entry, &tdev->update_list, list) {
+	list_for_each_entry(entry, &dirty->list, list) {
 		u32 start_rem_nsec, duration_ms, last_ms = 0;
 		u64 start_sec, throughput;
-		bool full;
 
-		/* stop on empty entry (buffer not full or empty) */
+		/* stop on empty entry (buffer not full nor empty) */
 		if (!entry->start)
 			break;
 
@@ -204,11 +223,8 @@ static int tinydrm_debugfs_update_seq_show(struct seq_file *s, void *v)
 
 		seq_printf(s, " in %3u ms", duration_ms);
 
-		full = entry->clip.x1 == 0 &&
-		       entry->clip.x2 == tdev->width &&
-		       entry->clip.y1 == 0 &&
-		       entry->clip.y2 == tdev->height;
-		seq_printf(s, ", %s(%ux%u+%u+%u)", full ? "   full" : "partial",
+		seq_printf(s, ", %s(%ux%u+%u+%u)",
+			   entry->full ? "   full" : "partial",
 			   entry->clip.x2 - entry->clip.x1,
 			   entry->clip.y2 - entry->clip.y1,
 			   entry->clip.x1, entry->clip.y1);
@@ -219,49 +235,55 @@ static int tinydrm_debugfs_update_seq_show(struct seq_file *s, void *v)
 			seq_printf(s, ", %3u ms since last", last_ms);
 		}
 
-		if (full && last_ms)
+		if (entry->full && previous_full && last_ms)
 			seq_printf(s, ", %2u fps", 1000 / last_ms);
 
 		seq_puts(s, "\n");
 		previous_start = entry->start;
+		previous_full = entry->full;
 	}
 
-	mutex_unlock(&tdev->update_list_lock);
+	mutex_unlock(&dirty->list_lock);
 
 	return 0;
 }
 
-static const struct seq_operations tinydrm_debugfs_update_seq_ops = {
-	.start = tinydrm_debugfs_update_seq_start,
-	.next  = tinydrm_debugfs_update_seq_next,
-	.stop  = tinydrm_debugfs_update_seq_stop,
-	.show  = tinydrm_debugfs_update_seq_show
+static const struct seq_operations tinydrm_debugfs_dirty_seq_ops = {
+	.start = tinydrm_debugfs_dirty_seq_start,
+	.next  = tinydrm_debugfs_dirty_seq_next,
+	.stop  = tinydrm_debugfs_dirty_seq_stop,
+	.show  = tinydrm_debugfs_dirty_seq_show
 };
 
-static int tinydrm_debugfs_update_open(struct inode *inode, struct file *file)
+static int tinydrm_debugfs_dirty_open(struct inode *inode, struct file *file)
 {
-	struct tinydrm_device *tdev = inode->i_private;
+	struct drm_device *dev = inode->i_private;
+	struct tinydrm_device *tdev = dev->dev_private;
 	int ret;
 
-	ret = seq_open(file, &tinydrm_debugfs_update_seq_ops);
-	((struct seq_file *)file->private_data)->private = tdev;
+	if (!tdev)
+		return -ENODEV;
+
+	ret = seq_open(file, &tinydrm_debugfs_dirty_seq_ops);
+	((struct seq_file *)file->private_data)->private = tdev->debugfs_dirty;
 
 	return ret;
 }
 
-static const struct file_operations tinydrm_debugfs_update_file_ops = {
+static const struct file_operations tinydrm_debugfs_dirty_file_ops = {
 	.owner   = THIS_MODULE,
-	.open    = tinydrm_debugfs_update_open,
+	.open    = tinydrm_debugfs_dirty_open,
 	.read    = seq_read,
 	.llseek  = seq_lseek,
 	.release = seq_release
 };
 
-static void tinydrm_debugfs_update_list_delete(struct tinydrm_device *tdev)
+static void
+tinydrm_debugfs_dirty_list_delete(struct tinydrm_debugfs_dirty *dirty)
 {
-	struct tinydrm_update_entry *entry, *tmp;
+	struct tinydrm_dirty_entry *entry, *tmp;
 
-	list_for_each_entry_safe(entry, tmp, &tdev->update_list, list) {
+	list_for_each_entry_safe(entry, tmp, &dirty->list, list) {
 		list_del(&entry->list);
 		kfree(entry);
 	}
@@ -269,29 +291,38 @@ static void tinydrm_debugfs_update_list_delete(struct tinydrm_device *tdev)
 
 static int tinydrm_debugfs_collect_updates_set(void *data, u64 val)
 {
-	struct tinydrm_update_entry *entry;
-	struct tinydrm_device *tdev = data;
+	struct drm_device *dev = data;
+	struct tinydrm_device *tdev = dev->dev_private;
+	struct tinydrm_debugfs_dirty *dirty;
+	struct tinydrm_dirty_entry *entry;
 	int i, ret = 0;
 
-	if (val > MAX_UPDATE_ENTRIES)
+	if (!tdev)
+		return -ENODEV;
+
+	dirty = tdev->debugfs_dirty;
+	if (!dirty)
+		return -ENODEV;
+
+	if (val > MAX_DIRTY_ENTRIES)
 		return -ERANGE;
 
-	mutex_lock(&tdev->update_list_lock);
+	mutex_lock(&dirty->list_lock);
 
-	if (!list_empty(&tdev->update_list))
-		tinydrm_debugfs_update_list_delete(tdev);
+	if (!list_empty(&dirty->list))
+		tinydrm_debugfs_dirty_list_delete(dirty);
 
 	for (i = 0; i < val; i++) {
 		entry = kzalloc(sizeof(*entry), GFP_KERNEL);
 		if (!entry) {
-			tinydrm_debugfs_update_list_delete(tdev);
+			tinydrm_debugfs_dirty_list_delete(dirty);
 			ret = -ENOMEM;
 			break;
 		}
-		list_add(&entry->list, &tdev->update_list);
+		list_add(&entry->list, &dirty->list);
 	}
 
-	mutex_unlock(&tdev->update_list_lock);
+	mutex_unlock(&dirty->list_lock);
 
 	return ret;
 }
@@ -302,9 +333,11 @@ DEFINE_SIMPLE_ATTRIBUTE(tinydrm_debugfs_collect_updates_fops, NULL,
 static void tinydrm_debugfs_release(struct device *dev, void *res)
 {
 	struct tinydrm_device *tdev = *(struct tinydrm_device **)res;
+	struct tinydrm_debugfs_dirty *dirty = tdev->debugfs_dirty;
 
-	tinydrm_debugfs_update_list_delete(tdev);
-	debugfs_remove_recursive(tdev->debugfs);
+	tinydrm_debugfs_dirty_list_delete(dirty);
+	debugfs_remove_recursive(dirty->debugfs);
+	kfree(dirty);
 }
 
 /**
@@ -315,35 +348,41 @@ static void tinydrm_debugfs_release(struct device *dev, void *res)
  */
 void devm_tinydrm_debugfs_init(struct tinydrm_device *tdev)
 {
-	struct device *dev = tdev->base->dev;
+	struct tinydrm_debugfs_dirty *dirty = NULL;
+	struct drm_device *dev = tdev->base;
 	struct tinydrm_device **ptr;
 	struct dentry *dentry;
 
-	mutex_init(&tdev->update_list_lock);
-	INIT_LIST_HEAD(&tdev->update_list);
-
 	if (IS_ERR_OR_NULL(tinydrm_debugfs_root))
 		goto err_msg;
+
+	dirty = kzalloc(sizeof(*dirty), GFP_KERNEL);
+	if (!dirty)
+		goto err_msg;
+
+	mutex_init(&dirty->list_lock);
+	INIT_LIST_HEAD(&dirty->list);
+	tdev->debugfs_dirty = dirty;
 
 	ptr = devres_alloc(tinydrm_debugfs_release, sizeof(*ptr), GFP_KERNEL);
 	if (!ptr)
 		goto err_msg;
 
-	dentry = debugfs_create_dir(dev_name(dev), tinydrm_debugfs_root);
+	dentry = debugfs_create_dir(dev_name(dev->dev), tinydrm_debugfs_root);
 	if (!dentry)
 		goto err_remove;
 
-	if (!debugfs_create_file("collect_updates", 0200, dentry, tdev,
+	if (!debugfs_create_file("collect_dirty", 0200, dentry, dev,
 				 &tinydrm_debugfs_collect_updates_fops))
 		goto err_remove;
 
-	if (!debugfs_create_file("updates", 0400, dentry, tdev,
-				 &tinydrm_debugfs_update_file_ops))
+	if (!debugfs_create_file("dirty", 0400, dentry, dev,
+				 &tinydrm_debugfs_dirty_file_ops))
 		goto err_remove;
 
-	tdev->debugfs = dentry;
+	dirty->debugfs = dentry;
 	*ptr = tdev;
-	devres_add(dev, ptr);
+	devres_add(dev->dev, ptr);
 
 	return;
 
@@ -351,7 +390,9 @@ err_remove:
 	debugfs_remove_recursive(dentry);
 	devres_free(ptr);
 err_msg:
-	dev_err(dev, "Failed to create debugfs entries\n");
+	kfree(dirty);
+	tdev->debugfs_dirty = NULL;
+	dev_err(dev->dev, "Failed to create debugfs entries\n");
 }
 EXPORT_SYMBOL(devm_tinydrm_debugfs_init);
 

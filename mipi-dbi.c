@@ -125,7 +125,7 @@ int mipi_dbi_dirty(struct drm_framebuffer *fb,
 	DRM_DEBUG("Flushing [FB:%d] x1=%u, x2=%u, y1=%u, y2=%u\n", fb->base.id,
 		  clip.x1, clip.x2, clip.y1, clip.y2);
 
-	tinydrm_debugfs_update_begin(tdev, &clip);
+	tinydrm_debugfs_dirty_begin(tdev, fb, &clip);
 
 	lcdreg_writereg(reg, MIPI_DCS_SET_COLUMN_ADDRESS,
 			(clip.x1 >> 8) & 0xFF, clip.x1 & 0xFF,
@@ -140,7 +140,7 @@ int mipi_dbi_dirty(struct drm_framebuffer *fb,
 		dev_err_once(tdev->base->dev, "Failed to update display %d\n",
 			     ret);
 
-	tinydrm_debugfs_update_end(tdev, 0, 16);
+	tinydrm_debugfs_dirty_end(tdev, 0, 16);
 
 	return ret;
 }

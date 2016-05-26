@@ -14,6 +14,7 @@
 #include <drm/drm_gem_cma_helper.h>
 #include <drm/drm_simple_kms_helper.h>
 
+struct tinydrm_debugfs_dirty;
 struct tinydrm_device;
 struct spi_device;
 struct regulator;
@@ -76,6 +77,7 @@ struct tinydrm_funcs {
  *            prepared/enabled state changes
  * @prepared: device prepared state
  * @enabled: device enabled state
+ * @debugfs_dirty: debugfs dirty file control structure
  * @funcs: tinydrm device operations (optional)
  */
 struct tinydrm_device {
@@ -98,22 +100,9 @@ struct tinydrm_device {
 	struct mutex dev_lock;
 	bool prepared;
 	bool enabled;
+	struct tinydrm_debugfs_dirty *debugfs_dirty;
 	const struct tinydrm_funcs *funcs;
-/* private: internal use by the debugfs code */
-#ifdef CONFIG_DEBUG_FS
-	struct dentry *debugfs;
-	struct list_head update_list;
-	struct mutex update_list_lock;
-#endif
 };
-
-extern const struct file_operations tinydrm_fops;
-void tinydrm_lastclose(struct drm_device *dev);
-void tinydrm_gem_cma_free_object(struct drm_gem_object *gem_obj);
-struct drm_gem_object *
-tinydrm_gem_cma_prime_import_sg_table(struct drm_device *dev,
-				      struct dma_buf_attachment *attach,
-				      struct sg_table *sgt);
 
 /*
  * TINYDRM_DRM_DRIVER - default tinydrm driver structure
@@ -151,6 +140,13 @@ static struct drm_driver name_struct = { \
 	.minor			= 0, \
 }
 
+extern const struct file_operations tinydrm_fops;
+void tinydrm_lastclose(struct drm_device *dev);
+void tinydrm_gem_cma_free_object(struct drm_gem_object *gem_obj);
+struct drm_gem_object *
+tinydrm_gem_cma_prime_import_sg_table(struct drm_device *dev,
+				      struct dma_buf_attachment *attach,
+				      struct sg_table *sgt);
 struct drm_framebuffer *
 tinydrm_fb_create(struct drm_device *dev, struct drm_file *file_priv,
 		  const struct drm_mode_fb_cmd2 *mode_cmd);
@@ -168,19 +164,21 @@ int tinydrm_fbdev_init(struct tinydrm_device *tdev);
 void tinydrm_fbdev_fini(struct tinydrm_device *tdev);
 
 #ifdef CONFIG_DEBUG_FS
-void tinydrm_debugfs_update_begin(struct tinydrm_device *tdev,
-				  const struct drm_clip_rect *clip);
-void tinydrm_debugfs_update_end(struct tinydrm_device *tdev, size_t len,
-				unsigned bits_per_pixel);
+void tinydrm_debugfs_dirty_begin(struct tinydrm_device *tdev,
+				 struct drm_framebuffer *fb,
+				 const struct drm_clip_rect *clip);
+void tinydrm_debugfs_dirty_end(struct tinydrm_device *tdev, size_t len,
+			       unsigned bits_per_pixel);
 void devm_tinydrm_debugfs_init(struct tinydrm_device *tdev);
 #else
-void tinydrm_debugfs_update_begin(struct tinydrm_device *tdev,
-				  const struct drm_clip_rect *clip)
+void tinydrm_debugfs_dirty_begin(struct tinydrm_device *tdev,
+				 struct drm_framebuffer *fb,
+				 const struct drm_clip_rect *clip)
 {
 }
 
-void tinydrm_debugfs_update_end(struct tinydrm_device *tdev, size_t len,
-				unsigned bits_per_pixel)
+void tinydrm_debugfs_dirty_end(struct tinydrm_device *tdev, size_t len,
+			       unsigned bits_per_pixel)
 {
 }
 
