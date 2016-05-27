@@ -7,12 +7,13 @@
  * (at your option) any later version.
  */
 
+#include <drm/drmP.h>
+#include <drm/drm_fb_cma_helper.h>
 #include <drm/tinydrm/tinydrm.h>
 #include <linux/debugfs.h>
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/uaccess.h>
-#include <drm/drm_fb_cma_helper.h>
 
 /**
  * DOC: Performance reporting

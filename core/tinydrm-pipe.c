@@ -99,7 +99,7 @@ static void tinydrm_display_pipe_enable(struct drm_simple_display_pipe *pipe,
 	else
 		tdev->prepared = true;
 
-	/* The panel is enabled after the first .dirty() */
+	/* .enable() is called after the first .dirty() */
 
 	mutex_unlock(&tdev->dev_lock);
 }
