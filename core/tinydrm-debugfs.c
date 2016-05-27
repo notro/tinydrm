@@ -185,7 +185,19 @@ static int tinydrm_debugfs_dirty_seq_show(struct seq_file *s, void *v)
 	u64 previous_start = 0;
 	bool previous_full = false;
 
+	if (!dirty) {
+		seq_puts(s, "Performance reporting is not supported by this driver.\n");
+		return 0;
+	}
+
 	mutex_lock(&dirty->list_lock);
+
+	if (list_empty(&dirty->list)) {
+		seq_puts(s, "Performance reporting is disabled.\n");
+		seq_printf(s, "Enable by writing the number of wanted entries to this file (<%i)\n",
+			   MAX_DIRTY_ENTRIES + 1);
+		goto out_unlock;
+	}
 
 	list_for_each_entry(entry, &dirty->list, list) {
 		u32 start_rem_nsec, duration_ms, last_ms = 0;
@@ -243,6 +255,7 @@ static int tinydrm_debugfs_dirty_seq_show(struct seq_file *s, void *v)
 		previous_full = entry->full;
 	}
 
+out_unlock:
 	mutex_unlock(&dirty->list_lock);
 
 	return 0;
@@ -270,14 +283,6 @@ static int tinydrm_debugfs_dirty_open(struct inode *inode, struct file *file)
 	return ret;
 }
 
-static const struct file_operations tinydrm_debugfs_dirty_file_ops = {
-	.owner   = THIS_MODULE,
-	.open    = tinydrm_debugfs_dirty_open,
-	.read    = seq_read,
-	.llseek  = seq_lseek,
-	.release = seq_release
-};
-
 static void
 tinydrm_debugfs_dirty_list_delete(struct tinydrm_debugfs_dirty *dirty)
 {
@@ -289,20 +294,30 @@ tinydrm_debugfs_dirty_list_delete(struct tinydrm_debugfs_dirty *dirty)
 	}
 }
 
-static int tinydrm_debugfs_collect_updates_set(void *data, u64 val)
+static ssize_t tinydrm_debugfs_dirty_write(struct file *file,
+					   const char __user *buf,
+					   size_t len, loff_t *ppos)
 {
-	struct drm_device *dev = data;
-	struct tinydrm_device *tdev = dev->dev_private;
 	struct tinydrm_debugfs_dirty *dirty;
 	struct tinydrm_dirty_entry *entry;
-	int i, ret = 0;
+	unsigned long long val;
+	char set_buf[24];
+	ssize_t ret = 0;
+	size_t size;
+	int i;
 
-	if (!tdev)
-		return -ENODEV;
-
-	dirty = tdev->debugfs_dirty;
+	dirty = ((struct seq_file *)file->private_data)->private;
 	if (!dirty)
 		return -ENODEV;
+
+	size = min(sizeof(set_buf) - 1, len);
+	if (copy_from_user(set_buf, buf, size))
+		return -EFAULT;
+
+	set_buf[size] = '\0';
+	ret = kstrtoull(set_buf, 0, &val);
+	if (ret)
+		return ret;
 
 	if (val > MAX_DIRTY_ENTRIES)
 		return -ERANGE;
@@ -324,11 +339,17 @@ static int tinydrm_debugfs_collect_updates_set(void *data, u64 val)
 
 	mutex_unlock(&dirty->list_lock);
 
-	return ret;
+	return ret < 0 ? ret : len;
 }
 
-DEFINE_SIMPLE_ATTRIBUTE(tinydrm_debugfs_collect_updates_fops, NULL,
-			tinydrm_debugfs_collect_updates_set, "%llu\n");
+static const struct file_operations tinydrm_debugfs_dirty_file_ops = {
+	.owner   = THIS_MODULE,
+	.open    = tinydrm_debugfs_dirty_open,
+	.read    = seq_read,
+	.write   = tinydrm_debugfs_dirty_write,
+	.llseek  = seq_lseek,
+	.release = seq_release
+};
 
 static void tinydrm_debugfs_release(struct device *dev, void *res)
 {
@@ -372,12 +393,8 @@ void devm_tinydrm_debugfs_init(struct tinydrm_device *tdev)
 	if (!dentry)
 		goto err_remove;
 
-	if (!debugfs_create_file("collect_dirty", 0200, dentry, dev,
-				 &tinydrm_debugfs_collect_updates_fops))
-		goto err_remove;
-
-	if (!debugfs_create_file("dirty", 0400, dentry, dev,
-				 &tinydrm_debugfs_dirty_file_ops))
+	if (!debugfs_create_file("dirty", S_IFREG | S_IRUGO | S_IWUGO, dentry,
+				 dev, &tinydrm_debugfs_dirty_file_ops))
 		goto err_remove;
 
 	dirty->debugfs = dentry;
