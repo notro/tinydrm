@@ -132,6 +132,8 @@ static struct drm_driver name_struct = { \
 	.dumb_create		= drm_gem_cma_dumb_create, \
 	.dumb_map_offset	= drm_gem_cma_dumb_map_offset, \
 	.dumb_destroy		= drm_gem_dumb_destroy, \
+	.debugfs_init		= tinydrm_debugfs_init, \
+	.debugfs_cleanup	= tinydrm_debugfs_cleanup, \
 	.fops			= &tinydrm_fops, \
 	.name			= name_str, \
 	.desc			= desc_str, \
@@ -164,13 +166,20 @@ int tinydrm_fbdev_init(struct tinydrm_device *tdev);
 void tinydrm_fbdev_fini(struct tinydrm_device *tdev);
 
 #ifdef CONFIG_DEBUG_FS
+int tinydrm_debugfs_init(struct drm_minor *minor);
 void tinydrm_debugfs_dirty_begin(struct tinydrm_device *tdev,
 				 struct drm_framebuffer *fb,
 				 const struct drm_clip_rect *clip);
 void tinydrm_debugfs_dirty_end(struct tinydrm_device *tdev, size_t len,
 			       unsigned bits_per_pixel);
-void devm_tinydrm_debugfs_init(struct tinydrm_device *tdev);
+void tinydrm_debugfs_cleanup(struct drm_minor *minor);
+int tinydrm_debugfs_dirty_init(struct tinydrm_device *tdev);
 #else
+int tinydrm_debugfs_dirty_init(struct tinydrm_device *tdev)
+{
+	return 0;
+}
+
 void tinydrm_debugfs_dirty_begin(struct tinydrm_device *tdev,
 				 struct drm_framebuffer *fb,
 				 const struct drm_clip_rect *clip)
@@ -182,9 +191,8 @@ void tinydrm_debugfs_dirty_end(struct tinydrm_device *tdev, size_t len,
 {
 }
 
-void devm_tinydrm_debugfs_init(struct tinydrm_device *tdev)
-{
-}
+#define tinydrm_debugfs_init	NULL
+#define tinydrm_debugfs_cleanup	NULL
 #endif
 
 void tinydrm_merge_clips(struct drm_clip_rect *dst,

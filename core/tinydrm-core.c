@@ -238,7 +238,6 @@ int tinydrm_modeset_init(struct tinydrm_device *tdev)
 		return ret;
 
 	drm_mode_config_reset(dev);
-	devm_tinydrm_debugfs_init(tdev);
 
 	ret = tinydrm_fbdev_init(tdev);
 	if (ret)

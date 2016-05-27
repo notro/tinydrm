@@ -12,32 +12,30 @@
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/uaccess.h>
+#include <drm/drm_fb_cma_helper.h>
 
 /**
  * DOC: Performance reporting
  *
  * tinydrm can provide performance reporting when built with CONFIG_DEBUG_FS.
- * Each device gets a directory <debugfs>/tinydrm/<devname> which contains
- * two files:
- *
- * - collect_dirty: Writing a positive number <n> to this file (re)starts the
- *                  process of collecting update statistics for the last <n>
- *                  updates. Writing a zero stops it.
- *
- * - dirty: Reading this file will provide a list of the last <n> updates.
- *          Reading will not clear the list.
+ * This is available through the file 'dirty'.
+ * Writing a positive number <n> to this file (re)starts the process of
+ * collecting statistics for the last <n> framebuffer flushes.
+ * Writing a zero stops it.
+ * Reading this file will provide a list of the last <n> flushes.
+ * Reading will not clear the list.
  *
  * Example use:
- *     # cd /sys/kernel/debug/tinydrm/spi0.0
- *     # echo 4 > collect_dirty
+ *     # cd /sys/kernel/debug/dri/0
+ *     # echo 4 > dirty
  *     # cat dirty
  *     [ 2140.061740] 2798 KiB/s, 151 KiB in 54 ms,    full(320x240+0+0)
  *     [ 2140.161710] 2798 KiB/s, 151 KiB in 54 ms,    full(320x240+0+0),  99 ms since last, 10 fps
  *     [ 2140.301724] 2798 KiB/s, 151 KiB in 54 ms,    full(320x240+0+0), 140 ms since last,  7 fps
  *     [ 2140.361702] 3552 KiB/s,  10 KiB in  3 ms, partial(320x16+0+224),  59 ms since last
  *
- * To get this functionality the driver has to call devm_tinydrm_debugfs_init()
- * to set it up and then bracket the display update with calls to
+ * To get this functionality the driver has to call tinydrm_debugfs_dirty_init()
+ * to set it up and then bracket the framebuffer flushes with calls to
  * tinydrm_debugfs_dirty_begin() and tinydrm_debugfs_dirty_end().
  *
  */
@@ -54,12 +52,29 @@ struct tinydrm_dirty_entry {
 };
 
 struct tinydrm_debugfs_dirty {
-	struct dentry *debugfs;
 	struct list_head list;
 	struct mutex list_lock;
 };
 
-static struct dentry *tinydrm_debugfs_root;
+/**
+ * tinydrm_debugfs_dirty_init - Initialize performance reporting
+ * @tdev: tinydrm device
+ */
+int tinydrm_debugfs_dirty_init(struct tinydrm_device *tdev)
+{
+	struct tinydrm_debugfs_dirty *dirty;
+
+	dirty = kzalloc(sizeof(*dirty), GFP_KERNEL);
+	if (!dirty)
+		return -ENOMEM;
+
+	mutex_init(&dirty->list_lock);
+	INIT_LIST_HEAD(&dirty->list);
+	tdev->debugfs_dirty = dirty;
+
+	return 0;
+}
+EXPORT_SYMBOL(tinydrm_debugfs_dirty_init);
 
 static struct tinydrm_dirty_entry *
 tinydrm_debugfs_dirty_get_entry(struct tinydrm_debugfs_dirty *dirty)
@@ -270,7 +285,8 @@ static const struct seq_operations tinydrm_debugfs_dirty_seq_ops = {
 
 static int tinydrm_debugfs_dirty_open(struct inode *inode, struct file *file)
 {
-	struct drm_device *dev = inode->i_private;
+	struct drm_info_node *node = inode->i_private;
+	struct drm_device *dev = node->minor->dev;
 	struct tinydrm_device *tdev = dev->dev_private;
 	int ret;
 
@@ -351,82 +367,76 @@ static const struct file_operations tinydrm_debugfs_dirty_file_ops = {
 	.release = seq_release
 };
 
-static void tinydrm_debugfs_release(struct device *dev, void *res)
+static int tinydrm_debugfs_create_file(const char *name, umode_t mode,
+				       struct dentry *root,
+				       struct drm_minor *minor,
+				       const struct file_operations *fops)
 {
-	struct tinydrm_device *tdev = *(struct tinydrm_device **)res;
-	struct tinydrm_debugfs_dirty *dirty = tdev->debugfs_dirty;
+	struct drm_info_node *node;
+	struct dentry *ent;
 
-	tinydrm_debugfs_dirty_list_delete(dirty);
-	debugfs_remove_recursive(dirty->debugfs);
-	kfree(dirty);
-}
+	node = kmalloc(sizeof(*node), GFP_KERNEL);
+	if (!node)
+		return -ENOMEM;
 
-/**
- * devm_tinydrm_debugfs_init - Initialize performance reporting
- * @tdev: tinydrm device
- *
- * Resources will be automatically freed on driver detach (devres).
- */
-void devm_tinydrm_debugfs_init(struct tinydrm_device *tdev)
-{
-	struct tinydrm_debugfs_dirty *dirty = NULL;
-	struct drm_device *dev = tdev->base;
-	struct tinydrm_device **ptr;
-	struct dentry *dentry;
+	ent = debugfs_create_file(name, mode, root, node, fops);
+	if (!ent) {
+		DRM_ERROR("Cannot create /sys/kernel/debug/dri/%s/%s\n",
+			  root->d_name.name, name);
+		kfree(node);
+		return -ENOMEM;
+	}
 
-	if (IS_ERR_OR_NULL(tinydrm_debugfs_root))
-		goto err_msg;
+	node->minor = minor;
+	node->dent = ent;
+	node->info_ent = (const void *)fops;
 
-	dirty = kzalloc(sizeof(*dirty), GFP_KERNEL);
-	if (!dirty)
-		goto err_msg;
-
-	mutex_init(&dirty->list_lock);
-	INIT_LIST_HEAD(&dirty->list);
-	tdev->debugfs_dirty = dirty;
-
-	ptr = devres_alloc(tinydrm_debugfs_release, sizeof(*ptr), GFP_KERNEL);
-	if (!ptr)
-		goto err_msg;
-
-	dentry = debugfs_create_dir(dev_name(dev->dev), tinydrm_debugfs_root);
-	if (!dentry)
-		goto err_remove;
-
-	if (!debugfs_create_file("dirty", S_IFREG | S_IRUGO | S_IWUGO, dentry,
-				 dev, &tinydrm_debugfs_dirty_file_ops))
-		goto err_remove;
-
-	dirty->debugfs = dentry;
-	*ptr = tdev;
-	devres_add(dev->dev, ptr);
-
-	return;
-
-err_remove:
-	debugfs_remove_recursive(dentry);
-	devres_free(ptr);
-err_msg:
-	kfree(dirty);
-	tdev->debugfs_dirty = NULL;
-	dev_err(dev->dev, "Failed to create debugfs entries\n");
-}
-EXPORT_SYMBOL(devm_tinydrm_debugfs_init);
-
-static int tinydrm_debugfs_module_init(void)
-{
-	tinydrm_debugfs_root = debugfs_create_dir("tinydrm", NULL);
-	if (IS_ERR_OR_NULL(tinydrm_debugfs_root))
-		pr_err("tinydrm: Failed to create debugfs root\n");
+	mutex_lock(&minor->debugfs_lock);
+	list_add(&node->list, &minor->debugfs_list);
+	mutex_unlock(&minor->debugfs_lock);
 
 	return 0;
 }
-module_init(tinydrm_debugfs_module_init);
 
-static void tinydrm_debugfs_module_exit(void)
+static void tinydrm_debugfs_remove_file(struct drm_minor *minor,
+					const struct file_operations *fops)
 {
-	debugfs_remove_recursive(tinydrm_debugfs_root);
+	drm_debugfs_remove_files((struct drm_info_list *)fops, 1, minor);
 }
-module_exit(tinydrm_debugfs_module_exit);
 
-MODULE_LICENSE("GPL");
+static const struct drm_info_list tinydrm_debugfs_list[] = {
+	{ "fb",   drm_fb_cma_debugfs_show, 0 },
+};
+
+int tinydrm_debugfs_init(struct drm_minor *minor)
+{
+	int ret;
+
+	ret = drm_debugfs_create_files(tinydrm_debugfs_list,
+				       ARRAY_SIZE(tinydrm_debugfs_list),
+				       minor->debugfs_root, minor);
+	if (ret)
+		return ret;
+
+	ret = tinydrm_debugfs_create_file("dirty", S_IFREG | S_IRUGO | S_IWUGO,
+					  minor->debugfs_root, minor,
+					  &tinydrm_debugfs_dirty_file_ops);
+
+	return ret;
+}
+EXPORT_SYMBOL(tinydrm_debugfs_init);
+
+void tinydrm_debugfs_cleanup(struct drm_minor *minor)
+{
+	struct tinydrm_device *tdev = minor->dev->dev_private;
+
+	drm_debugfs_remove_files(tinydrm_debugfs_list,
+				 ARRAY_SIZE(tinydrm_debugfs_list), minor);
+	tinydrm_debugfs_remove_file(minor, &tinydrm_debugfs_dirty_file_ops);
+	if (tdev && tdev->debugfs_dirty){
+		tinydrm_debugfs_dirty_list_delete(tdev->debugfs_dirty);
+		kfree(tdev->debugfs_dirty);
+		tdev->debugfs_dirty = NULL;
+	}
+}
+EXPORT_SYMBOL(tinydrm_debugfs_cleanup);

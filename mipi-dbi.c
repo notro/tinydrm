@@ -149,6 +149,7 @@ EXPORT_SYMBOL(mipi_dbi_dirty);
 int mipi_dbi_init(struct device *dev, struct tinydrm_device *tdev)
 {
 	tdev->lcdreg->def_width = 8;
+	tinydrm_debugfs_dirty_init(tdev);
 
 	return 0;
 }
