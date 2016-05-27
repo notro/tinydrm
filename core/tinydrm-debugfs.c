@@ -40,7 +40,7 @@
  *
  */
 
-#define MAX_DIRTY_ENTRIES 40 /* PAGE_SIZE(4k) / 100(linelength) */
+#define MAX_DIRTY_ENTRIES 128
 
 struct tinydrm_dirty_entry {
 	struct list_head list;
@@ -178,21 +178,6 @@ out_unlock:
 }
 EXPORT_SYMBOL(tinydrm_debugfs_dirty_end);
 
-static void *tinydrm_debugfs_dirty_seq_start(struct seq_file *s, loff_t *pos)
-{
-	return *pos ? NULL : SEQ_START_TOKEN;
-}
-
-static void *tinydrm_debugfs_dirty_seq_next(struct seq_file *s, void *v,
-					    loff_t *pos)
-{
-	return NULL;
-}
-
-static void tinydrm_debugfs_dirty_seq_stop(struct seq_file *s, void *v)
-{
-}
-
 static int tinydrm_debugfs_dirty_seq_show(struct seq_file *s, void *v)
 {
 	struct tinydrm_debugfs_dirty *dirty = s->private;
@@ -276,27 +261,17 @@ out_unlock:
 	return 0;
 }
 
-static const struct seq_operations tinydrm_debugfs_dirty_seq_ops = {
-	.start = tinydrm_debugfs_dirty_seq_start,
-	.next  = tinydrm_debugfs_dirty_seq_next,
-	.stop  = tinydrm_debugfs_dirty_seq_stop,
-	.show  = tinydrm_debugfs_dirty_seq_show
-};
-
 static int tinydrm_debugfs_dirty_open(struct inode *inode, struct file *file)
 {
 	struct drm_info_node *node = inode->i_private;
 	struct drm_device *dev = node->minor->dev;
 	struct tinydrm_device *tdev = dev->dev_private;
-	int ret;
 
 	if (!tdev)
 		return -ENODEV;
 
-	ret = seq_open(file, &tinydrm_debugfs_dirty_seq_ops);
-	((struct seq_file *)file->private_data)->private = tdev->debugfs_dirty;
-
-	return ret;
+	return single_open(file, tinydrm_debugfs_dirty_seq_show,
+			   tdev->debugfs_dirty);
 }
 
 static void
@@ -364,7 +339,7 @@ static const struct file_operations tinydrm_debugfs_dirty_file_ops = {
 	.read    = seq_read,
 	.write   = tinydrm_debugfs_dirty_write,
 	.llseek  = seq_lseek,
-	.release = seq_release
+	.release = single_release,
 };
 
 static int tinydrm_debugfs_create_file(const char *name, umode_t mode,
