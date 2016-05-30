@@ -166,7 +166,7 @@ int tinydrm_display_pipe_init(struct tinydrm_device *tdev,
 			      const uint32_t *formats,
 			      unsigned int format_count)
 {
-	struct drm_device *dev = tdev->base;
+	struct drm_device *drm = tdev->base;
 	struct drm_connector *connector = &tdev->connector;
 	int ret;
 
@@ -174,14 +174,14 @@ int tinydrm_display_pipe_init(struct tinydrm_device *tdev,
 	INIT_WORK(&tdev->dirty_work, tinydrm_dirty_work);
 
 	drm_connector_helper_add(connector, &tinydrm_connector_hfuncs);
-	ret = drm_connector_init(dev, connector, &tinydrm_connector_funcs,
+	ret = drm_connector_init(drm, connector, &tinydrm_connector_funcs,
 				 DRM_MODE_CONNECTOR_VIRTUAL);
 	if (ret)
 		return ret;
 
 	connector->status = connector_status_connected;
 
-	return drm_simple_display_pipe_init(dev, &tdev->pipe,
+	return drm_simple_display_pipe_init(drm, &tdev->pipe,
 					    &tinydrm_display_pipe_funcs,
 					    formats, format_count,
 					    connector);

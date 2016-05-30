@@ -75,7 +75,7 @@ static const struct drm_framebuffer_funcs tinydrm_fb_funcs = {
 
 /**
  * tinydrm_fb_create - tinydrm .fb_create() helper
- * @dev: DRM device
+ * @drm: DRM device
  * @file_priv: DRM file info
  * @mode_cmd: metadata from the userspace fb creation request
  *
@@ -84,10 +84,10 @@ static const struct drm_framebuffer_funcs tinydrm_fb_funcs = {
  * object provided in @mode_cmd.
  */
 struct drm_framebuffer *
-tinydrm_fb_create(struct drm_device *dev, struct drm_file *file_priv,
+tinydrm_fb_create(struct drm_device *drm, struct drm_file *file_priv,
 		  const struct drm_mode_fb_cmd2 *mode_cmd)
 {
-	return drm_fb_cma_create_with_funcs(dev, file_priv, mode_cmd,
+	return drm_fb_cma_create_with_funcs(drm, file_priv, mode_cmd,
 					    &tinydrm_fb_funcs);
 }
 EXPORT_SYMBOL(tinydrm_fb_create);
@@ -141,14 +141,14 @@ static const struct drm_fb_helper_funcs tinydrm_fb_helper_funcs = {
  */
 int tinydrm_fbdev_init(struct tinydrm_device *tdev)
 {
-	struct drm_device *dev = tdev->base;
+	struct drm_device *drm = tdev->base;
 	struct drm_fbdev_cma *fbdev;
 
 	DRM_DEBUG_KMS("\n");
 
-	fbdev = drm_fbdev_cma_init_with_funcs(dev, 16,
-					      dev->mode_config.num_crtc,
-					      dev->mode_config.num_connector,
+	fbdev = drm_fbdev_cma_init_with_funcs(drm, 16,
+					      drm->mode_config.num_crtc,
+					      drm->mode_config.num_connector,
 					      &tinydrm_fb_helper_funcs);
 	if (IS_ERR(fbdev))
 		return PTR_ERR(fbdev);

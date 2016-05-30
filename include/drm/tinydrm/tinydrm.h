@@ -143,14 +143,14 @@ static struct drm_driver name_struct = { \
 }
 
 extern const struct file_operations tinydrm_fops;
-void tinydrm_lastclose(struct drm_device *dev);
+void tinydrm_lastclose(struct drm_device *drm);
 void tinydrm_gem_cma_free_object(struct drm_gem_object *gem_obj);
 struct drm_gem_object *
-tinydrm_gem_cma_prime_import_sg_table(struct drm_device *dev,
+tinydrm_gem_cma_prime_import_sg_table(struct drm_device *drm,
 				      struct dma_buf_attachment *attach,
 				      struct sg_table *sgt);
 struct drm_framebuffer *
-tinydrm_fb_create(struct drm_device *dev, struct drm_file *file_priv,
+tinydrm_fb_create(struct drm_device *drm, struct drm_file *file_priv,
 		  const struct drm_mode_fb_cmd2 *mode_cmd);
 int tinydrm_display_pipe_init(struct tinydrm_device *tdev,
 			      const uint32_t *formats,

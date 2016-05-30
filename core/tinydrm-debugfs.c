@@ -265,8 +265,8 @@ out_unlock:
 static int tinydrm_debugfs_dirty_open(struct inode *inode, struct file *file)
 {
 	struct drm_info_node *node = inode->i_private;
-	struct drm_device *dev = node->minor->dev;
-	struct tinydrm_device *tdev = dev->dev_private;
+	struct drm_device *drm = node->minor->dev;
+	struct tinydrm_device *tdev = drm->dev_private;
 
 	if (!tdev)
 		return -ENODEV;
