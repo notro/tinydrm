@@ -232,6 +232,7 @@ static int adafruit_tft_probe(struct spi_device *spi)
 	case 90:
 	case 270:
 		swap(width, height);
+		swap(width_mm, height_mm);
 		break;
 	}
 
