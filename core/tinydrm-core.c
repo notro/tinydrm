@@ -29,17 +29,6 @@
  *
  */
 
-static const uint32_t tinydrm_formats[] = {
-	DRM_FORMAT_RGB565,
-	DRM_FORMAT_XRGB8888,
-};
-
-static const struct drm_mode_config_funcs tinydrm_mode_config_funcs = {
-	.fb_create = tinydrm_fb_create,
-	.atomic_check = drm_atomic_helper_check,
-	.atomic_commit = drm_atomic_helper_commit,
-};
-
 /**
  * tinydrm_lastclose - DRM .lastclose() helper
  * @drm: DRM device
@@ -141,21 +130,14 @@ const struct file_operations tinydrm_fops = {
 };
 EXPORT_SYMBOL(tinydrm_fops);
 
-static void tinydrm_unregister(struct tinydrm_device *tdev)
-{
-	struct drm_device *drm = tdev->base;
+static const struct drm_mode_config_funcs tinydrm_mode_config_funcs = {
+	.fb_create = tinydrm_fb_create,
+	.atomic_check = drm_atomic_helper_check,
+	.atomic_commit = drm_atomic_helper_commit,
+};
 
-	DRM_DEBUG_KMS("\n");
-
-	tinydrm_shutdown(tdev);
-	tinydrm_fbdev_fini(tdev);
-	drm_mode_config_cleanup(drm);
-	drm_dev_unregister(drm);
-	drm_dev_unref(drm);
-}
-
-static int tinydrm_register(struct device *parent, struct tinydrm_device *tdev,
-			    struct drm_driver *driver)
+static int tinydrm_init(struct device *parent, struct tinydrm_device *tdev,
+			struct drm_driver *driver)
 {
 	struct drm_device *drm;
 	int ret;
@@ -164,40 +146,57 @@ static int tinydrm_register(struct device *parent, struct tinydrm_device *tdev,
 	if (!drm)
 		return -ENOMEM;
 
-	ret = drm_dev_set_unique(drm, dev_name(drm->dev));
+	drm_mode_config_init(drm);
+	drm->mode_config.funcs = &tinydrm_mode_config_funcs;
+	ret = drm_mode_create_dirty_info_property(drm);
 	if (ret)
-		goto err_free;
+		goto err_cleanup;
 
-	ret = drm_dev_register(drm, 0);
-	if (ret)
-		goto err_free;
-
+	mutex_init(&tdev->dev_lock);
 	tdev->base = drm;
 	drm->dev_private = tdev;
 
 	return 0;
 
-err_free:
+err_cleanup:
+	drm_mode_config_cleanup(drm);
 	drm_dev_unref(drm);
 
 	return ret;
 }
 
+static void tinydrm_fini(struct tinydrm_device *tdev)
+{
+	struct drm_device *drm = tdev->base;
+
+	DRM_DEBUG_KMS("\n");
+
+	drm_mode_config_cleanup(drm);
+	drm_dev_unref(drm);
+	mutex_destroy(&tdev->dev_lock);
+}
+
 static void devm_tinydrm_release(struct device *dev, void *res)
 {
-	tinydrm_unregister(*(struct tinydrm_device **)res);
+	tinydrm_fini(*(struct tinydrm_device **)res);
 }
 
 /**
- * devm_tinydrm_register - Register tinydrm device
+ * devm_tinydrm_init - Initialize tinydrm device
  * @parent: Parent device object
  * @tdev: tinydrm device
  * @driver: DRM driver
  *
- * This function registers a tinydrm device.
- * Resources will be automatically freed on driver detach (devres).
+ * This function initializes @tdev and the underlying DRM device.
+ * The caller is responsible for setting &drm_mode_config ->
+ * {min_width, min_height, max_width, max_height}.
+ * Resources will be automatically freed on driver detach (devres) using
+ * drm_mode_config_cleanup() and drm_dev_unref().
+ *
+ * Returns:
+ * Zero on success, negative error code on failure.
  */
-int devm_tinydrm_register(struct device *parent, struct tinydrm_device *tdev,
+int devm_tinydrm_init(struct device *parent, struct tinydrm_device *tdev,
 			  struct drm_driver *driver)
 {
 	struct tinydrm_device **ptr;
@@ -207,7 +206,7 @@ int devm_tinydrm_register(struct device *parent, struct tinydrm_device *tdev,
 	if (!ptr)
 		return -ENOMEM;
 
-	ret = tinydrm_register(parent, tdev, driver);
+	ret = tinydrm_init(parent, tdev, driver);
 	if (ret) {
 		devres_free(ptr);
 		return ret;
@@ -218,19 +217,22 @@ int devm_tinydrm_register(struct device *parent, struct tinydrm_device *tdev,
 
 	return 0;
 }
-EXPORT_SYMBOL(devm_tinydrm_register);
+EXPORT_SYMBOL(devm_tinydrm_init);
+
+static const uint32_t tinydrm_formats[] = {
+	DRM_FORMAT_RGB565,
+	DRM_FORMAT_XRGB8888,
+};
 
 int tinydrm_modeset_init(struct tinydrm_device *tdev)
 {
 	struct drm_device *drm = tdev->base;
 	int ret;
 
-	drm_mode_config_init(drm);
 	drm->mode_config.min_width = tdev->width;
 	drm->mode_config.min_height = tdev->height;
 	drm->mode_config.max_width = tdev->width;
 	drm->mode_config.max_height = tdev->height;
-	drm->mode_config.funcs = &tinydrm_mode_config_funcs;
 
 	ret = tinydrm_display_pipe_init(tdev, tinydrm_formats,
 					ARRAY_SIZE(tinydrm_formats));
@@ -239,13 +241,88 @@ int tinydrm_modeset_init(struct tinydrm_device *tdev)
 
 	drm_mode_config_reset(drm);
 
+	return 0;
+}
+EXPORT_SYMBOL(tinydrm_modeset_init);
+
+static int tinydrm_register(struct tinydrm_device *tdev)
+{
+	struct drm_device *drm = tdev->base;
+	int ret;
+
+	DRM_DEBUG_KMS("\n");
+
+	ret = drm_dev_register(drm, 0);
+	if (ret)
+		return ret;
+
+	ret = drm_connector_register_all(drm);
+	if (ret)
+		goto err_unreg;
+
 	ret = tinydrm_fbdev_init(tdev);
 	if (ret)
 		DRM_ERROR("Failed to initialize fbdev: %d\n", ret);
 
 	return 0;
+
+err_unreg:
+	drm_dev_unregister(drm);
+
+	return ret;
 }
-EXPORT_SYMBOL(tinydrm_modeset_init);
+
+static void tinydrm_unregister(struct tinydrm_device *tdev)
+{
+	struct drm_device *drm = tdev->base;
+
+	DRM_DEBUG_KMS("\n");
+
+	tinydrm_shutdown(tdev);
+	tinydrm_fbdev_fini(tdev);
+	drm_connector_unregister_all(drm);
+	drm_dev_unregister(drm);
+}
+
+static void devm_tinydrm_register_release(struct device *dev, void *res)
+{
+	tinydrm_unregister(*(struct tinydrm_device **)res);
+}
+
+/**
+ * devm_tinydrm_register - Register tinydrm device
+ * @tdev: tinydrm device
+ *
+ * This function registers the underlying DRM device, connectors and fbdev.
+ * These resources will be automatically unregistered on driver detach (devres)
+ * and in addition tinydrm_shutdown() will also be called to make sure the
+ * display is disabled.
+ *
+ * Returns:
+ * Zero on success, negative error code on failure.
+ */
+int devm_tinydrm_register(struct tinydrm_device *tdev)
+{
+	struct tinydrm_device **ptr;
+	int ret;
+
+	ptr = devres_alloc(devm_tinydrm_register_release, sizeof(*ptr),
+			   GFP_KERNEL);
+	if (!ptr)
+		return -ENOMEM;
+
+	ret = tinydrm_register(tdev);
+	if (ret) {
+		devres_free(ptr);
+		return ret;
+	}
+
+	*ptr = tdev;
+	devres_add(tdev->base->dev, ptr);
+
+	return 0;
+}
+EXPORT_SYMBOL(devm_tinydrm_register);
 
 /**
  * tinydrm_shutdown - Shutdown tinydrm
@@ -258,7 +335,7 @@ EXPORT_SYMBOL(tinydrm_modeset_init);
 void tinydrm_shutdown(struct tinydrm_device *tdev)
 {
 	/* TODO Is there a drm function to disable output? */
-	if (tdev->pipe.funcs)
+	if (tdev->pipe.funcs && tdev->pipe.funcs->disable)
 		tdev->pipe.funcs->disable(&tdev->pipe);
 }
 EXPORT_SYMBOL(tinydrm_shutdown);

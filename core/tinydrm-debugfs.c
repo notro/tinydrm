@@ -268,9 +268,6 @@ static int tinydrm_debugfs_dirty_open(struct inode *inode, struct file *file)
 	struct drm_device *drm = node->minor->dev;
 	struct tinydrm_device *tdev = drm->dev_private;
 
-	if (!tdev)
-		return -ENODEV;
-
 	return single_open(file, tinydrm_debugfs_dirty_seq_show,
 			   tdev->debugfs_dirty);
 }
@@ -409,7 +406,7 @@ void tinydrm_debugfs_cleanup(struct drm_minor *minor)
 	drm_debugfs_remove_files(tinydrm_debugfs_list,
 				 ARRAY_SIZE(tinydrm_debugfs_list), minor);
 	tinydrm_debugfs_remove_file(minor, &tinydrm_debugfs_dirty_file_ops);
-	if (tdev && tdev->debugfs_dirty){
+	if (tdev->debugfs_dirty){
 		tinydrm_debugfs_dirty_list_delete(tdev->debugfs_dirty);
 		kfree(tdev->debugfs_dirty);
 		tdev->debugfs_dirty = NULL;

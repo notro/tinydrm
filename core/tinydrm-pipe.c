@@ -170,7 +170,6 @@ int tinydrm_display_pipe_init(struct tinydrm_device *tdev,
 	struct drm_connector *connector = &tdev->connector;
 	int ret;
 
-	mutex_init(&tdev->dev_lock);
 	INIT_WORK(&tdev->dirty_work, tinydrm_dirty_work);
 
 	drm_connector_helper_add(connector, &tinydrm_connector_hfuncs);
