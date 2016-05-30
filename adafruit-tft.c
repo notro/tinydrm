@@ -154,6 +154,7 @@ TINYDRM_DRM_DRIVER(adafruit_tft, "adafruit-tft", "Adafruit TFT", "20160317");
 
 static int adafruit_tft_probe(struct spi_device *spi)
 {
+	unsigned int width, height, width_mm, height_mm;
 	const struct of_device_id *of_id;
 	struct lcdreg_spi_config cfg = {
 		.mode = LCDREG_SPI_4WIRE,
@@ -201,21 +202,25 @@ static int adafruit_tft_probe(struct spi_device *spi)
 	case ADAFRUIT_1601:
 		readable = true;
 		cfg.mode = LCDREG_SPI_4WIRE;
-		tdev->width = 320;
-		tdev->height = 240;
-		tdev->width_mm = 58;
-		tdev->height_mm = 43;
+		width = 320;
+		height = 240;
+		width_mm = 58;
+		height_mm = 43;
 		tdev->funcs = &adafruit_tft_1601_funcs;
 		break;
 	case ADAFRUIT_797:
 		cfg.mode = LCDREG_SPI_3WIRE;
-		tdev->width = 176;
-		tdev->height = 220;
+		width = 176;
+		height = 220;
+		width_mm = 0;
+		height_mm = 0;
 		/* TODO: tdev->funcs = &adafruit_tft_797_funcs*/
 		break;
 	case ADAFRUIT_358:
-		tdev->width = 128;
-		tdev->height = 160;
+		width = 128;
+		height = 160;
+		width_mm = 0;
+		height_mm = 0;
 		/* TODO: tdev->funcs = &adafruit_tft_358_funcs */
 		break;
 	default:
@@ -226,7 +231,7 @@ static int adafruit_tft_probe(struct spi_device *spi)
 	switch (adafruit_tft_get_rotation(dev)) {
 	case 90:
 	case 270:
-		swap(tdev->width, tdev->height);
+		swap(width, height);
 		break;
 	}
 
@@ -235,10 +240,6 @@ static int adafruit_tft_probe(struct spi_device *spi)
 		return PTR_ERR(reg);
 
 	reg->readable = readable;
-	tdev->lcdreg = reg;
-	ret = mipi_dbi_init(dev, tdev);
-	if (ret)
-		return ret;
 
 	/* TODO: Make configurable */
 	tdev->fbdefio_delay_ms = 40;
@@ -247,7 +248,7 @@ static int adafruit_tft_probe(struct spi_device *spi)
 	if (ret)
 		return ret;
 
-	ret = tinydrm_modeset_init(tdev);
+	ret = mipi_dbi_init(tdev, reg, width, height, width_mm, height_mm);
 	if (ret)
 		return ret;
 

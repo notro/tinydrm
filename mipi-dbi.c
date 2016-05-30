@@ -146,9 +146,38 @@ int mipi_dbi_dirty(struct drm_framebuffer *fb,
 }
 EXPORT_SYMBOL(mipi_dbi_dirty);
 
-int mipi_dbi_init(struct device *dev, struct tinydrm_device *tdev)
+static const uint32_t mipi_dbi_formats[] = {
+	DRM_FORMAT_RGB565,
+	DRM_FORMAT_XRGB8888,
+};
+
+int mipi_dbi_init(struct tinydrm_device *tdev, struct lcdreg *reg,
+		  unsigned int width, unsigned int height,
+		  unsigned int width_mm, unsigned int height_mm)
 {
-	tdev->lcdreg->def_width = 8;
+	struct drm_device *drm = tdev->base;
+	int ret;
+
+	reg->def_width = 8;
+	tdev->lcdreg = reg;
+
+	tdev->width = width;
+	tdev->height = height;
+	tdev->width_mm = width_mm;
+	tdev->height_mm = height_mm;
+
+	drm->mode_config.min_width = width;
+	drm->mode_config.min_height = height;
+	drm->mode_config.max_width = width;
+	drm->mode_config.max_height = height;
+
+	ret = tinydrm_display_pipe_init(tdev, mipi_dbi_formats,
+					ARRAY_SIZE(mipi_dbi_formats));
+	if (ret)
+		return ret;
+
+	drm_mode_config_reset(drm);
+
 	tinydrm_debugfs_dirty_init(tdev);
 
 	return 0;

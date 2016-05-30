@@ -197,7 +197,7 @@ static void devm_tinydrm_release(struct device *dev, void *res)
  * Zero on success, negative error code on failure.
  */
 int devm_tinydrm_init(struct device *parent, struct tinydrm_device *tdev,
-			  struct drm_driver *driver)
+		      struct drm_driver *driver)
 {
 	struct tinydrm_device **ptr;
 	int ret;
@@ -218,32 +218,6 @@ int devm_tinydrm_init(struct device *parent, struct tinydrm_device *tdev,
 	return 0;
 }
 EXPORT_SYMBOL(devm_tinydrm_init);
-
-static const uint32_t tinydrm_formats[] = {
-	DRM_FORMAT_RGB565,
-	DRM_FORMAT_XRGB8888,
-};
-
-int tinydrm_modeset_init(struct tinydrm_device *tdev)
-{
-	struct drm_device *drm = tdev->base;
-	int ret;
-
-	drm->mode_config.min_width = tdev->width;
-	drm->mode_config.min_height = tdev->height;
-	drm->mode_config.max_width = tdev->width;
-	drm->mode_config.max_height = tdev->height;
-
-	ret = tinydrm_display_pipe_init(tdev, tinydrm_formats,
-					ARRAY_SIZE(tinydrm_formats));
-	if (ret)
-		return ret;
-
-	drm_mode_config_reset(drm);
-
-	return 0;
-}
-EXPORT_SYMBOL(tinydrm_modeset_init);
 
 static int tinydrm_register(struct tinydrm_device *tdev)
 {

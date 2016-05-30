@@ -18,7 +18,9 @@ struct tinydrm_device;
 struct drm_clip_rect;
 struct lcdreg;
 
-int mipi_dbi_init(struct device *dev, struct tinydrm_device *tdev);
+int mipi_dbi_init(struct tinydrm_device *tdev, struct lcdreg *reg,
+		  unsigned int width, unsigned int height,
+		  unsigned int width_mm, unsigned int height_mm);
 int mipi_dbi_dirty(struct drm_framebuffer *fb,
 		   struct drm_gem_cma_object *cma_obj,
 		   unsigned flags, unsigned color,
