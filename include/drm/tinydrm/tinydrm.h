@@ -85,7 +85,6 @@ struct tinydrm_device {
 	unsigned int height;
 	unsigned int width_mm;
 	unsigned int height_mm;
-	unsigned fbdefio_delay_ms;
 	struct backlight_device *backlight;
 	struct regulator *regulator;
 	struct lcdreg *lcdreg;

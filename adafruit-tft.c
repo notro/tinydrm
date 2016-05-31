@@ -242,9 +242,6 @@ static int adafruit_tft_probe(struct spi_device *spi)
 
 	reg->readable = readable;
 
-	/* TODO: Make configurable */
-	tdev->fbdefio_delay_ms = 40;
-
 	ret = devm_tinydrm_init(dev, tdev, &adafruit_tft);
 	if (ret)
 		return ret;
