@@ -119,7 +119,9 @@ static int adafruit_tft_1601_prepare(struct tinydrm_device *tdev)
 
 	lcdreg_writereg(reg, MIPI_DCS_EXIT_SLEEP_MODE);
 	msleep(120);
+
 	lcdreg_writereg(reg, MIPI_DCS_SET_DISPLAY_ON);
+	msleep(50);
 
 	mipi_dbi_debug_dump_regs(reg);
 
