@@ -118,6 +118,7 @@ static int tinydrm_fbdev_create(struct drm_fb_helper *helper,
 		return ret;
 
 	DRM_DEBUG_KMS("fbdev: [FB:%d]\n", helper->fb->base.id);
+	strncpy(helper->fbdev->fix.id, helper->dev->driver->name, 16);
 	tdev->fbdev_helper = helper;
 
 	if (tdev->fbdefio_delay_ms) {
