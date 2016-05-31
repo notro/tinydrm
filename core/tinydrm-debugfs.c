@@ -65,7 +65,7 @@ int tinydrm_debugfs_dirty_init(struct tinydrm_device *tdev)
 {
 	struct tinydrm_debugfs_dirty *dirty;
 
-	dirty = kzalloc(sizeof(*dirty), GFP_KERNEL);
+	dirty = devm_kzalloc(tdev->base->dev, sizeof(*dirty), GFP_KERNEL);
 	if (!dirty)
 		return -ENOMEM;
 
@@ -406,9 +406,8 @@ void tinydrm_debugfs_cleanup(struct drm_minor *minor)
 	drm_debugfs_remove_files(tinydrm_debugfs_list,
 				 ARRAY_SIZE(tinydrm_debugfs_list), minor);
 	tinydrm_debugfs_remove_file(minor, &tinydrm_debugfs_dirty_file_ops);
-	if (tdev->debugfs_dirty){
+	if (tdev->debugfs_dirty) {
 		tinydrm_debugfs_dirty_list_delete(tdev->debugfs_dirty);
-		kfree(tdev->debugfs_dirty);
 		tdev->debugfs_dirty = NULL;
 	}
 }
