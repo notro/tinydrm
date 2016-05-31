@@ -147,7 +147,7 @@ int mipi_dbi_dirty(struct drm_framebuffer *fb,
 EXPORT_SYMBOL(mipi_dbi_dirty);
 
 static const uint32_t mipi_dbi_formats[] = {
-	DRM_FORMAT_RGB565,
+	DRM_FORMAT_RGB565, /* first item is used for fbdev emulation */
 	DRM_FORMAT_XRGB8888,
 };
 

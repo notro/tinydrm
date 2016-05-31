@@ -117,6 +117,7 @@ static int tinydrm_fbdev_create(struct drm_fb_helper *helper,
 	if (ret)
 		return ret;
 
+	DRM_DEBUG_KMS("fbdev: [FB:%d]\n", helper->fb->base.id);
 	tdev->fbdev_helper = helper;
 
 	if (tdev->fbdefio_delay_ms) {
@@ -138,15 +139,19 @@ static const struct drm_fb_helper_funcs tinydrm_fb_helper_funcs = {
  * @tdev: tinydrm device
  *
  * Initialize tinydrm fbdev emulation. Tear down with tinydrm_fbdev_fini().
+ * The first format in the list supported by the plane is used to set the
+ * preferred bpp.
  */
 int tinydrm_fbdev_init(struct tinydrm_device *tdev)
 {
 	struct drm_device *drm = tdev->base;
 	struct drm_fbdev_cma *fbdev;
+	int dummy, bpp;
 
 	DRM_DEBUG_KMS("\n");
 
-	fbdev = drm_fbdev_cma_init_with_funcs(drm, 16,
+	drm_fb_get_bpp_depth(tdev->pipe.plane.format_types[0], &dummy, &bpp);
+	fbdev = drm_fbdev_cma_init_with_funcs(drm, bpp ? bpp : 32,
 					      drm->mode_config.num_crtc,
 					      drm->mode_config.num_connector,
 					      &tinydrm_fb_helper_funcs);
@@ -154,9 +159,6 @@ int tinydrm_fbdev_init(struct tinydrm_device *tdev)
 		return PTR_ERR(fbdev);
 
 	tdev->fbdev_cma = fbdev;
-
-	DRM_DEBUG_KMS("fbdev framebuffer: [FB:%d]\n",
-		      tdev->fbdev_helper->fb->base.id);
 
 	return 0;
 }
