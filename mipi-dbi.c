@@ -156,23 +156,28 @@ int mipi_dbi_init(struct tinydrm_device *tdev, struct lcdreg *reg,
 		  unsigned int width_mm, unsigned int height_mm)
 {
 	struct drm_device *drm = tdev->base;
+	struct drm_display_mode *mode;
 	int ret;
 
 	reg->def_width = 8;
 	tdev->lcdreg = reg;
-
-	tdev->width = width;
-	tdev->height = height;
-	tdev->width_mm = width_mm;
-	tdev->height_mm = height_mm;
 
 	drm->mode_config.min_width = width;
 	drm->mode_config.min_height = height;
 	drm->mode_config.max_width = width;
 	drm->mode_config.max_height = height;
 
+	mode = drm_cvt_mode(drm, width, height, 60, false, false, false);
+	if (!mode)
+		return -ENOMEM;
+
+	mode->type |= DRM_MODE_TYPE_DRIVER;
+	mode->width_mm = width_mm;
+	mode->height_mm = height_mm;
+
 	ret = tinydrm_display_pipe_init(tdev, mipi_dbi_formats,
-					ARRAY_SIZE(mipi_dbi_formats));
+					ARRAY_SIZE(mipi_dbi_formats), mode);
+	drm_mode_destroy(drm, mode);
 	if (ret)
 		return ret;
 

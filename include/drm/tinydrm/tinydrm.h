@@ -81,10 +81,6 @@ struct tinydrm_funcs {
  * @funcs: tinydrm device operations (optional)
  */
 struct tinydrm_device {
-	unsigned int width;
-	unsigned int height;
-	unsigned int width_mm;
-	unsigned int height_mm;
 	struct backlight_device *backlight;
 	struct regulator *regulator;
 	struct lcdreg *lcdreg;
@@ -153,7 +149,8 @@ tinydrm_fb_create(struct drm_device *drm, struct drm_file *file_priv,
 		  const struct drm_mode_fb_cmd2 *mode_cmd);
 int tinydrm_display_pipe_init(struct tinydrm_device *tdev,
 			      const uint32_t *formats,
-			      unsigned int format_count);
+			      unsigned int format_count,
+			      const struct drm_display_mode *mode);
 int devm_tinydrm_init(struct device *parent, struct tinydrm_device *tdev,
 		      struct drm_driver *driver);
 int devm_tinydrm_register(struct tinydrm_device *tdev);
