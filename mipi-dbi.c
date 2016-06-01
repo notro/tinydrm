@@ -24,87 +24,6 @@
 #define DCS_POWER_MODE_IDLE_MODE		BIT(6)
 #define DCS_POWER_MODE_RESERVED_MASK		(BIT(0) | BIT(1) | BIT(7))
 
-/* TODO: Move common functions to a separate module */
-void tinydrm_xrgb8888_to_rgb565(u32 *src, u16 *dst, unsigned num_pixels,
-				bool swap_bytes)
-{
-	int i;
-
-	for (i = 0; i < num_pixels; i++) {
-		*dst = ((*src & 0x00F80000) >> 8) |
-		       ((*src & 0x0000FC00) >> 5) |
-		       ((*src & 0x000000F8) >> 3);
-		if (swap_bytes)
-			*dst = swab16(*dst);
-		src++;
-		dst++;
-	}
-}
-
-int tinydrm_update_rgb565_lcdreg(struct lcdreg *reg, u32 regnr,
-				 struct drm_framebuffer *fb, void *vmem,
-				 struct drm_clip_rect *clip)
-{
-	unsigned width = clip->x2 - clip->x1;
-	unsigned height = clip->y2 - clip->y1;
-	unsigned num_pixels = width * height;
-	struct lcdreg_transfer tr = {
-		.index = 1,
-		.width = 16,
-		.count = num_pixels
-	};
-	bool byte_swap = false;
-	u16 *buf = NULL;
-	int ret;
-
-	dev_dbg(reg->dev,
-		"%s: x1=%u, x2=%u, y1=%u, y2=%u : width=%u, height=%u\n",
-		__func__, clip->x1, clip->x2, clip->y1, clip->y2,
-		width, height);
-	dev_dbg_once(reg->dev, "pixel_format = %s, bpw = 0x%08x\n",
-		     drm_get_format_name(fb->pixel_format),
-		     reg->bits_per_word_mask);
-
-	if (width != fb->width) {
-		dev_err(reg->dev,
-			"Only full width clips are supported: x1=%u, x2=%u\n",
-			clip->x1, clip->x2);
-		return -EINVAL;
-	}
-
-	switch (fb->pixel_format) {
-	case DRM_FORMAT_RGB565:
-		vmem += clip->y1 * width * 2;
-		tr.buf = vmem;
-		break;
-	case DRM_FORMAT_XRGB8888:
-		vmem += clip->y1 * width * 4;
-		buf = kmalloc(num_pixels * sizeof(u16), GFP_KERNEL);
-		if (!buf)
-			return -ENOMEM;
-
-#if defined(__LITTLE_ENDIAN)
-		byte_swap = !lcdreg_bpw_supported(reg, 16);
-#endif
-		tinydrm_xrgb8888_to_rgb565(vmem, buf, num_pixels, byte_swap);
-		tr.buf = buf;
-		if (byte_swap) {
-			tr.width = 8;
-			tr.count *= 2;
-		}
-		break;
-	default:
-		dev_err_once(reg->dev, "pixel_format '%s' is not supported\n",
-			     drm_get_format_name(fb->pixel_format));
-		return -EINVAL;
-	}
-
-	ret = lcdreg_write(reg, regnr, &tr);
-	kfree(buf);
-
-	return ret;
-}
-
 int mipi_dbi_dirty(struct drm_framebuffer *fb,
 		   struct drm_gem_cma_object *cma_obj,
 		   unsigned flags, unsigned color,
@@ -134,8 +53,8 @@ int mipi_dbi_dirty(struct drm_framebuffer *fb,
 			(clip.y1 >> 8) & 0xFF, clip.y1 & 0xFF,
 			(clip.y2 >> 8) & 0xFF, (clip.y2 - 1) & 0xFF);
 
-	ret = tinydrm_update_rgb565_lcdreg(reg, MIPI_DCS_WRITE_MEMORY_START,
-					   fb, cma_obj->vaddr, &clip);
+	ret = tinydrm_lcdreg_flush_rgb565(reg, MIPI_DCS_WRITE_MEMORY_START,
+					  fb, cma_obj->vaddr, &clip);
 	if (ret)
 		dev_err_once(tdev->base->dev, "Failed to update display %d\n",
 			     ret);

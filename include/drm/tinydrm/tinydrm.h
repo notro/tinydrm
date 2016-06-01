@@ -194,6 +194,11 @@ void tinydrm_debugfs_dirty_end(struct tinydrm_device *tdev, size_t len,
 void tinydrm_merge_clips(struct drm_clip_rect *dst,
 			 struct drm_clip_rect *src, unsigned num_clips,
 			 unsigned flags, u32 max_width, u32 max_height);
+void tinydrm_xrgb8888_to_rgb565(u32 *src, u16 *dst, unsigned num_pixels,
+				bool swap_bytes);
+int tinydrm_lcdreg_flush_rgb565(struct lcdreg *reg, u32 regnr,
+				struct drm_framebuffer *fb, void *vmem,
+				struct drm_clip_rect *clip);
 
 #ifdef CONFIG_BACKLIGHT_CLASS_DEVICE
 struct backlight_device *tinydrm_of_find_backlight(struct device *dev);
