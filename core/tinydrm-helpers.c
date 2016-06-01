@@ -171,6 +171,8 @@ EXPORT_SYMBOL(tinydrm_lcdreg_flush_rgb565);
  *
  * This function looks for a DT node pointed to by a property named 'backlight'
  * and uses of_find_backlight_by_node() to get the backlight device.
+ * Additionally if the brightness property is zero, it is set to
+ * max_brightness.
  *
  * Returns:
  * NULL if there's no backlight property.
@@ -192,6 +194,12 @@ struct backlight_device *tinydrm_of_find_backlight(struct device *dev)
 	if (!backlight)
 		return ERR_PTR(-EPROBE_DEFER);
 
+	if (!backlight->props.brightness) {
+		backlight->props.brightness = backlight->props.max_brightness;
+		DRM_DEBUG_KMS("Backlight brightness set to %d\n",
+			      backlight->props.brightness);
+	}
+
 	return backlight;
 }
 EXPORT_SYMBOL(tinydrm_of_find_backlight);
@@ -209,10 +217,6 @@ int tinydrm_enable_backlight(struct tinydrm_device *tdev)
 
 	if (!tdev->backlight)
 		return 0;
-
-	if (!tdev->backlight->props.brightness)
-		tdev->backlight->props.brightness =
-				tdev->backlight->props.max_brightness;
 
 	old_state = tdev->backlight->props.state;
 	tdev->backlight->props.state &= ~BL_CORE_SUSPENDED;
