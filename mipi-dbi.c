@@ -66,8 +66,8 @@ int mipi_dbi_dirty(struct drm_framebuffer *fb,
 EXPORT_SYMBOL(mipi_dbi_dirty);
 
 static const uint32_t mipi_dbi_formats[] = {
-	DRM_FORMAT_RGB565, /* first item is used for fbdev emulation */
-	DRM_FORMAT_XRGB8888,
+	DRM_FORMAT_RGB565, /* native */
+	DRM_FORMAT_XRGB8888, /* emulated */
 };
 
 int mipi_dbi_init(struct tinydrm_device *tdev, struct lcdreg *reg,
@@ -85,6 +85,9 @@ int mipi_dbi_init(struct tinydrm_device *tdev, struct lcdreg *reg,
 	drm->mode_config.min_height = height;
 	drm->mode_config.max_width = width;
 	drm->mode_config.max_height = height;
+	drm->mode_config.preferred_depth = 16;
+	DRM_DEBUG_KMS("preferred_depth=%u\n",
+		      drm->mode_config.preferred_depth);
 
 	mode = drm_cvt_mode(drm, width, height, 60, false, false, false);
 	if (!mode)

@@ -91,8 +91,15 @@ struct drm_framebuffer *
 tinydrm_fb_create(struct drm_device *drm, struct drm_file *file_priv,
 		  const struct drm_mode_fb_cmd2 *mode_cmd)
 {
-	return drm_fb_cma_create_with_funcs(drm, file_priv, mode_cmd,
-					    &tinydrm_fb_funcs);
+	struct drm_framebuffer *fb;
+
+	fb = drm_fb_cma_create_with_funcs(drm, file_priv, mode_cmd,
+					  &tinydrm_fb_funcs);
+	if (!IS_ERR(fb))
+		DRM_DEBUG_KMS("[FB:%d] pixel_format: %s\n", fb->base.id,
+			      drm_get_format_name(fb->pixel_format));
+
+	return fb;
 }
 EXPORT_SYMBOL(tinydrm_fb_create);
 
@@ -121,7 +128,8 @@ static int tinydrm_fbdev_create(struct drm_fb_helper *helper,
 	if (ret)
 		return ret;
 
-	DRM_DEBUG_KMS("fbdev: [FB:%d]\n", helper->fb->base.id);
+	DRM_DEBUG_KMS("[FB:%d] pixel_format: %s\n", helper->fb->base.id,
+		      drm_get_format_name(helper->fb->pixel_format));
 	strncpy(helper->fbdev->fix.id, helper->dev->driver->name, 16);
 	tdev->fbdev_helper = helper;
 
@@ -144,18 +152,17 @@ static const struct drm_fb_helper_funcs tinydrm_fb_helper_funcs = {
  * @tdev: tinydrm device
  *
  * Initialize tinydrm fbdev emulation. Tear down with tinydrm_fbdev_fini().
- * The first format in the list supported by the plane is used to set the
- * preferred bpp.
+ * If &mode_config ->preferred_depth is set it is used as preferred bpp.
  */
 int tinydrm_fbdev_init(struct tinydrm_device *tdev)
 {
 	struct drm_device *drm = tdev->base;
 	struct drm_fbdev_cma *fbdev;
-	int dummy, bpp;
+	int bpp;
 
 	DRM_DEBUG_KMS("\n");
 
-	drm_fb_get_bpp_depth(tdev->pipe.plane.format_types[0], &dummy, &bpp);
+	bpp = drm->mode_config.preferred_depth;
 	fbdev = drm_fbdev_cma_init_with_funcs(drm, bpp ? bpp : 32,
 					      drm->mode_config.num_crtc,
 					      drm->mode_config.num_connector,

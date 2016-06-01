@@ -224,8 +224,6 @@ static int tinydrm_register(struct tinydrm_device *tdev)
 	struct drm_device *drm = tdev->base;
 	int ret;
 
-	DRM_DEBUG_KMS("\n");
-
 	ret = drm_dev_register(drm, 0);
 	if (ret)
 		return ret;
