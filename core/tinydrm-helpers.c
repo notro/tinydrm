@@ -118,7 +118,7 @@ int tinydrm_lcdreg_flush_rgb565(struct lcdreg *reg, u32 regnr,
 		.count = num_pixels
 	};
 	u16 *buf = NULL;
-	bool byte_swap;
+	bool byte_swap = false;
 	int ret;
 
 	if (width != fb->width) {
@@ -142,8 +142,6 @@ int tinydrm_lcdreg_flush_rgb565(struct lcdreg *reg, u32 regnr,
 #if defined(__LITTLE_ENDIAN)
 		byte_swap = !reg->little_endian &&
 			    !lcdreg_bpw_supported(reg, 16);
-#else
-		byte_swap = reg->little_endian;
 #endif
 		tinydrm_xrgb8888_to_rgb565(vmem, buf, num_pixels, byte_swap);
 		tr.buf = buf;
@@ -153,7 +151,7 @@ int tinydrm_lcdreg_flush_rgb565(struct lcdreg *reg, u32 regnr,
 		}
 		break;
 	default:
-		dev_err_once(reg->dev, "pixel_format '%s' is not supported\n",
+		dev_err_once(reg->dev, "Format is not supported: %s\n",
 			     drm_get_format_name(fb->pixel_format));
 		return -EINVAL;
 	}
