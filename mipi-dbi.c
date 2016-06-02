@@ -11,6 +11,7 @@
 
 #include <drm/drm_gem_cma_helper.h>
 #include <drm/tinydrm/lcdreg.h>
+#include <drm/tinydrm/mipi-dbi.h>
 #include <drm/tinydrm/tinydrm.h>
 #include <linux/module.h>
 #include <linux/regulator/consumer.h>
@@ -24,20 +25,44 @@
 #define DCS_POWER_MODE_IDLE_MODE		BIT(6)
 #define DCS_POWER_MODE_RESERVED_MASK		(BIT(0) | BIT(1) | BIT(7))
 
+/**
+ * DOC: overview
+ *
+ * This library provides helpers for MIPI display controllers with
+ * Display Bus Interface (DBI).
+ *
+ * Many controllers are MIPI compliant and can use this library.
+ * If a controller uses registers 0x2A and 0x2B to set the area to update
+ * and uses register 0x2C to write to frame memory, it is most likely MIPI
+ * compliant.
+ */
+
+/**
+ * mipi_dbi_dirty - framebuffer dirty callback
+ * @fb: framebuffer
+ * @cma_obj: CMA buffer object
+ * @flags: dirty fb ioctl flags
+ * @color: color for annotated clips
+ * @clips: dirty clip rectangles
+ * @num_clips: number of @clips
+ *
+ * This function provides framebuffer flushing for MIPI DBI controllers.
+ * Drivers should use this as their &tinydrm_funcs ->dirty callback.
+ */
 int mipi_dbi_dirty(struct drm_framebuffer *fb,
 		   struct drm_gem_cma_object *cma_obj,
 		   unsigned flags, unsigned color,
 		   struct drm_clip_rect *clips, unsigned num_clips)
 {
 	struct tinydrm_device *tdev = fb->dev->dev_private;
-	struct lcdreg *reg = tdev->lcdreg;
+	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
+	struct lcdreg *reg = mipi->reg;
 	struct drm_clip_rect clip;
 	int ret;
 
 	tinydrm_merge_clips(&clip, clips, num_clips, flags,
 			    fb->width, fb->height);
 
-	/* Only full width is supported */
 	clip.x1 = 0;
 	clip.x2 = fb->width;
 
@@ -65,22 +90,101 @@ int mipi_dbi_dirty(struct drm_framebuffer *fb,
 }
 EXPORT_SYMBOL(mipi_dbi_dirty);
 
+/**
+ * mipi_dbi_enable_backlight - mipi enable backlight helper
+ * @tdev: tinydrm device
+ *
+ * Helper to enable &mipi_dbi ->backlight for the &tinydrm_funcs ->enable
+ * callback.
+ */
+int mipi_dbi_enable_backlight(struct tinydrm_device *tdev)
+{
+	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
+
+	return tinydrm_enable_backlight(mipi->backlight);
+}
+EXPORT_SYMBOL(mipi_dbi_enable_backlight);
+
+/**
+ * mipi_dbi_disable_backlight - mipi disable backlight helper
+ * @tdev: tinydrm device
+ *
+ * Helper to disable &mipi_dbi ->backlight for the &tinydrm_funcs
+ * ->disable callback.
+ */
+void mipi_dbi_disable_backlight(struct tinydrm_device *tdev)
+{
+	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
+
+	tinydrm_disable_backlight(mipi->backlight);
+}
+EXPORT_SYMBOL(mipi_dbi_disable_backlight);
+
+/**
+ * mipi_dbi_unprepare - mipi power off helper
+ * @tdev: tinydrm device
+ *
+ * Helper to power off a MIPI controller.
+ * Puts the controller in sleep mode if backlight control is enabled. It's done
+ * like this to make sure we don't have backlight glaring through a panel with
+ * all pixels turned off. If a regulator is registered it will be disabled.
+ * Drivers can use this as their &tinydrm_funcs ->unprepare callback.
+ */
+void mipi_dbi_unprepare(struct tinydrm_device *tdev)
+{
+	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
+	struct lcdreg *reg = mipi->reg;
+
+	if (mipi->backlight) {
+		lcdreg_writereg(reg, MIPI_DCS_SET_DISPLAY_OFF);
+		lcdreg_writereg(reg, MIPI_DCS_ENTER_SLEEP_MODE);
+	}
+
+	if (mipi->regulator)
+		regulator_disable(mipi->regulator);
+}
+EXPORT_SYMBOL(mipi_dbi_unprepare);
+
 static const uint32_t mipi_dbi_formats[] = {
-	DRM_FORMAT_RGB565, /* native */
-	DRM_FORMAT_XRGB8888, /* emulated */
+	DRM_FORMAT_RGB565,
+	DRM_FORMAT_XRGB8888,
 };
 
-int mipi_dbi_init(struct tinydrm_device *tdev, struct lcdreg *reg,
+/**
+ * mipi_dbi_init - MIPI DBI initialization
+ * @dev: parent device
+ * @mipi: &mipi_dbi structure to initialize
+ * @reg: LCD register
+ * @driver: DRM driver
+ * @width: display widht in pixels
+ * @height: display height in pixels
+ * @width_mm: display widht in millimeters (optional)
+ * @height_mm: display height in millimeters (optional)
+ *
+ * This function initialized a &mipi_dbi structure and it's underlying
+ * @tinydrm_device and &drm_device. It also sets up the display pipeline.
+ * Native RGB565 format is supported and XRGB8888 is emulated.
+ * Objects created by this function will be automatically freed on driver
+ * detach (devres).
+ */
+int mipi_dbi_init(struct device *dev, struct mipi_dbi *mipi,
+		  struct lcdreg *reg, struct drm_driver *driver,
 		  unsigned int width, unsigned int height,
 		  unsigned int width_mm, unsigned int height_mm)
 {
-	struct drm_device *drm = tdev->base;
+	struct tinydrm_device *tdev = &mipi->tinydrm;
 	struct drm_display_mode *mode;
+	struct drm_device *drm;
 	int ret;
 
-	reg->def_width = 8;
-	tdev->lcdreg = reg;
+	ret = devm_tinydrm_init(dev, tdev, driver);
+	if (ret)
+		return ret;
 
+	reg->def_width = 8;
+	mipi->reg = reg;
+
+	drm = tdev->base;
 	drm->mode_config.min_width = width;
 	drm->mode_config.min_height = height;
 	drm->mode_config.max_width = width;
@@ -111,7 +215,19 @@ int mipi_dbi_init(struct tinydrm_device *tdev, struct lcdreg *reg,
 }
 EXPORT_SYMBOL(mipi_dbi_init);
 
-/* Returns true if the display can be verified to be on */
+/**
+ * mipi_dbi_display_is_on - check if display is on
+ * @reg: LCD register
+ *
+ * This function checks the Power Mode register (if readable) to see if
+ * display output is turned on. This can be used to see if the bootloader
+ * has already turned on the display avoiding flicker when the pipeline is
+ * enabled.
+ *
+ * Returns:
+ * true if the display can be verified to be on
+ * false otherwise.
+ */
 bool mipi_dbi_display_is_on(struct lcdreg *reg)
 {
 	u32 val;
@@ -134,6 +250,12 @@ bool mipi_dbi_display_is_on(struct lcdreg *reg)
 }
 EXPORT_SYMBOL(mipi_dbi_display_is_on);
 
+/**
+ * mipi_dbi_debug_dump_regs - dump some MIPI DCS registers
+ * @reg: LCD register
+ *
+ * Dump some MIPI DCS registers using DRM_DEBUG_DRIVER().
+ */
 void mipi_dbi_debug_dump_regs(struct lcdreg *reg)
 {
 	u32 val[4];
@@ -181,24 +303,5 @@ void mipi_dbi_debug_dump_regs(struct lcdreg *reg)
 			 MIPI_DCS_GET_DIAGNOSTIC_RESULT, val[0]);
 }
 EXPORT_SYMBOL(mipi_dbi_debug_dump_regs);
-
-void mipi_dbi_unprepare(struct tinydrm_device *tdev)
-{
-	struct lcdreg *reg = tdev->lcdreg;
-
-	/*
-	 * Only do this if we have turned off backlight because if it's on the
-	 * display will in most cases turn all white when the pixels are
-	 * turned off.
-	 */
-	if (tdev->backlight) {
-		lcdreg_writereg(reg, MIPI_DCS_SET_DISPLAY_OFF);
-		lcdreg_writereg(reg, MIPI_DCS_ENTER_SLEEP_MODE);
-	}
-
-	if (tdev->regulator)
-		regulator_disable(tdev->regulator);
-}
-EXPORT_SYMBOL(mipi_dbi_unprepare);
 
 MODULE_LICENSE("GPL");

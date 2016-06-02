@@ -40,14 +40,15 @@ static u32 adafruit_tft_get_rotation(struct device *dev)
 
 static int adafruit_tft_1601_prepare(struct tinydrm_device *tdev)
 {
-	struct lcdreg *reg = tdev->lcdreg;
+	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
+	struct lcdreg *reg = mipi->reg;
 	u8 addr_mode;
 	int ret;
 
 	dev_dbg(tdev->base->dev, "%s\n", __func__);
 
-	if (tdev->regulator) {
-		ret = regulator_enable(tdev->regulator);
+	if (mipi->regulator) {
+		ret = regulator_enable(mipi->regulator);
 		if (ret) {
 			dev_err(tdev->base->dev,
 				"Failed to enable regulator %d\n", ret);
@@ -131,8 +132,8 @@ static int adafruit_tft_1601_prepare(struct tinydrm_device *tdev)
 static const struct tinydrm_funcs adafruit_tft_1601_funcs = {
 	.prepare = adafruit_tft_1601_prepare,
 	.unprepare = mipi_dbi_unprepare,
-	.enable = tinydrm_enable_backlight,
-	.disable = tinydrm_disable_backlight,
+	.enable = mipi_dbi_enable_backlight,
+	.disable = mipi_dbi_disable_backlight,
 	.dirty = mipi_dbi_dirty,
 };
 
@@ -163,6 +164,7 @@ static int adafruit_tft_probe(struct spi_device *spi)
 	};
 	struct device *dev = &spi->dev;
 	struct tinydrm_device *tdev;
+	struct mipi_dbi *mipi;
 	bool readable = false;
 	struct lcdreg *reg;
 	int id, ret;
@@ -185,19 +187,22 @@ static int adafruit_tft_probe(struct spi_device *spi)
 			dev_warn(dev, "Failed to set dma mask %d\n", ret);
 	}
 
-	tdev = devm_kzalloc(dev, sizeof(*tdev), GFP_KERNEL);
-	if (!tdev)
+	mipi = devm_kzalloc(dev, sizeof(*mipi), GFP_KERNEL);
+	if (!mipi)
 		return -ENOMEM;
 
-	tdev->backlight = tinydrm_of_find_backlight(dev);
-	if (IS_ERR(tdev->backlight))
-		return PTR_ERR(tdev->backlight);
+	tdev = &mipi->tinydrm;
 
-	tdev->regulator = devm_regulator_get_optional(dev, "power");
-	if (IS_ERR(tdev->regulator)) {
-		if (PTR_ERR(tdev->regulator) != -ENODEV)
-			return PTR_ERR(tdev->regulator);
-		tdev->regulator = NULL;
+	mipi->backlight = tinydrm_of_find_backlight(dev);
+	if (IS_ERR(mipi->backlight))
+		return PTR_ERR(mipi->backlight);
+
+	mipi->regulator = devm_regulator_get_optional(dev, "power");
+	if (IS_ERR(mipi->regulator)) {
+		ret = PTR_ERR(mipi->regulator);
+		if (ret != -ENODEV)
+			return ret;
+		mipi->regulator = NULL;
 	}
 
 	switch (id) {
@@ -244,11 +249,8 @@ static int adafruit_tft_probe(struct spi_device *spi)
 
 	reg->readable = readable;
 
-	ret = devm_tinydrm_init(dev, tdev, &adafruit_tft);
-	if (ret)
-		return ret;
-
-	ret = mipi_dbi_init(tdev, reg, width, height, width_mm, height_mm);
+	ret = mipi_dbi_init(dev, mipi, reg, &adafruit_tft, width, height,
+			    width_mm, height_mm);
 	if (ret)
 		return ret;
 

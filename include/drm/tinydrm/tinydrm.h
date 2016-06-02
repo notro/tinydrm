@@ -63,38 +63,29 @@ struct tinydrm_funcs {
 
 /**
  * struct tinydrm_device - tinydrm device
- * @backlight: backlight device (optional)
- * @regulator: regulator source (optional)
- * @lcdreg: LCD register structure (optional)
- * @dev_private: device private data (optional)
  * @base: DRM device
  * @pipe: Display pipe structure
- * @fbdev_cma: fbdev CMA structure (optional)
- * @fbdev_helper: fbdev helper (optional)
- * @suspend_state: atomic state when suspended
  * @dirty_work: framebuffer flusher
  * @dev_lock: serializes &tinydrm_funcs operations and protects
  *            prepared/enabled state changes
  * @prepared: device prepared state
  * @enabled: device enabled state
+ * @fbdev_cma: fbdev CMA structure
+ * @fbdev_helper: fbdev helper
+ * @suspend_state: atomic state when suspended
  * @debugfs_dirty: debugfs dirty file control structure
  * @funcs: tinydrm device operations (optional)
  */
 struct tinydrm_device {
-	struct backlight_device *backlight;
-	struct regulator *regulator;
-	struct lcdreg *lcdreg;
-	void *dev_private;
 	struct drm_device *base;
 	struct drm_simple_display_pipe pipe;
-	struct drm_connector connector;
-	struct drm_fbdev_cma *fbdev_cma;
-	struct drm_fb_helper *fbdev_helper;
-	struct drm_atomic_state *suspend_state;
 	struct work_struct dirty_work;
 	struct mutex dev_lock;
 	bool prepared;
 	bool enabled;
+	struct drm_fbdev_cma *fbdev_cma;
+	struct drm_fb_helper *fbdev_helper;
+	struct drm_atomic_state *suspend_state;
 	struct tinydrm_debugfs_dirty *debugfs_dirty;
 	const struct tinydrm_funcs *funcs;
 };
@@ -202,8 +193,8 @@ int tinydrm_lcdreg_flush_rgb565(struct lcdreg *reg, u32 regnr,
 
 #ifdef CONFIG_BACKLIGHT_CLASS_DEVICE
 struct backlight_device *tinydrm_of_find_backlight(struct device *dev);
-int tinydrm_enable_backlight(struct tinydrm_device *tdev);
-void tinydrm_disable_backlight(struct tinydrm_device *tdev);
+int tinydrm_enable_backlight(struct backlight_device *backlight);
+void tinydrm_disable_backlight(struct backlight_device *backlight);
 #else
 static inline struct backlight_device *
 tinydrm_of_find_backlight(struct device *dev)

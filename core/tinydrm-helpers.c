@@ -102,8 +102,8 @@ EXPORT_SYMBOL(tinydrm_xrgb8888_to_rgb565);
  * @vmem: buffer backing the framebuffer
  * @clip: part of buffer to write
  *
- * Flush framebuffer changes to LCD register supporting rgb565. Only full
- * width @clip are supported.
+ * Flush framebuffer changes to LCD register supporting RGB565. XRGB8888 is
+ * converted to RGB565. Only full width @clip is supported.
  */
 int tinydrm_lcdreg_flush_rgb565(struct lcdreg *reg, u32 regnr,
 				struct drm_framebuffer *fb, void *vmem,
@@ -205,48 +205,48 @@ struct backlight_device *tinydrm_of_find_backlight(struct device *dev)
 EXPORT_SYMBOL(tinydrm_of_find_backlight);
 
 /**
- * tinydrm_enable_backlight - tinydrm enable backlight helper
- * @tdev: tinydrm device
+ * tinydrm_enable_backlight - enable backlight helper
+ * @backlight: backlight device
  *
- * Helper to enable &tinydrm_device ->backlight for the &tinydrm_funcs ->enable
- * callback.
+ * Helper to enable backlight for use in &tinydrm_funcs ->enable callback
+ * functions.
  */
-int tinydrm_enable_backlight(struct tinydrm_device *tdev)
+int tinydrm_enable_backlight(struct backlight_device *backlight)
 {
 	unsigned int old_state;
 
-	if (!tdev->backlight)
+	if (!backlight)
 		return 0;
 
-	old_state = tdev->backlight->props.state;
-	tdev->backlight->props.state &= ~BL_CORE_SUSPENDED;
+	old_state = backlight->props.state;
+	backlight->props.state &= ~BL_CORE_SUSPENDED;
 	DRM_DEBUG_KMS("Backlight state: 0x%x -> 0x%x\n", old_state,
-		      tdev->backlight->props.state);
-	backlight_update_status(tdev->backlight);
+		      backlight->props.state);
+	backlight_update_status(backlight);
 
 	return 0;
 }
 EXPORT_SYMBOL(tinydrm_enable_backlight);
 
 /**
- * tinydrm_disable_backlight - tinydrm disable backlight helper
- * @tdev: tinydrm device
+ * tinydrm_disable_backlight - disable backlight helper
+ * @backlight: backlight device
  *
- * Helper to disable &tinydrm_device ->backlight for the &tinydrm_funcs
- * ->disable callback.
+ * Helper to disable backlight for use in &tinydrm_funcs ->disable callback
+ * functions.
  */
-void tinydrm_disable_backlight(struct tinydrm_device *tdev)
+void tinydrm_disable_backlight(struct backlight_device *backlight)
 {
 	unsigned int old_state;
 
-	if (!tdev->backlight)
+	if (!backlight)
 		return;
 
-	old_state = tdev->backlight->props.state;
-	tdev->backlight->props.state |= BL_CORE_SUSPENDED;
+	old_state = backlight->props.state;
+	backlight->props.state |= BL_CORE_SUSPENDED;
 	DRM_DEBUG_KMS("Backlight state: 0x%x -> 0x%x\n", old_state,
-		      tdev->backlight->props.state);
-	backlight_update_status(tdev->backlight);
+		      backlight->props.state);
+	backlight_update_status(backlight);
 }
 EXPORT_SYMBOL(tinydrm_disable_backlight);
 #endif

@@ -12,19 +12,36 @@
 #ifndef __LINUX_MIPI_DBI_H
 #define __LINUX_MIPI_DBI_H
 
+#include <drm/tinydrm/tinydrm.h>
+
 struct drm_gem_cma_object;
 struct drm_framebuffer;
-struct tinydrm_device;
 struct drm_clip_rect;
 struct lcdreg;
 
-int mipi_dbi_init(struct tinydrm_device *tdev, struct lcdreg *reg,
+struct mipi_dbi {
+	struct tinydrm_device tinydrm;
+	struct backlight_device *backlight;
+	struct regulator *regulator;
+	struct lcdreg *reg;
+};
+
+static inline struct mipi_dbi *
+mipi_dbi_from_tinydrm(struct tinydrm_device *tdev)
+{
+	return container_of(tdev, struct mipi_dbi, tinydrm);
+}
+
+int mipi_dbi_init(struct device *dev, struct mipi_dbi *mipi,
+		  struct lcdreg *reg, struct drm_driver *driver,
 		  unsigned int width, unsigned int height,
 		  unsigned int width_mm, unsigned int height_mm);
 int mipi_dbi_dirty(struct drm_framebuffer *fb,
 		   struct drm_gem_cma_object *cma_obj,
 		   unsigned flags, unsigned color,
 		   struct drm_clip_rect *clips, unsigned num_clips);
+int mipi_dbi_enable_backlight(struct tinydrm_device *tdev);
+void mipi_dbi_disable_backlight(struct tinydrm_device *tdev);
 bool mipi_dbi_display_is_on(struct lcdreg *reg);
 void mipi_dbi_debug_dump_regs(struct lcdreg *reg);
 void mipi_dbi_unprepare(struct tinydrm_device *tdev);
