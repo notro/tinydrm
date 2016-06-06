@@ -192,6 +192,9 @@ int mipi_dbi_init(struct device *dev, struct mipi_dbi *mipi,
 	drm->mode_config.preferred_depth = 16;
 	DRM_DEBUG_KMS("preferred_depth=%u\n",
 		      drm->mode_config.preferred_depth);
+	ret = drm_mode_create_dirty_info_property(drm);
+	if (ret)
+		return ret;
 
 	mode = drm_cvt_mode(drm, width, height, 60, false, false, false);
 	if (!mode)
@@ -206,6 +209,10 @@ int mipi_dbi_init(struct device *dev, struct mipi_dbi *mipi,
 	drm_mode_destroy(drm, mode);
 	if (ret)
 		return ret;
+
+	drm_object_attach_property(&tdev->pipe.connector->base,
+				   drm->mode_config.dirty_info_property,
+				   DRM_MODE_DIRTY_ON);
 
 	drm_mode_config_reset(drm);
 

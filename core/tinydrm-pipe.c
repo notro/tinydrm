@@ -126,9 +126,6 @@ tinydrm_connector_create(struct drm_device *drm,
 		goto err_destroy_mode;
 
 	connector->status = connector_status_connected;
-	drm_object_attach_property(&connector->base,
-				   drm->mode_config.dirty_info_property,
-				   DRM_MODE_DIRTY_ON);
 
 	return connector;
 

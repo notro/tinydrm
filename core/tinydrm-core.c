@@ -148,21 +148,12 @@ static int tinydrm_init(struct device *parent, struct tinydrm_device *tdev,
 
 	drm_mode_config_init(drm);
 	drm->mode_config.funcs = &tinydrm_mode_config_funcs;
-	ret = drm_mode_create_dirty_info_property(drm);
-	if (ret)
-		goto err_cleanup;
 
 	mutex_init(&tdev->dev_lock);
 	tdev->base = drm;
 	drm->dev_private = tdev;
 
 	return 0;
-
-err_cleanup:
-	drm_mode_config_cleanup(drm);
-	drm_dev_unref(drm);
-
-	return ret;
 }
 
 static void tinydrm_fini(struct tinydrm_device *tdev)

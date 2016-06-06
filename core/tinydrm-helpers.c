@@ -121,6 +121,14 @@ int tinydrm_lcdreg_flush_rgb565(struct lcdreg *reg, u32 regnr,
 	bool byte_swap = false;
 	int ret;
 
+	/*
+	 * TODO: Add support for all widths (requires a buffer copy)
+	 *
+	 * Crude X windows usage numbers for a 320x240 (76.8k pixel) display,
+	 * possible improvements:
+	 * - 80-90% cut for <2k pixel transfers
+	 * - 40-50% cut for <50k pixel tranfers
+	 */
 	if (width != fb->width) {
 		dev_err(reg->dev,
 			"Only full width clip are supported: x1=%u, x2=%u\n",
