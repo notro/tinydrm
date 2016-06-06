@@ -128,8 +128,6 @@ static int tinydrm_fbdev_create(struct drm_fb_helper *helper,
 	if (ret)
 		return ret;
 
-	DRM_DEBUG_KMS("[FB:%d] pixel_format: %s\n", helper->fb->base.id,
-		      drm_get_format_name(helper->fb->pixel_format));
 	strncpy(helper->fbdev->fix.id, helper->dev->driver->name, 16);
 	tdev->fbdev_helper = helper;
 
@@ -139,6 +137,11 @@ static int tinydrm_fbdev_create(struct drm_fb_helper *helper,
 		delay = msecs_to_jiffies(fbdefio_delay);
 		helper->fbdev->fbdefio->delay = delay ? delay : 1;
 	}
+
+	DRM_DEBUG_KMS("fbdev: [FB:%d] pixel_format=%s, fbdefio->delay=%ums\n",
+		      helper->fb->base.id,
+		      drm_get_format_name(helper->fb->pixel_format),
+		      jiffies_to_msecs(helper->fbdev->fbdefio->delay));
 
 	return 0;
 }

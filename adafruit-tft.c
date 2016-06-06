@@ -202,6 +202,7 @@ static int adafruit_tft_probe(struct spi_device *spi)
 		ret = PTR_ERR(mipi->regulator);
 		if (ret != -ENODEV)
 			return ret;
+
 		mipi->regulator = NULL;
 	}
 
