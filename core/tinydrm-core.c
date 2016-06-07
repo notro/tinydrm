@@ -140,7 +140,6 @@ static int tinydrm_init(struct device *parent, struct tinydrm_device *tdev,
 			struct drm_driver *driver)
 {
 	struct drm_device *drm;
-	int ret;
 
 	drm = drm_dev_alloc(driver, parent);
 	if (!drm)
@@ -210,10 +209,13 @@ int devm_tinydrm_init(struct device *parent, struct tinydrm_device *tdev,
 }
 EXPORT_SYMBOL(devm_tinydrm_init);
 
-static int tinydrm_register(struct tinydrm_device *tdev)
+static int tinydrm_register(struct tinydrm_device *tdev,
+			    const struct tinydrm_funcs *funcs)
 {
 	struct drm_device *drm = tdev->base;
 	int ret;
+
+	tdev->funcs = funcs;
 
 	ret = drm_dev_register(drm, 0);
 	if (ret)
@@ -264,7 +266,8 @@ static void devm_tinydrm_register_release(struct device *dev, void *res)
  * Returns:
  * Zero on success, negative error code on failure.
  */
-int devm_tinydrm_register(struct tinydrm_device *tdev)
+int devm_tinydrm_register(struct tinydrm_device *tdev,
+			  const struct tinydrm_funcs *funcs)
 {
 	struct tinydrm_device **ptr;
 	int ret;
@@ -274,7 +277,7 @@ int devm_tinydrm_register(struct tinydrm_device *tdev)
 	if (!ptr)
 		return -ENOMEM;
 
-	ret = tinydrm_register(tdev);
+	ret = tinydrm_register(tdev, funcs);
 	if (ret) {
 		devres_free(ptr);
 		return ret;

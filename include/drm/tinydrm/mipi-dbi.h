@@ -19,11 +19,20 @@ struct drm_framebuffer;
 struct drm_clip_rect;
 struct lcdreg;
 
+/**
+ * mipi_dbi - MIPI DBI controller
+ * @tinydrm: tinydrm base
+ * @reg: LCD register
+ * @rotation: initial rotation in degress Counter Clock Wise
+ * @backlight: backlight device (optional)
+ * @regulator: power regulator (optional)
+ */
 struct mipi_dbi {
 	struct tinydrm_device tinydrm;
+	struct lcdreg *reg;
+	unsigned int rotation;
 	struct backlight_device *backlight;
 	struct regulator *regulator;
-	struct lcdreg *reg;
 };
 
 static inline struct mipi_dbi *
@@ -34,8 +43,7 @@ mipi_dbi_from_tinydrm(struct tinydrm_device *tdev)
 
 int mipi_dbi_init(struct device *dev, struct mipi_dbi *mipi,
 		  struct lcdreg *reg, struct drm_driver *driver,
-		  unsigned int width, unsigned int height,
-		  unsigned int width_mm, unsigned int height_mm);
+		  const struct drm_display_mode *mode, unsigned int rotation);
 int mipi_dbi_dirty(struct drm_framebuffer *fb,
 		   struct drm_gem_cma_object *cma_obj,
 		   unsigned flags, unsigned color,

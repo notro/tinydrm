@@ -128,6 +128,29 @@ static struct drm_driver name_struct = { \
 	.minor			= 0, \
 }
 
+/*
+ * TINYDRM_MODE - tinydrm display mode
+ * @hd: horizontal resolution, width
+ * @vd: vertical resolution, height
+ * @hd_mm: display width in millimeters
+ * @vd_mm: display height in millimeters
+ *
+ * This macro creates a &drm_display_mode for use with tinydrm.
+ */
+#define TINYDRM_MODE(hd, vd, hd_mm, vd_mm) \
+	.hdisplay = (hd), \
+	.hsync_start = (hd), \
+	.hsync_end = (hd), \
+	.htotal = (hd), \
+	.vdisplay = (vd), \
+	.vsync_start = (vd), \
+	.vsync_end = (vd), \
+	.vtotal = (vd), \
+	.width_mm = (hd_mm), \
+	.height_mm = (vd_mm), \
+	.type = DRM_MODE_TYPE_DRIVER, \
+	.clock = 1 /* pass validation */
+
 extern const struct file_operations tinydrm_fops;
 void tinydrm_lastclose(struct drm_device *drm);
 void tinydrm_gem_cma_free_object(struct drm_gem_object *gem_obj);
@@ -144,7 +167,8 @@ int tinydrm_display_pipe_init(struct tinydrm_device *tdev,
 			      const struct drm_display_mode *mode);
 int devm_tinydrm_init(struct device *parent, struct tinydrm_device *tdev,
 		      struct drm_driver *driver);
-int devm_tinydrm_register(struct tinydrm_device *tdev);
+int devm_tinydrm_register(struct tinydrm_device *tdev,
+			  const struct tinydrm_funcs *funcs);
 void tinydrm_shutdown(struct tinydrm_device *tdev);
 int tinydrm_suspend(struct tinydrm_device *tdev);
 int tinydrm_resume(struct tinydrm_device *tdev);

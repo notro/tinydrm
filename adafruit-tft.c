@@ -23,20 +23,17 @@
 #include <linux/spi/spi.h>
 #include <video/mipi_display.h>
 
-enum adafruit_tft_displays {
-	ADAFRUIT_1601 = 1601,
-	ADAFRUIT_797 = 797,
-	ADAFRUIT_358 = 358,
+struct adafruit_tft_display {
+	const struct tinydrm_funcs funcs;
+	const struct drm_display_mode mode;
+	enum lcdreg_spi_mode spi_mode;
 };
 
-static u32 adafruit_tft_get_rotation(struct device *dev)
-{
-	u32 rotation = 0;
-
-	device_property_read_u32(dev, "rotation", &rotation);
-
-	return rotation;
-}
+enum adafruit_tft_display_ids {
+	ADAFRUIT_1601,
+	ADAFRUIT_797,
+	ADAFRUIT_358,
+};
 
 static int adafruit_tft_1601_prepare(struct tinydrm_device *tdev)
 {
@@ -100,7 +97,7 @@ static int adafruit_tft_1601_prepare(struct tinydrm_device *tdev)
 			0x00, 0x0E, 0x14, 0x03, 0x11, 0x07, 0x31, 0xC1,
 			0x48, 0x08, 0x0F, 0x0C, 0x31, 0x36, 0x0F);
 
-	switch (adafruit_tft_get_rotation(reg->dev)) {
+	switch (mipi->rotation) {
 	default:
 		addr_mode = ILI9340_MADCTL_MV | ILI9340_MADCTL_MY |
 			    ILI9340_MADCTL_MX;
@@ -129,12 +126,46 @@ static int adafruit_tft_1601_prepare(struct tinydrm_device *tdev)
 	return 0;
 }
 
-static const struct tinydrm_funcs adafruit_tft_1601_funcs = {
-	.prepare = adafruit_tft_1601_prepare,
-	.unprepare = mipi_dbi_unprepare,
-	.enable = mipi_dbi_enable_backlight,
-	.disable = mipi_dbi_disable_backlight,
-	.dirty = mipi_dbi_dirty,
+static const struct adafruit_tft_display adafruit_tft_displays[] = {
+	[ADAFRUIT_1601] = {
+		.mode = {
+			TINYDRM_MODE(320, 240, 58, 43),
+		},
+		.funcs = {
+			.prepare = adafruit_tft_1601_prepare,
+			.unprepare = mipi_dbi_unprepare,
+			.enable = mipi_dbi_enable_backlight,
+			.disable = mipi_dbi_disable_backlight,
+			.dirty = mipi_dbi_dirty,
+		},
+		.spi_mode = LCDREG_SPI_4WIRE,
+	},
+	[ADAFRUIT_797] = {
+		.mode = {
+			TINYDRM_MODE(176, 220, 0, 0),
+		},
+		.funcs = {
+			/* TODO .prepare = adafruit_tft_797_prepare, */
+			.unprepare = mipi_dbi_unprepare,
+			.enable = mipi_dbi_enable_backlight,
+			.disable = mipi_dbi_disable_backlight,
+			.dirty = mipi_dbi_dirty,
+		},
+		.spi_mode = LCDREG_SPI_3WIRE,
+	},
+	[ADAFRUIT_358] = {
+		.mode = {
+			TINYDRM_MODE(128, 160, 0, 0),
+		},
+		.funcs = {
+			/* TODO .prepare = adafruit_tft_358_prepare, */
+			.unprepare = mipi_dbi_unprepare,
+			.enable = mipi_dbi_enable_backlight,
+			.disable = mipi_dbi_disable_backlight,
+			.dirty = mipi_dbi_dirty,
+		},
+		.spi_mode = LCDREG_SPI_4WIRE,
+	},
 };
 
 static const struct of_device_id adafruit_tft_of_match[] = {
@@ -153,20 +184,18 @@ static const struct spi_device_id adafruit_tft_id[] = {
 };
 MODULE_DEVICE_TABLE(spi, adafruit_tft_id);
 
-TINYDRM_DRM_DRIVER(adafruit_tft, "adafruit-tft", "Adafruit TFT", "20160317");
+TINYDRM_DRM_DRIVER(adafruit_tft_driver, "adafruit-tft", "Adafruit TFT",
+		   "20160317");
 
 static int adafruit_tft_probe(struct spi_device *spi)
 {
-	unsigned int width, height, width_mm, height_mm;
+	struct lcdreg_spi_config cfg = { 0, };
 	const struct of_device_id *of_id;
-	struct lcdreg_spi_config cfg = {
-		.mode = LCDREG_SPI_4WIRE,
-	};
 	struct device *dev = &spi->dev;
 	struct tinydrm_device *tdev;
 	struct mipi_dbi *mipi;
-	bool readable = false;
 	struct lcdreg *reg;
+	u32 rotation = 0;
 	int id, ret;
 
 	of_id = of_match_device(adafruit_tft_of_match, dev);
@@ -206,56 +235,22 @@ static int adafruit_tft_probe(struct spi_device *spi)
 		mipi->regulator = NULL;
 	}
 
-	switch (id) {
-	case ADAFRUIT_1601:
-		readable = true;
-		cfg.mode = LCDREG_SPI_4WIRE;
-		width = 320;
-		height = 240;
-		width_mm = 58;
-		height_mm = 43;
-		tdev->funcs = &adafruit_tft_1601_funcs;
-		break;
-	case ADAFRUIT_797:
-		cfg.mode = LCDREG_SPI_3WIRE;
-		width = 176;
-		height = 220;
-		width_mm = 0;
-		height_mm = 0;
-		/* TODO: tdev->funcs = &adafruit_tft_797_funcs*/
-		break;
-	case ADAFRUIT_358:
-		width = 128;
-		height = 160;
-		width_mm = 0;
-		height_mm = 0;
-		/* TODO: tdev->funcs = &adafruit_tft_358_funcs */
-		break;
-	default:
-		return -EINVAL;
-	}
-
-	DRM_DEBUG_DRIVER("rotation = %u\n", adafruit_tft_get_rotation(dev));
-	switch (adafruit_tft_get_rotation(dev)) {
-	case 90:
-	case 270:
-		swap(width, height);
-		swap(width_mm, height_mm);
-		break;
-	}
-
+	cfg.mode = adafruit_tft_displays[id].spi_mode;
+	cfg.readable = device_property_read_bool(dev, "readable");
+cfg.readable = true;
 	reg = devm_lcdreg_spi_init(spi, &cfg);
 	if (IS_ERR(reg))
 		return PTR_ERR(reg);
 
-	reg->readable = readable;
+	device_property_read_u32(dev, "rotation", &rotation);
+rotation = 270;
 
-	ret = mipi_dbi_init(dev, mipi, reg, &adafruit_tft, width, height,
-			    width_mm, height_mm);
+	ret = mipi_dbi_init(dev, mipi, reg, &adafruit_tft_driver,
+			    &adafruit_tft_displays[id].mode, rotation);
 	if (ret)
 		return ret;
 
-	ret = devm_tinydrm_register(tdev);
+	ret = devm_tinydrm_register(tdev, &adafruit_tft_displays[id].funcs);
 	if (ret)
 		return ret;
 

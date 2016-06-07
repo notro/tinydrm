@@ -150,18 +150,32 @@ static const uint32_t mipi_dbi_formats[] = {
 	DRM_FORMAT_XRGB8888,
 };
 
+int tinydrm_rotate_mode(struct drm_display_mode *mode, unsigned int rotation)
+{
+	if (rotation == 0 || rotation == 180) {
+		return 0;
+	} else if (rotation == 90 || rotation == 270) {
+		swap(mode->hdisplay, mode->vdisplay);
+		swap(mode->hsync_start, mode->vsync_start);
+		swap(mode->hsync_end, mode->vsync_end);
+		swap(mode->htotal, mode->vtotal);
+		swap(mode->width_mm, mode->height_mm);
+		return 0;
+	} else {
+		return -EINVAL;
+	}
+}
+
 /**
  * mipi_dbi_init - MIPI DBI initialization
  * @dev: parent device
  * @mipi: &mipi_dbi structure to initialize
  * @reg: LCD register
  * @driver: DRM driver
- * @width: display widht in pixels
- * @height: display height in pixels
- * @width_mm: display widht in millimeters (optional)
- * @height_mm: display height in millimeters (optional)
+ * @mode: display mode
+ * @rotation: initial rotation in degress Counter Clock Wise
  *
- * This function initialized a &mipi_dbi structure and it's underlying
+ * This function initializes a &mipi_dbi structure and it's underlying
  * @tinydrm_device and &drm_device. It also sets up the display pipeline.
  * Native RGB565 format is supported and XRGB8888 is emulated.
  * Objects created by this function will be automatically freed on driver
@@ -169,13 +183,24 @@ static const uint32_t mipi_dbi_formats[] = {
  */
 int mipi_dbi_init(struct device *dev, struct mipi_dbi *mipi,
 		  struct lcdreg *reg, struct drm_driver *driver,
-		  unsigned int width, unsigned int height,
-		  unsigned int width_mm, unsigned int height_mm)
+		  const struct drm_display_mode *mode, unsigned int rotation)
 {
 	struct tinydrm_device *tdev = &mipi->tinydrm;
-	struct drm_display_mode *mode;
+	struct drm_display_mode *mode_copy;
 	struct drm_device *drm;
 	int ret;
+
+	mode_copy = devm_kmalloc(dev, sizeof(*mode_copy), GFP_KERNEL);
+	if (!mode_copy)
+		return -ENOMEM;
+
+	*mode_copy = *mode;
+	mipi->rotation = rotation;
+	ret = tinydrm_rotate_mode(mode_copy, rotation);
+	if (ret) {
+		DRM_ERROR("Illegal rotation value %u\n", rotation);
+		return -EINVAL;
+	}
 
 	ret = devm_tinydrm_init(dev, tdev, driver);
 	if (ret)
@@ -185,28 +210,18 @@ int mipi_dbi_init(struct device *dev, struct mipi_dbi *mipi,
 	mipi->reg = reg;
 
 	drm = tdev->base;
-	drm->mode_config.min_width = width;
-	drm->mode_config.min_height = height;
-	drm->mode_config.max_width = width;
-	drm->mode_config.max_height = height;
+	drm->mode_config.min_width = mode_copy->hdisplay;
+	drm->mode_config.max_width = mode_copy->hdisplay;
+	drm->mode_config.min_height = mode_copy->vdisplay;
+	drm->mode_config.max_height = mode_copy->vdisplay;
 	drm->mode_config.preferred_depth = 16;
-	DRM_DEBUG_KMS("preferred_depth=%u\n",
-		      drm->mode_config.preferred_depth);
 	ret = drm_mode_create_dirty_info_property(drm);
 	if (ret)
 		return ret;
 
-	mode = drm_cvt_mode(drm, width, height, 60, false, false, false);
-	if (!mode)
-		return -ENOMEM;
-
-	mode->type |= DRM_MODE_TYPE_DRIVER;
-	mode->width_mm = width_mm;
-	mode->height_mm = height_mm;
-
 	ret = tinydrm_display_pipe_init(tdev, mipi_dbi_formats,
-					ARRAY_SIZE(mipi_dbi_formats), mode);
-	drm_mode_destroy(drm, mode);
+					ARRAY_SIZE(mipi_dbi_formats),
+					mode_copy);
 	if (ret)
 		return ret;
 
@@ -217,6 +232,9 @@ int mipi_dbi_init(struct device *dev, struct mipi_dbi *mipi,
 	drm_mode_config_reset(drm);
 
 	tinydrm_debugfs_dirty_init(tdev);
+
+	DRM_DEBUG_KMS("preferred_depth=%u, rotation = %u\n",
+		      drm->mode_config.preferred_depth, rotation);
 
 	return 0;
 }

@@ -29,7 +29,7 @@
 
 struct tinydrm_connector {
 	struct drm_connector base;
-	struct drm_display_mode *mode;
+	const struct drm_display_mode *mode;
 };
 
 static inline struct tinydrm_connector *
@@ -81,7 +81,6 @@ static void tinydrm_connector_destroy(struct drm_connector *connector)
 {
 	struct tinydrm_connector *tconn = to_tinydrm_connector(connector);
 
-	drm_mode_destroy(connector->dev, tconn->mode);
 	drm_connector_cleanup(connector);
 	kfree(tconn);
 }
@@ -103,38 +102,26 @@ tinydrm_connector_create(struct drm_device *drm,
 {
 	struct tinydrm_connector *tconn;
 	struct drm_connector *connector;
-	struct drm_display_mode *mode_copy;
 	int ret;
 
 	tconn = kzalloc(sizeof(*tconn), GFP_KERNEL);
 	if (!tconn)
 		return ERR_PTR(-ENOMEM);
 
-	mode_copy = drm_mode_duplicate(drm, mode);
-	if (!mode_copy) {
-		ret = -ENOMEM;
-		goto err_free;
-	}
-
-	tconn->mode = mode_copy;
+	tconn->mode = mode;
 	connector = &tconn->base;
 
 	drm_connector_helper_add(connector, &tinydrm_connector_hfuncs);
 	ret = drm_connector_init(drm, connector, &tinydrm_connector_funcs,
 				 connector_type);
-	if (ret)
-		goto err_destroy_mode;
+	if (ret) {
+		kfree(tconn);
+		return ERR_PTR(ret);
+	}
 
 	connector->status = connector_status_connected;
 
 	return connector;
-
-err_destroy_mode:
-	drm_mode_destroy(drm, mode_copy);
-err_free:
-	kfree(tconn);
-
-	return ERR_PTR(ret);
 }
 
 static inline struct tinydrm_device *
