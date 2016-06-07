@@ -59,9 +59,13 @@ static int tinydrm_fb_dirty(struct drm_framebuffer *fb,
 		goto out_unlock;
 
 	if (!tdev->enabled) {
-		if (tdev->funcs && tdev->funcs->enable)
-			if (tdev->funcs->enable(tdev))
-				DRM_ERROR("Failed to enable display\n");
+		if (tdev->funcs && tdev->funcs->enable) {
+			ret = tdev->funcs->enable(tdev);
+			if (ret) {
+				DRM_ERROR("Failed to enable() %d\n", ret);
+				goto out_unlock;
+			}
+		}
 		tdev->enabled = true;
 	}
 

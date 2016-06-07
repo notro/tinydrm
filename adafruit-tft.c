@@ -237,13 +237,11 @@ static int adafruit_tft_probe(struct spi_device *spi)
 
 	cfg.mode = adafruit_tft_displays[id].spi_mode;
 	cfg.readable = device_property_read_bool(dev, "readable");
-cfg.readable = true;
 	reg = devm_lcdreg_spi_init(spi, &cfg);
 	if (IS_ERR(reg))
 		return PTR_ERR(reg);
 
 	device_property_read_u32(dev, "rotation", &rotation);
-rotation = 270;
 
 	ret = mipi_dbi_init(dev, mipi, reg, &adafruit_tft_driver,
 			    &adafruit_tft_displays[id].mode, rotation);
