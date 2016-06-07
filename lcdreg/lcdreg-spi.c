@@ -21,6 +21,14 @@
 #include <linux/of.h>
 #include <linux/spi/spi.h>
 
+/**
+ * DOC: Overview
+ *
+ * This library provides a lcdreg implementation for the SPI interface on
+ * MIPI DBI/DCS compatible controllers.
+ * See &lcdreg_spi_mode for supported interface modes.
+ */
+
 static unsigned txlen;
 module_param(txlen, uint, 0);
 MODULE_PARM_DESC(txlen, "Transmit chunk length");

@@ -26,7 +26,6 @@
  *
  * In order for the display to turn off at shutdown, the device driver shutdown
  * callback has to be set. This function should call tinydrm_shutdown().
- *
  */
 
 /**

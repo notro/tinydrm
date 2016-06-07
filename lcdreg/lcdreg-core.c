@@ -17,6 +17,13 @@
 #include "internal.h"
 
 /**
+ * DOC: Overview
+ *
+ * This library provides a register interface abstraction for LCD controllers
+ * that are similar to MIPI DBI/DCS.
+ */
+
+/**
  * Write to LCD register
  *
  * @reg: LCD register
