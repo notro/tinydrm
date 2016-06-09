@@ -299,12 +299,21 @@ EXPORT_SYMBOL(devm_tinydrm_register);
  */
 void tinydrm_shutdown(struct tinydrm_device *tdev)
 {
-	/* TODO Is there a drm function to disable output? */
+/*
+ * TODO
+ * Use drm_crtc_force_disable_all() if patch is accepted:
+ *     drm: Add helpers to turn off CRTCs
+ */
 	if (tdev->pipe.funcs && tdev->pipe.funcs->disable)
 		tdev->pipe.funcs->disable(&tdev->pipe);
 }
 EXPORT_SYMBOL(tinydrm_shutdown);
 
+/*
+ * TODO
+ * Use drm_fbdev_cma_set_suspend() if patch is accepted:
+ *     drm/fb_cma_helper: add suspend helper
+ */
 static void tinydrm_fbdev_suspend(struct tinydrm_device *tdev)
 {
 	if (!tdev->fbdev_helper)

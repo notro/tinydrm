@@ -138,6 +138,9 @@ static int adafruit_tft_797_prepare(struct tinydrm_device *tdev)
 
 	dev_dbg(tdev->base->dev, "%s\n", __func__);
 
+	if (mipi->prepared_once)
+		return 0;
+
 	if (mipi->regulator) {
 		ret = regulator_enable(mipi->regulator);
 		if (ret) {
@@ -211,6 +214,9 @@ static int adafruit_tft_358_prepare(struct tinydrm_device *tdev)
 	int ret;
 
 	dev_dbg(tdev->base->dev, "%s\n", __func__);
+
+	if (mipi->prepared_once)
+		return 0;
 
 	if (mipi->regulator) {
 		ret = regulator_enable(mipi->regulator);

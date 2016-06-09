@@ -24,6 +24,7 @@ struct lcdreg;
  * @tinydrm: tinydrm base
  * @reg: LCD register
  * @rotation: initial rotation in degress Counter Clock Wise
+ * @prepared_once: only prepare once (no backlight nor power control)
  * @backlight: backlight device (optional)
  * @regulator: power regulator (optional)
  */
@@ -31,6 +32,7 @@ struct mipi_dbi {
 	struct tinydrm_device tinydrm;
 	struct lcdreg *reg;
 	unsigned int rotation;
+	bool prepared_once;
 	struct backlight_device *backlight;
 	struct regulator *regulator;
 };

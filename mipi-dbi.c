@@ -101,9 +101,41 @@ int mipi_dbi_enable_backlight(struct tinydrm_device *tdev)
 {
 	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
 
-	return tinydrm_enable_backlight(mipi->backlight);
+	if (mipi->backlight)
+		return tinydrm_enable_backlight(mipi->backlight);
+
+	if (!mipi->regulator)
+		/* Full flush of blanked display memory */
+		schedule_work(&tdev->dirty_work);
+
+	return 0;
 }
 EXPORT_SYMBOL(mipi_dbi_enable_backlight);
+
+static void mipi_dbi_blank(struct mipi_dbi *mipi)
+{
+	struct drm_device *drm = mipi->tinydrm.base;
+	int height = drm->mode_config.min_height;
+	int width = drm->mode_config.min_width;
+	unsigned num_pixels = width * height;
+	struct lcdreg *reg = mipi->reg;
+	struct lcdreg_transfer tr = {
+		.index = 1,
+		.width = 16,
+		.count = num_pixels
+	};
+
+	tr.buf = kzalloc(num_pixels * 2, GFP_KERNEL);
+	if (!tr.buf)
+		return;
+
+	lcdreg_writereg(reg, MIPI_DCS_SET_COLUMN_ADDRESS, 0, 0,
+			(width >> 8) & 0xFF, (width - 1) & 0xFF);
+	lcdreg_writereg(reg, MIPI_DCS_SET_PAGE_ADDRESS, 0, 0,
+			(height >> 8) & 0xFF, (height - 1) & 0xFF);
+	lcdreg_write(reg, MIPI_DCS_WRITE_MEMORY_START, &tr);
+	kfree(tr.buf);
+}
 
 /**
  * mipi_dbi_disable_backlight - mipi disable backlight helper
@@ -111,12 +143,16 @@ EXPORT_SYMBOL(mipi_dbi_enable_backlight);
  *
  * Helper to disable &mipi_dbi ->backlight for the &tinydrm_funcs
  * ->disable callback.
+ * If there's no backlight nor power control, blank display by writing zeroes.
  */
 void mipi_dbi_disable_backlight(struct tinydrm_device *tdev)
 {
 	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
 
-	tinydrm_disable_backlight(mipi->backlight);
+	if (mipi->backlight)
+		tinydrm_disable_backlight(mipi->backlight);
+	else if (!mipi->regulator)
+		mipi_dbi_blank(mipi);
 }
 EXPORT_SYMBOL(mipi_dbi_disable_backlight);
 
@@ -138,6 +174,8 @@ void mipi_dbi_unprepare(struct tinydrm_device *tdev)
 	if (mipi->backlight) {
 		lcdreg_writereg(reg, MIPI_DCS_SET_DISPLAY_OFF);
 		lcdreg_writereg(reg, MIPI_DCS_ENTER_SLEEP_MODE);
+	} else if (!mipi->regulator) {
+		mipi->prepared_once = true;
 	}
 
 	if (mipi->regulator)
