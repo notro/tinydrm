@@ -164,7 +164,8 @@ tinydrm_fb_create(struct drm_device *drm, struct drm_file *file_priv,
 int tinydrm_display_pipe_init(struct tinydrm_device *tdev,
 			      const uint32_t *formats,
 			      unsigned int format_count,
-			      const struct drm_display_mode *mode);
+			      const struct drm_display_mode *mode,
+			      uint64_t dirty_val);
 int devm_tinydrm_init(struct device *parent, struct tinydrm_device *tdev,
 		      struct drm_driver *driver);
 int devm_tinydrm_register(struct tinydrm_device *tdev,

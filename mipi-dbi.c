@@ -253,19 +253,12 @@ int mipi_dbi_init(struct device *dev, struct mipi_dbi *mipi,
 	drm->mode_config.min_height = mode_copy->vdisplay;
 	drm->mode_config.max_height = mode_copy->vdisplay;
 	drm->mode_config.preferred_depth = 16;
-	ret = drm_mode_create_dirty_info_property(drm);
-	if (ret)
-		return ret;
 
 	ret = tinydrm_display_pipe_init(tdev, mipi_dbi_formats,
 					ARRAY_SIZE(mipi_dbi_formats),
-					mode_copy);
+					mode_copy, DRM_MODE_DIRTY_ON);
 	if (ret)
 		return ret;
-
-	drm_object_attach_property(&tdev->pipe.connector->base,
-				   drm->mode_config.dirty_info_property,
-				   DRM_MODE_DIRTY_ON);
 
 	drm_mode_config_reset(drm);
 

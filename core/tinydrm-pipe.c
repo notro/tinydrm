@@ -208,17 +208,24 @@ static const struct drm_simple_display_pipe_funcs tinydrm_display_pipe_funcs = {
  * @formats: array of supported formats (%DRM_FORMAT_*)
  * @format_count: number of elements in @formats
  * @mode: supported mode (a copy is made so this can be freed afterwards)
+ * @dirty_val: initial value of the dirty property
  *
  * Sets up a display pipeline which consist of one &drm_plane, one &drm_crtc,
  * one &drm_encoder and one &drm_connector with one &drm_display_mode.
+ * Also adds the 'dirty' property with initial value @dirty_val.
+ *
+ * Returns:
+ * Zero on success, negative error code on failure.
  */
 int tinydrm_display_pipe_init(struct tinydrm_device *tdev,
 			      const uint32_t *formats,
 			      unsigned int format_count,
-			      const struct drm_display_mode *mode)
+			      const struct drm_display_mode *mode,
+			      uint64_t dirty_val)
 {
 	struct drm_device *drm = tdev->base;
 	struct drm_connector *connector;
+	int ret;
 
 	INIT_WORK(&tdev->dirty_work, tinydrm_dirty_work);
 
@@ -227,9 +234,21 @@ int tinydrm_display_pipe_init(struct tinydrm_device *tdev,
 	if (IS_ERR(connector))
 		return PTR_ERR(connector);
 
-	return drm_simple_display_pipe_init(drm, &tdev->pipe,
-					    &tinydrm_display_pipe_funcs,
-					    formats, format_count,
-					    connector);
+	ret = drm_simple_display_pipe_init(drm, &tdev->pipe,
+					   &tinydrm_display_pipe_funcs,
+					   formats, format_count,
+					   connector);
+	if (ret)
+		return ret;
+
+	ret = drm_mode_create_dirty_info_property(drm);
+	if (ret)
+		return ret;
+
+	drm_object_attach_property(&connector->base,
+				   drm->mode_config.dirty_info_property,
+				   dirty_val);
+
+	return 0;
 }
 EXPORT_SYMBOL(tinydrm_display_pipe_init);
