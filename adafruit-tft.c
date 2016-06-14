@@ -12,7 +12,6 @@
  */
 
 #include <drm/tinydrm/hx8340.h>
-#include <drm/tinydrm/ili9340.h>
 #include <drm/tinydrm/lcdreg-spi.h>
 #include <drm/tinydrm/mipi-dbi.h>
 #include <drm/tinydrm/st7735r.h>
@@ -32,101 +31,9 @@ struct adafruit_tft_display {
 };
 
 enum adafruit_tft_display_ids {
-	ADAFRUIT_1601,
 	ADAFRUIT_797,
 	ADAFRUIT_358,
 };
-
-static int adafruit_tft_1601_prepare(struct tinydrm_device *tdev)
-{
-	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
-	struct lcdreg *reg = mipi->reg;
-	u8 addr_mode;
-	int ret;
-
-	dev_dbg(tdev->base->dev, "%s\n", __func__);
-
-	if (mipi->regulator) {
-		ret = regulator_enable(mipi->regulator);
-		if (ret) {
-			dev_err(tdev->base->dev,
-				"Failed to enable regulator %d\n", ret);
-			return ret;
-		}
-	}
-
-	mipi_dbi_debug_dump_regs(reg);
-
-	/* Avoid flicker by skipping setup if the bootloader has done it */
-	if (mipi_dbi_display_is_on(reg))
-		return 0;
-
-	lcdreg_reset(reg);
-	ret = lcdreg_writereg(reg, MIPI_DCS_SOFT_RESET);
-	if (ret) {
-		dev_err(tdev->base->dev, "Error writing lcdreg %d\n", ret);
-		return ret;
-	}
-
-	msleep(20);
-
-	/* Undocumented registers */
-	lcdreg_writereg(reg, 0xEF, 0x03, 0x80, 0x02);
-	lcdreg_writereg(reg, 0xCF, 0x00, 0xC1, 0x30);
-	lcdreg_writereg(reg, 0xED, 0x64, 0x03, 0x12, 0x81);
-	lcdreg_writereg(reg, 0xE8, 0x85, 0x00, 0x78);
-	lcdreg_writereg(reg, 0xCB, 0x39, 0x2C, 0x00, 0x34, 0x02);
-	lcdreg_writereg(reg, 0xF7, 0x20);
-	lcdreg_writereg(reg, 0xEA, 0x00, 0x00);
-
-	lcdreg_writereg(reg, ILI9340_PWCTRL1, 0x23);
-	lcdreg_writereg(reg, ILI9340_PWCTRL2, 0x10);
-	lcdreg_writereg(reg, ILI9340_VMCTRL1, 0x3e, 0x28);
-	lcdreg_writereg(reg, ILI9340_VMCTRL2, 0x86);
-
-	lcdreg_writereg(reg, MIPI_DCS_SET_PIXEL_FORMAT, 0x55);
-	lcdreg_writereg(reg, ILI9340_FRMCTR1, 0x00, 0x18);
-	lcdreg_writereg(reg, ILI9340_DISCTRL, 0x08, 0x82, 0x27);
-
-	/* 3Gamma Function Disable */
-	lcdreg_writereg(reg, 0xF2, 0x00);
-
-	lcdreg_writereg(reg, MIPI_DCS_SET_GAMMA_CURVE, 0x01);
-	lcdreg_writereg(reg, ILI9340_PGAMCTRL,
-			0x0F, 0x31, 0x2B, 0x0C, 0x0E, 0x08, 0x4E, 0xF1,
-			0x37, 0x07, 0x10, 0x03, 0x0E, 0x09, 0x00);
-	lcdreg_writereg(reg, ILI9340_NGAMCTRL,
-			0x00, 0x0E, 0x14, 0x03, 0x11, 0x07, 0x31, 0xC1,
-			0x48, 0x08, 0x0F, 0x0C, 0x31, 0x36, 0x0F);
-
-	switch (mipi->rotation) {
-	default:
-		addr_mode = ILI9340_MADCTL_MV | ILI9340_MADCTL_MY |
-			    ILI9340_MADCTL_MX;
-		break;
-	case 90:
-		addr_mode = ILI9340_MADCTL_MY;
-		break;
-	case 180:
-		addr_mode = ILI9340_MADCTL_MV;
-		break;
-	case 270:
-		addr_mode = ILI9340_MADCTL_MX;
-		break;
-	}
-	addr_mode |= ILI9340_MADCTL_BGR;
-	lcdreg_writereg(reg, MIPI_DCS_SET_ADDRESS_MODE, addr_mode);
-
-	lcdreg_writereg(reg, MIPI_DCS_EXIT_SLEEP_MODE);
-	msleep(120);
-
-	lcdreg_writereg(reg, MIPI_DCS_SET_DISPLAY_ON);
-	msleep(50);
-
-	mipi_dbi_debug_dump_regs(reg);
-
-	return 0;
-}
 
 /* Init sequence taken from the Adafruit-HX8340B library */
 static int adafruit_tft_797_prepare(struct tinydrm_device *tdev)
@@ -289,20 +196,6 @@ static int adafruit_tft_358_prepare(struct tinydrm_device *tdev)
 }
 
 static const struct adafruit_tft_display adafruit_tft_displays[] = {
-	/* 2.8" PiTFT 320x240 for Raspberry Pi - ILI9340 (#1601) */
-	[ADAFRUIT_1601] = {
-		.mode = {
-			TINYDRM_MODE(320, 240, 58, 43),
-		},
-		.funcs = {
-			.prepare = adafruit_tft_1601_prepare,
-			.unprepare = mipi_dbi_unprepare,
-			.enable = mipi_dbi_enable_backlight,
-			.disable = mipi_dbi_disable_backlight,
-			.dirty = mipi_dbi_dirty,
-		},
-		.spi_mode = LCDREG_SPI_4WIRE,
-	},
 	/* 2.2" Color TFT LCD display - HX8340BN, 9-bit mode (#797) */
 	[ADAFRUIT_797] = {
 		.mode = {
@@ -334,7 +227,6 @@ static const struct adafruit_tft_display adafruit_tft_displays[] = {
 };
 
 static const struct of_device_id adafruit_tft_of_match[] = {
-	{ .compatible = "adafruit,tft1601", .data = (void *)ADAFRUIT_1601 },
 	{ .compatible = "adafruit,tft797",  .data = (void *)ADAFRUIT_797 },
 	{ .compatible = "adafruit,tft358",  .data = (void *)ADAFRUIT_358 },
 	{},
@@ -342,7 +234,6 @@ static const struct of_device_id adafruit_tft_of_match[] = {
 MODULE_DEVICE_TABLE(of, adafruit_tft_of_match);
 
 static const struct spi_device_id adafruit_tft_id[] = {
-	{ "tft1601", ADAFRUIT_1601 },
 	{ "tft797",  ADAFRUIT_797 },
 	{ "tft358",  ADAFRUIT_358 },
 	{ },
