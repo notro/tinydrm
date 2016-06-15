@@ -45,10 +45,8 @@ static int tinydrm_fb_dirty(struct drm_framebuffer *fb,
 
 	mutex_lock(&tdev->dev_lock);
 
-	if (!tdev->prepared) {
-		ret = -EINVAL;
+	if (!tdev->prepared)
 		goto out_unlock;
-	}
 
 	/* fbdev can flush even when we're not interested */
 	if (tdev->pipe.plane.fb != fb)

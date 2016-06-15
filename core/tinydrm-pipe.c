@@ -143,12 +143,13 @@ static void tinydrm_display_pipe_enable(struct drm_simple_display_pipe *pipe,
 	if (tdev->funcs && tdev->funcs->prepare)
 		ret = tdev->funcs->prepare(tdev);
 
-	if (ret)
-		DRM_ERROR("Failed to enable pipeline: %d\n", ret);
-	else
+	if (!ret) {
 		tdev->prepared = true;
-
-	/* .enable() is called after the first .dirty() */
+		if (pipe->plane.state->fb)
+			schedule_work(&tdev->dirty_work);
+	} else {
+		DRM_ERROR("Failed to enable pipeline: %d\n", ret);
+	}
 
 	mutex_unlock(&tdev->dev_lock);
 }
@@ -158,6 +159,8 @@ static void tinydrm_display_pipe_disable(struct drm_simple_display_pipe *pipe)
 	struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
 
 	DRM_DEBUG_KMS("\n");
+
+	cancel_work_sync(&tdev->dirty_work);
 
 	mutex_lock(&tdev->dev_lock);
 
@@ -172,25 +175,21 @@ static void tinydrm_display_pipe_disable(struct drm_simple_display_pipe *pipe)
 	mutex_unlock(&tdev->dev_lock);
 }
 
-static void tinydrm_dirty_work(struct work_struct *work)
-{
-	struct tinydrm_device *tdev = container_of(work, struct tinydrm_device,
-						  dirty_work);
-	struct drm_framebuffer *fb = tdev->pipe.plane.fb;
-
-	if (fb)
-		fb->funcs->dirty(fb, NULL, 0, 0, NULL, 0);
-}
-
 static void tinydrm_display_pipe_update(struct drm_simple_display_pipe *pipe,
 					struct drm_plane_state *old_state)
 {
 	struct drm_framebuffer *fb = pipe->plane.state->fb;
 
+	if (!fb)
+		DRM_DEBUG_KMS("fb unset\n");
+	else if (fb != old_state->fb)
+		DRM_DEBUG_KMS("fb changed\n");
+	else
+		DRM_DEBUG_KMS("No fb change\n");
+
 	if (fb && (fb != old_state->fb)) {
 		struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
 
-		DRM_DEBUG_KMS("Flush framebuffer [FB:%d]\n", fb->base.id);
 		pipe->plane.fb = fb;
 		schedule_work(&tdev->dirty_work);
 	}
@@ -201,6 +200,16 @@ static const struct drm_simple_display_pipe_funcs tinydrm_display_pipe_funcs = {
 	.disable = tinydrm_display_pipe_disable,
 	.update = tinydrm_display_pipe_update,
 };
+
+static void tinydrm_dirty_work(struct work_struct *work)
+{
+	struct tinydrm_device *tdev = container_of(work, struct tinydrm_device,
+						   dirty_work);
+	struct drm_framebuffer *fb = tdev->pipe.plane.fb;
+
+	if (fb)
+		fb->funcs->dirty(fb, NULL, 0, 0, NULL, 0);
+}
 
 /**
  * tinydrm_display_pipe_init - initialize tinydrm display pipe

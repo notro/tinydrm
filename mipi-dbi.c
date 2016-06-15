@@ -101,14 +101,7 @@ int mipi_dbi_enable_backlight(struct tinydrm_device *tdev)
 {
 	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
 
-	if (mipi->backlight)
-		return tinydrm_enable_backlight(mipi->backlight);
-
-	if (!mipi->regulator)
-		/* Full flush of blanked display memory */
-		schedule_work(&tdev->dirty_work);
-
-	return 0;
+	return tinydrm_enable_backlight(mipi->backlight);
 }
 EXPORT_SYMBOL(mipi_dbi_enable_backlight);
 
