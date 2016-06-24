@@ -8,7 +8,6 @@
  */
 
 #include <drm/drmP.h>
-#include <drm/tinydrm/lcdreg.h>
 #include <drm/tinydrm/tinydrm.h>
 #include <linux/backlight.h>
 #include <linux/pm.h>
@@ -76,8 +75,7 @@ EXPORT_SYMBOL(tinydrm_merge_clips);
  * Drivers can use this function for rgb565 devices that don't natively
  * support xrgb8888.
  */
-void tinydrm_xrgb8888_to_rgb565(u32 *src, u16 *dst, unsigned num_pixels,
-				bool swap_bytes)
+void tinydrm_xrgb8888_to_rgb565(u32 *src, u16 *dst, unsigned num_pixels)
 {
 	int i;
 
@@ -85,92 +83,11 @@ void tinydrm_xrgb8888_to_rgb565(u32 *src, u16 *dst, unsigned num_pixels,
 		*dst = ((*src & 0x00F80000) >> 8) |
 		       ((*src & 0x0000FC00) >> 5) |
 		       ((*src & 0x000000F8) >> 3);
-		if (swap_bytes)
-			*dst = swab16(*dst);
 		src++;
 		dst++;
 	}
 }
 EXPORT_SYMBOL(tinydrm_xrgb8888_to_rgb565);
-
-#if IS_ENABLED(CONFIG_LCDREG)
-/**
- * tinydrm_lcdreg_flush_rgb565 - flush framebuffer to LCD register
- * @reg: LCD register
- * @regnr: register number
- * @fb: framebuffer
- * @vmem: buffer backing the framebuffer
- * @clip: part of buffer to write
- *
- * Flush framebuffer changes to LCD register supporting RGB565. XRGB8888 is
- * converted to RGB565. Only full width @clip is supported.
- */
-int tinydrm_lcdreg_flush_rgb565(struct lcdreg *reg, u32 regnr,
-				struct drm_framebuffer *fb, void *vmem,
-				struct drm_clip_rect *clip)
-{
-	unsigned width = clip->x2 - clip->x1;
-	unsigned height = clip->y2 - clip->y1;
-	unsigned num_pixels = width * height;
-	struct lcdreg_transfer tr = {
-		.index = 1,
-		.width = 16,
-		.count = num_pixels
-	};
-	u16 *buf = NULL;
-	bool byte_swap = false;
-	int ret;
-
-	/*
-	 * TODO: Add support for all widths (requires a buffer copy)
-	 *
-	 * Crude X windows usage numbers for a 320x240 (76.8k pixel) display,
-	 * possible improvements:
-	 * - 80-90% cut for <2k pixel transfers
-	 * - 40-50% cut for <50k pixel tranfers
-	 */
-	if (width != fb->width) {
-		dev_err(reg->dev,
-			"Only full width clip are supported: x1=%u, x2=%u\n",
-			clip->x1, clip->x2);
-		return -EINVAL;
-	}
-
-	switch (fb->pixel_format) {
-	case DRM_FORMAT_RGB565:
-		vmem += clip->y1 * width * 2;
-		tr.buf = vmem;
-		break;
-	case DRM_FORMAT_XRGB8888:
-		vmem += clip->y1 * width * 4;
-		buf = kmalloc(num_pixels * sizeof(u16), GFP_KERNEL);
-		if (!buf)
-			return -ENOMEM;
-
-#if defined(__LITTLE_ENDIAN)
-		byte_swap = !reg->little_endian &&
-			    !lcdreg_bpw_supported(reg, 16);
-#endif
-		tinydrm_xrgb8888_to_rgb565(vmem, buf, num_pixels, byte_swap);
-		tr.buf = buf;
-		if (byte_swap) {
-			tr.width = 8;
-			tr.count *= 2;
-		}
-		break;
-	default:
-		dev_err_once(reg->dev, "Format is not supported: %s\n",
-			     drm_get_format_name(fb->pixel_format));
-		return -EINVAL;
-	}
-
-	ret = lcdreg_write(reg, regnr, &tr);
-	kfree(buf);
-
-	return ret;
-}
-EXPORT_SYMBOL(tinydrm_lcdreg_flush_rgb565);
-#endif /* CONFIG_LCDREG */
 
 #ifdef CONFIG_BACKLIGHT_CLASS_DEVICE
 /**

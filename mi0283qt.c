@@ -64,10 +64,10 @@ Example:
 */
 
 #include <drm/tinydrm/ili9341.h>
-#include <drm/tinydrm/lcdreg-spi.h>
 #include <drm/tinydrm/mipi-dbi.h>
 #include <drm/tinydrm/tinydrm.h>
 #include <linux/delay.h>
+#include <linux/gpio/consumer.h>
 #include <linux/module.h>
 #include <linux/property.h>
 #include <linux/regulator/consumer.h>
@@ -77,7 +77,7 @@ Example:
 static int mi0283qt_prepare(struct tinydrm_device *tdev)
 {
 	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
-	struct lcdreg *reg = mipi->reg;
+	struct regmap *reg = mipi->reg;
 	u8 addr_mode;
 	int ret;
 
@@ -92,14 +92,14 @@ static int mi0283qt_prepare(struct tinydrm_device *tdev)
 		}
 	}
 
-	mipi_dbi_debug_dump_regs(reg);
+//	mipi_dbi_debug_dump_regs(reg);
 
 	/* Avoid flicker by skipping setup if the bootloader has done it */
 	if (mipi_dbi_display_is_on(reg))
 		return 0;
 
-	lcdreg_reset(reg);
-	ret = lcdreg_writereg(reg, MIPI_DCS_SOFT_RESET);
+	mipi_dbi_hw_reset(mipi);
+	ret = mipi_dbi_write(reg, MIPI_DCS_SOFT_RESET);
 	if (ret) {
 		dev_err(tdev->base->dev, "Error writing lcdreg %d\n", ret);
 		return ret;
@@ -107,24 +107,24 @@ static int mi0283qt_prepare(struct tinydrm_device *tdev)
 
 	msleep(20);
 
-	lcdreg_writereg(reg, MIPI_DCS_SET_DISPLAY_OFF);
+	mipi_dbi_write(reg, MIPI_DCS_SET_DISPLAY_OFF);
 
-	lcdreg_writereg(reg, ILI9341_PWCTRLB, 0x00, 0x83, 0x30);
-	lcdreg_writereg(reg, ILI9341_PWRSEQ, 0x64, 0x03, 0x12, 0x81);
-	lcdreg_writereg(reg, ILI9341_DTCTRLA, 0x85, 0x01, 0x79);
-	lcdreg_writereg(reg, ILI9341_PWCTRLA, 0x39, 0x2c, 0x00, 0x34, 0x02);
-	lcdreg_writereg(reg, ILI9341_PUMPCTRL, 0x20);
-	lcdreg_writereg(reg, ILI9341_DTCTRLB, 0x00, 0x00);
+	mipi_dbi_write(reg, ILI9341_PWCTRLB, 0x00, 0x83, 0x30);
+	mipi_dbi_write(reg, ILI9341_PWRSEQ, 0x64, 0x03, 0x12, 0x81);
+	mipi_dbi_write(reg, ILI9341_DTCTRLA, 0x85, 0x01, 0x79);
+	mipi_dbi_write(reg, ILI9341_PWCTRLA, 0x39, 0x2c, 0x00, 0x34, 0x02);
+	mipi_dbi_write(reg, ILI9341_PUMPCTRL, 0x20);
+	mipi_dbi_write(reg, ILI9341_DTCTRLB, 0x00, 0x00);
 
 	/* Power Control */
-	lcdreg_writereg(reg, ILI9341_PWCTRL1, 0x26);
-	lcdreg_writereg(reg, ILI9341_PWCTRL2, 0x11);
+	mipi_dbi_write(reg, ILI9341_PWCTRL1, 0x26);
+	mipi_dbi_write(reg, ILI9341_PWCTRL2, 0x11);
 	/* VCOM */
-	lcdreg_writereg(reg, ILI9341_VMCTRL1, 0x35, 0x3e);
-	lcdreg_writereg(reg, ILI9341_VMCTRL2, 0xbe);
+	mipi_dbi_write(reg, ILI9341_VMCTRL1, 0x35, 0x3e);
+	mipi_dbi_write(reg, ILI9341_VMCTRL2, 0xbe);
 
 	/* Memory Access Control */
-	lcdreg_writereg(reg, MIPI_DCS_SET_PIXEL_FORMAT, 0x55);
+	mipi_dbi_write(reg, MIPI_DCS_SET_PIXEL_FORMAT, 0x55);
 
 	switch (mipi->rotation) {
 	default:
@@ -142,33 +142,33 @@ static int mi0283qt_prepare(struct tinydrm_device *tdev)
 		break;
 	}
 	addr_mode |= ILI9341_MADCTL_BGR;
-	lcdreg_writereg(reg, MIPI_DCS_SET_ADDRESS_MODE, addr_mode);
+	mipi_dbi_write(reg, MIPI_DCS_SET_ADDRESS_MODE, addr_mode);
 
 	/* Frame Rate */
-	lcdreg_writereg(reg, ILI9341_FRMCTR1, 0x00, 0x1b);
+	mipi_dbi_write(reg, ILI9341_FRMCTR1, 0x00, 0x1b);
 
 	/* Gamma */
-	lcdreg_writereg(reg, ILI9341_EN3GAM, 0x08);
-	lcdreg_writereg(reg, MIPI_DCS_SET_GAMMA_CURVE, 0x01);
-	lcdreg_writereg(reg, ILI9341_PGAMCTRL,
-			0x1f, 0x1a, 0x18, 0x0a, 0x0f, 0x06, 0x45, 0x87,
-			0x32, 0x0a, 0x07, 0x02, 0x07, 0x05, 0x00);
-	lcdreg_writereg(reg, ILI9341_NGAMCTRL,
-			0x00, 0x25, 0x27, 0x05, 0x10, 0x09, 0x3a, 0x78,
-			0x4d, 0x05, 0x18, 0x0d, 0x38, 0x3a, 0x1f);
+	mipi_dbi_write(reg, ILI9341_EN3GAM, 0x08);
+	mipi_dbi_write(reg, MIPI_DCS_SET_GAMMA_CURVE, 0x01);
+	mipi_dbi_write(reg, ILI9341_PGAMCTRL,
+		       0x1f, 0x1a, 0x18, 0x0a, 0x0f, 0x06, 0x45, 0x87,
+		       0x32, 0x0a, 0x07, 0x02, 0x07, 0x05, 0x00);
+	mipi_dbi_write(reg, ILI9341_NGAMCTRL,
+		       0x00, 0x25, 0x27, 0x05, 0x10, 0x09, 0x3a, 0x78,
+		       0x4d, 0x05, 0x18, 0x0d, 0x38, 0x3a, 0x1f);
 
 	/* DDRAM */
-	lcdreg_writereg(reg, ILI9341_ETMOD, 0x07);
+	mipi_dbi_write(reg, ILI9341_ETMOD, 0x07);
 
 	/* Display */
-	lcdreg_writereg(reg, ILI9341_DISCTRL, 0x0a, 0x82, 0x27, 0x00);
-	lcdreg_writereg(reg, MIPI_DCS_EXIT_SLEEP_MODE);
+	mipi_dbi_write(reg, ILI9341_DISCTRL, 0x0a, 0x82, 0x27, 0x00);
+	mipi_dbi_write(reg, MIPI_DCS_EXIT_SLEEP_MODE);
 	msleep(100);
 
-	lcdreg_writereg(reg, MIPI_DCS_SET_DISPLAY_ON);
+	mipi_dbi_write(reg, MIPI_DCS_SET_DISPLAY_ON);
 	msleep(50);
 
-	mipi_dbi_debug_dump_regs(reg);
+//	mipi_dbi_debug_dump_regs(reg);
 
 	return 0;
 }
@@ -202,12 +202,12 @@ TINYDRM_DRM_DRIVER(mi0283qt_driver, "mi0283qt", "Multi-Inno MI0283QT",
 
 static int mi0283qt_probe(struct spi_device *spi)
 {
-	struct lcdreg_spi_config cfg = { 0, };
 	struct device *dev = &spi->dev;
+	struct gpio_desc *reset, *dc;
 	struct tinydrm_device *tdev;
 	struct mipi_dbi *mipi;
-	struct lcdreg *reg;
 	u32 rotation = 0;
+	bool writeonly;
 	int ret;
 
 	if (!dev->coherent_dma_mask) {
@@ -220,11 +220,17 @@ static int mi0283qt_probe(struct spi_device *spi)
 	if (!mipi)
 		return -ENOMEM;
 
-	tdev = &mipi->tinydrm;
+	reset = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_HIGH);
+	if (IS_ERR(reset)) {
+		dev_err(dev, "Failed to get gpio 'reset'\n");
+		return PTR_ERR(reset);
+	}
 
-	mipi->backlight = tinydrm_of_find_backlight(dev);
-	if (IS_ERR(mipi->backlight))
-		return PTR_ERR(mipi->backlight);
+	dc = devm_gpiod_get_optional(dev, "dc", GPIOD_OUT_LOW);
+	if (IS_ERR(dc)) {
+		dev_err(dev, "Failed to get gpio 'dc'\n");
+		return PTR_ERR(dc);
+	}
 
 	mipi->regulator = devm_regulator_get_optional(dev, "power");
 	if (IS_ERR(mipi->regulator)) {
@@ -235,21 +241,23 @@ static int mi0283qt_probe(struct spi_device *spi)
 		mipi->regulator = NULL;
 	}
 
+	mipi->backlight = tinydrm_of_find_backlight(dev);
+	if (IS_ERR(mipi->backlight))
+		return PTR_ERR(mipi->backlight);
+
+	writeonly = device_property_read_bool(dev, "write-only");
 	device_property_read_u32(dev, "rotation", &rotation);
-	cfg.readable = !device_property_read_bool(dev, "write-only");
-	if (of_find_property(dev->of_node, "dc-gpios", NULL))
-		cfg.mode = LCDREG_SPI_4WIRE;
-	else
-		cfg.mode = LCDREG_SPI_3WIRE;
 
-	reg = devm_lcdreg_spi_init(spi, &cfg);
-	if (IS_ERR(reg))
-		return PTR_ERR(reg);
+	ret = mipi_dbi_spi_init(mipi, spi, dc, reset, writeonly);
+	if (ret)
+		return ret;
 
-	ret = mipi_dbi_init(dev, mipi, reg, &mi0283qt_driver, &mi0283qt_mode,
+	ret = mipi_dbi_init(dev, mipi, &mi0283qt_driver, &mi0283qt_mode,
 			    rotation);
 	if (ret)
 		return ret;
+
+	tdev = &mipi->tinydrm;
 
 	ret = devm_tinydrm_register(tdev, &mi0283qt_funcs);
 	if (ret)

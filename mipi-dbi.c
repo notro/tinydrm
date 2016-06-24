@@ -1,3 +1,5 @@
+#define DEBUG
+#define VERBOSE_DEBUG
 /*
  * MIPI Display Bus Interface (DBI) LCD controller support
  *
@@ -10,11 +12,13 @@
  */
 
 #include <drm/drm_gem_cma_helper.h>
-#include <drm/tinydrm/lcdreg.h>
 #include <drm/tinydrm/mipi-dbi.h>
 #include <drm/tinydrm/tinydrm.h>
+#include <linux/gpio/consumer.h>
 #include <linux/module.h>
+#include <linux/regmap.h>
 #include <linux/regulator/consumer.h>
+#include <linux/spi/spi.h>
 #include <linux/swab.h>
 #include <video/mipi_display.h>
 
@@ -24,6 +28,706 @@
 #define DCS_POWER_MODE_PARTIAL_MODE		BIT(5)
 #define DCS_POWER_MODE_IDLE_MODE		BIT(6)
 #define DCS_POWER_MODE_RESERVED_MASK		(BIT(0) | BIT(1) | BIT(7))
+
+
+
+struct lcdreg2 {
+	struct regmap *map;
+	size_t reg_bytes;
+	unsigned int ram_reg;
+	void *context;
+struct gpio_desc *dc;
+};
+
+
+
+/**
+ * mipi_dbi_write_buf32 - Write 32-bit wide buffer to register
+ * @reg: Controller register
+ * @regnr: Register number
+ * @buf: Buffer to write
+ * @count: Number of 32-bit words to write
+ */
+int mipi_dbi_write_buf32(struct regmap *reg, unsigned regnr, const u32 *buf32,
+			 size_t count)
+{
+	size_t i, val_bytes = regmap_get_val_bytes(reg);
+	void *buf;
+	int ret;
+
+	buf = kmalloc_array(count, val_bytes, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	if (val_bytes == 1)
+		for (i = 0; i < count; i++)
+			((u8 *)buf)[i] = buf32[i];
+	else if (val_bytes == 2)
+		for (i = 0; i < count; i++)
+			((u16 *)buf)[i] = buf32[i];
+	else
+		return -EINVAL;
+
+	ret = regmap_raw_write(reg, regnr, buf, count * val_bytes);
+	kfree(buf);
+
+	return ret;
+}
+EXPORT_SYMBOL(mipi_dbi_write_buf32);
+
+
+
+
+static void mipi_dbi_hexdump(char *linebuf, size_t linebuflen, const void *buf, size_t len, size_t bpw, size_t max)
+{
+
+	if (bpw > 16) {
+		snprintf(linebuf, linebuflen, "bpw not supported");
+	} else if (bpw > 8) {
+		size_t count = len > max ? max / 2 : (len / 2);
+		const u16 *buf16 = buf;
+		unsigned int j, lx = 0;
+		int ret;
+
+		for (j = 0; j < count; j++) {
+			ret = snprintf(linebuf + lx, linebuflen - lx,
+				       "%s%4.4x", j ? " " : "", *buf16++);
+			if (ret >= linebuflen - lx) {
+				snprintf(linebuf, linebuflen, "ERROR");
+				break;
+			}
+			lx += ret;
+		}
+	} else {
+		hex_dump_to_buffer(buf, len, max, 1, linebuf, linebuflen, false);
+	}
+}
+
+#ifdef VERBOSE_DEBUG
+static void mipi_dbi_vdbg_spi_message(struct spi_device *spi, struct spi_message *m)
+{
+	struct spi_master *master = spi->master;
+	struct spi_transfer *tmp;
+	struct list_head *pos;
+	char linebuf[3 * 32];
+	int i = 0;
+
+	if (!(drm_debug & DRM_UT_CORE))
+		return;
+
+	list_for_each(pos, &m->transfers) {
+		tmp = list_entry(pos, struct spi_transfer, transfer_list);
+
+		if (tmp->tx_buf) {
+			bool dma = false;
+
+			if (master->can_dma)
+				dma = master->can_dma(master, spi, tmp);
+
+			mipi_dbi_hexdump(linebuf, ARRAY_SIZE(linebuf),
+					tmp->tx_buf, tmp->len, tmp->bits_per_word, 16);
+			pr_debug("    tr[%i]: bpw=%i, dma=%u, len=%u, tx_buf(%p)=[%s%s]\n",
+				 i, tmp->bits_per_word, dma, tmp->len,
+				 tmp->tx_buf, linebuf, tmp->len > 16 ? " ..." : "");
+		}
+		if (tmp->rx_buf) {
+			mipi_dbi_hexdump(linebuf, ARRAY_SIZE(linebuf),
+					tmp->rx_buf, tmp->len, tmp->bits_per_word, 16);
+			pr_debug("    tr[%i]: bpw=%i, len=%u, rx_buf(%p)=[%s%s]\n",
+				 i, tmp->bits_per_word, tmp->len, tmp->rx_buf,
+				 linebuf, tmp->len > 16 ? " ..." : "");
+		}
+		i++;
+	}
+}
+#else
+static void mipi_dbi_vdbg_spi_message(struct spi_device *spi, struct spi_message *m)
+{
+}
+#endif
+
+/*
+static void swab16_buf(u16 *dst, const u16 *src, size_t len)
+{
+	int i;
+
+	for (i = 0; i < (len / 2); i++)
+		*dst++ = swab16(*src++);
+}
+*/
+
+/*
+int lcdreg_spi_transfer_in_chunks(struct spi_device *spi, struct spi_transfer *header, struct spi_transfer *transfer, size_t max_chunk, bool swap)
+
+size_t transform(void *dst, void *src, size_t len)
+
+
+int lcdreg2_spi_transfer(struct spi_device *spi, bool slow, const void *buf, size_t len, size_t bpw, bool swap, size_t max_chunk, const void *header, size_t header_len)
+*/
+
+int lcdreg2_spi_transfer(struct spi_device *spi, u32 speed_hz, u8 bits_per_word, const void *buf, size_t len, bool swap, size_t max_chunk, const void *header, size_t header_len)
+{
+	struct spi_transfer hdr_tr = {
+		.bits_per_word = 8,
+		.speed_hz = speed_hz,
+		.tx_buf = header,
+		.len = header_len,
+	};
+	struct spi_transfer tr = {
+		.bits_per_word = bits_per_word,
+		.speed_hz = speed_hz,
+	};
+	struct spi_message m;
+	size_t chunk;
+	int ret;
+
+//	max_chunk = max_chunk > PAGE_SIZE ? max_chunk & PAGE_MASK : rounddown_pow_of_two(max_chunk);
+	if (max_chunk < 4)
+		max_chunk = 4;
+
+#ifdef VERBOSE_DEBUG
+	DRM_DEBUG("dev=%s, max_chunk=%zu, transfers:\n", dev_name(&spi->dev), max_chunk);
+#endif
+	spi_message_init(&m);
+	if (header && header_len)
+		spi_message_add_tail(&hdr_tr, &m);
+	spi_message_add_tail(&tr, &m);
+
+//	spi_message_init_with_transfers(&m, &tr, 1);
+
+	while (len) {
+		chunk = min(len, max_chunk);
+
+		if (swap)
+			tr.bits_per_word = 8;
+
+		tr.tx_buf = buf;
+		tr.len = chunk;
+		buf += chunk;
+		len -= chunk;
+
+		mipi_dbi_vdbg_spi_message(spi, &m);
+		ret = spi_sync(spi, &m);
+		if (ret)
+			return ret;
+	};
+
+	return 0;
+}
+
+
+/*
+for_each_buf_chunk(buf, len, max_chunk)
+
+
+
+
+
+
+	while (len) {
+		struct spi_message m;
+
+		spi_message_init(&m);
+		chunk = min(len, max_chunk);
+
+		tr.tx_buf = buf;
+		tr.len = chunk;
+		buf += chunk;
+		len -= chunk;
+		spi_message_add_tail(&tr, &m);
+
+		lcdreg_vdbg_spi_message(&spi->dev, &m, swap);
+//		ret = spi_sync(spi, &m);
+		ret = 0;
+		if (ret)
+			return ret;
+	};
+*/
+
+
+static void lcdreg_debug(const void *reg, size_t reg_bytes, const void *buf, size_t len, size_t val_bytes)
+{
+	unsigned int regnr;
+
+	if (!(drm_debug & DRM_UT_CORE))
+		return;
+
+	regnr = reg_bytes == 1 ? *(u8 *) reg : *(u16 *) reg;
+
+	if (buf && len) {
+		char linebuf[3 * 32];
+
+		mipi_dbi_hexdump(linebuf, ARRAY_SIZE(linebuf), buf, len, val_bytes * 8, 16);
+		DRM_DEBUG("reg=0x%0*x, data(%zu)= %s%s\n",
+			  reg_bytes == 1 ? 2 : 4, regnr, len, linebuf,
+			  len > 32 ? " ..." : "");
+	} else {
+		DRM_DEBUG("reg=0x%0*x\n", reg_bytes == 1 ? 2 : 4, regnr);
+	}
+}
+
+
+static size_t mipi_dbi_spi_clamp_size(struct spi_device *spi, size_t size)
+{
+	size_t max_spi, clamped;
+
+	max_spi = min(spi_max_transfer_size(spi), spi->master->max_dma_len);
+	if (!size)
+		size = max_spi;
+	clamped = clamp_val(size, 4, max_spi);
+	clamped &= ~0x3;
+
+	return clamped;
+}
+
+
+static int mipi_dbi_spi_transfer(struct lcdreg2 *lcdreg, u8 bits_per_word, int dc, const void *buf, size_t len, size_t max_chunk)
+{
+	struct spi_device *spi = lcdreg->context;
+	struct spi_transfer tr = {
+		.bits_per_word = bits_per_word,
+//		.speed_hz = spi->max_speed_hz,
+	};
+	struct spi_message m;
+	u16 *swap_buf = NULL;
+	bool swap = false;
+	size_t chunk;
+	int ret = 0;
+
+#if defined(__LITTLE_ENDIAN)
+	if (tr.bits_per_word == 16) {
+		swap = true;
+		tr.bits_per_word = 8;
+	}
+#endif
+	max_chunk = mipi_dbi_spi_clamp_size(spi, max_chunk);
+
+#ifdef VERBOSE_DEBUG
+	DRM_DEBUG("dev=%s, dc=%d, max_chunk=%zu, transfers:\n",
+		  dev_name(&spi->dev), dc, max_chunk);
+#endif
+	gpiod_set_value_cansleep(lcdreg->dc, dc);
+//	ret = lcdreg2_spi_transfer(spi, spi->max_speed_hz, bits_per_word, buf, len, swap && bits_per_word > 8, max_chunk, NULL, 0);
+
+	spi_message_init_with_transfers(&m, &tr, 1);
+
+	while (len) {
+		chunk = min(len, max_chunk);
+
+		tr.tx_buf = buf;
+		tr.len = chunk;
+
+		if (swap) {
+			const u16 *buf16 = buf;
+			unsigned int i;
+
+			if (!swap_buf)
+				swap_buf = kmalloc(chunk, GFP_KERNEL);
+			if (!swap_buf)
+				return -ENOMEM;
+
+			for (i = 0; i < chunk / 2; i++)
+				swap_buf[i] = swab16(buf16[i]);
+
+			tr.tx_buf = swap_buf;
+		}
+
+		buf += chunk;
+		len -= chunk;
+
+		mipi_dbi_vdbg_spi_message(spi, &m);
+		ret = spi_sync(spi, &m);
+		if (ret)
+			goto err_free;
+	};
+
+err_free:
+	kfree(swap_buf);
+
+	return ret;
+}
+
+
+static int mipi_dbi_spi_gather_write(void *context, const void *reg, size_t reg_len, const void *val, size_t val_len)
+{
+	struct lcdreg2 *lcdreg = context;
+	size_t val_bytes = regmap_get_val_bytes(lcdreg->map);
+	unsigned int regnr;
+	int ret;
+
+	if (reg_len == 1)
+		regnr = *(u8 *) reg;
+	else if (reg_len == 2)
+		regnr = *(u16 *) reg;
+	else
+		return -EINVAL;
+
+	if (regnr == lcdreg->ram_reg)
+		val_bytes = 2;
+
+	lcdreg_debug(reg, reg_len, val, val_len, val_bytes);
+
+	ret = mipi_dbi_spi_transfer(lcdreg, reg_len * 8, 0, reg, reg_len, 4096);
+	if (ret)
+		return ret;
+
+	if (val && val_len)
+		ret = mipi_dbi_spi_transfer(lcdreg, val_bytes * 8, 1, val, val_len, 4096);
+
+	return ret;
+}
+
+static int mipi_dbi_spi_write(void *context, const void *data, size_t count)
+{
+	struct lcdreg2 *lcdreg = context;
+	const void *val = data + lcdreg->reg_bytes;
+
+	return mipi_dbi_spi_gather_write(context, data, lcdreg->reg_bytes,
+					 val, count - lcdreg->reg_bytes);
+}
+
+static int mipi_dbi_spi_read(void *context, const void *reg, size_t reg_size, void *val, size_t val_size)
+{
+	return -ENOTSUPP;
+}
+
+/* MIPI DBI Type C Option 3 */
+static const struct regmap_bus mipi_dbi_regmap_bus = {
+	.write = mipi_dbi_spi_write,
+	.gather_write = mipi_dbi_spi_gather_write,
+	.read = mipi_dbi_spi_read,
+	.reg_format_endian_default = REGMAP_ENDIAN_DEFAULT,
+	.val_format_endian_default = REGMAP_ENDIAN_DEFAULT,
+};
+
+
+
+
+
+
+/*
+ * MIPI DBI Type C Option 1 on SPI controller without 9 bits per word support.
+ * Use blocks of 9 bytes to send 8x 9-bit words with a 8-bit SPI transfer.
+ * Pad partial blocks with MIPI_DCS_NOP (zero).
+ */
+
+#define SHIFT_U9_INTO_U64(_dst, _src, _pos) \
+{ \
+	(_dst) |= 1ULL << (63 - ((_pos) * 9)); \
+	(_dst) |= (u64)(_src) << (63 - 8 - ((_pos) * 9)); \
+}
+
+static int mipi_dbi_spi3e_transfer(struct lcdreg2 *lcdreg, u8 bits_per_word, int dc, const void *buf, size_t len, size_t max_chunk)
+{
+	struct spi_device *spi = lcdreg->context;
+	struct spi_transfer tr = {
+		.bits_per_word = 8,
+	};
+	struct spi_message m;
+	size_t max_src_chunk, chunk;
+	int i, ret = 0;
+	u8 *dst;
+	void *buf_dc;
+	const u8 *src = buf;
+
+	max_chunk = mipi_dbi_spi_clamp_size(spi, max_chunk);
+	if (max_chunk < 9)
+		return -EINVAL;
+
+#ifdef VERBOSE_DEBUG
+	DRM_DEBUG("dev=%s, dc=%d, max_chunk=%zu, transfers:\n",
+		  dev_name(&spi->dev), dc, max_chunk);
+#endif
+	spi_message_init_with_transfers(&m, &tr, 1);
+
+	if (!dc) {
+		/* pad at beginning of block */
+		if (WARN_ON_ONCE(len != 1 || bits_per_word != 8))
+			return -EINVAL;
+
+		dst = kzalloc(9, GFP_KERNEL);
+		if (!dst)
+			return -ENOMEM;
+
+		dst[8] = *src;
+
+		tr.tx_buf = dst;
+		tr.len = 9;
+
+		mipi_dbi_vdbg_spi_message(spi, &m);
+		ret = spi_sync(spi, &m);
+		kfree(dst);
+
+		return ret;
+	}
+
+	/* 8-byte aligned max_src_chunk that fits max_chunk */
+	max_src_chunk = max_chunk / 9 * 8;
+	max_src_chunk = min(max_src_chunk, len);
+	max_src_chunk = max_t(size_t, 8, max_src_chunk & ~0x7);
+
+	max_chunk = max_src_chunk + (max_src_chunk / 8);
+	buf_dc = kmalloc(max_chunk, GFP_KERNEL);
+	if (!buf_dc)
+		return -ENOMEM;
+
+	tr.tx_buf = buf_dc;
+
+	while (len) {
+		size_t added = 0;
+
+		chunk = min(len, max_src_chunk);
+		len -= chunk;
+		dst = buf_dc;
+
+		if (chunk < 8) {
+			/* pad at end of block */
+			u64 tmp = 0;
+			int j;
+
+			if (bits_per_word == 8) {
+				for (j = 0; j < chunk; j++)
+					SHIFT_U9_INTO_U64(tmp, *src++, j);
+			} else {
+				for (j = 0; j < (chunk / 2); j += 2) {
+					SHIFT_U9_INTO_U64(tmp, *src++, j + 1);
+					SHIFT_U9_INTO_U64(tmp, *src++, j);
+				}
+			}
+
+			*(u64 *)dst = cpu_to_be64(tmp);
+			dst[8] = 0x00;
+			chunk = 8;
+			added = 1;
+		} else {
+			for (i = 0; i < chunk; i += 8) {
+				u64 tmp = 0;
+
+				if (bits_per_word == 8) {
+					SHIFT_U9_INTO_U64(tmp, *src++, 0);
+					SHIFT_U9_INTO_U64(tmp, *src++, 1);
+					SHIFT_U9_INTO_U64(tmp, *src++, 2);
+					SHIFT_U9_INTO_U64(tmp, *src++, 3);
+					SHIFT_U9_INTO_U64(tmp, *src++, 4);
+					SHIFT_U9_INTO_U64(tmp, *src++, 5);
+					SHIFT_U9_INTO_U64(tmp, *src++, 6);
+
+					tmp |= 0x1;
+					/* TODO: unaligned access here? */
+					*(u64 *)dst = cpu_to_be64(tmp);
+					dst += 8;
+					*dst++ = *src++;
+				} else {
+					u8 src7;
+
+					SHIFT_U9_INTO_U64(tmp, *src++, 1);
+					SHIFT_U9_INTO_U64(tmp, *src++, 0);
+					SHIFT_U9_INTO_U64(tmp, *src++, 3);
+					SHIFT_U9_INTO_U64(tmp, *src++, 2);
+					SHIFT_U9_INTO_U64(tmp, *src++, 5);
+					SHIFT_U9_INTO_U64(tmp, *src++, 4);
+					src7 = *src++;
+					SHIFT_U9_INTO_U64(tmp, *src++, 6);
+
+					tmp |= 0x1;
+					/* TODO: unaligned access here? */
+					*(u64 *)dst = cpu_to_be64(tmp);
+					dst += 8;
+					*dst++ = src7;
+				}
+				added++;
+			}
+		}
+
+		tr.len = chunk + added;
+
+		mipi_dbi_vdbg_spi_message(spi, &m);
+		ret = spi_sync(spi, &m);
+		if (ret)
+			goto err_free;
+	};
+
+err_free:
+	kfree(buf_dc);
+
+	return ret;
+}
+
+#undef SHIFT_U9_INTO_U64
+
+static int mipi_dbi_spi3_transfer(struct lcdreg2 *lcdreg, u8 bits_per_word, int dc, const void *buf, size_t len, size_t max_chunk)
+{
+	struct spi_device *spi = lcdreg->context;
+	struct spi_transfer tr = {
+		.bits_per_word = 9,
+	};
+	const u16 *src16 = buf;
+	const u8 *src8 = buf;
+	struct spi_message m;
+	size_t max_src_chunk;
+	int ret = 0;
+	u16 *dst16;
+
+	/* TODO: check for 9-bit support */
+	if (1)
+		return mipi_dbi_spi3e_transfer(lcdreg, bits_per_word, dc, buf, len, max_chunk);
+
+	if (WARN_ON_ONCE(bits_per_word == 16 && len % 2))
+		return -EINVAL;
+
+	max_chunk = mipi_dbi_spi_clamp_size(spi, max_chunk);
+
+#ifdef VERBOSE_DEBUG
+	DRM_DEBUG("dev=%s, dc=%d, max_chunk=%zu, transfers:\n",
+		  dev_name(&spi->dev), dc, max_chunk);
+#endif
+	max_src_chunk = min(max_chunk / 2, len);
+
+	dst16 = kmalloc(max_src_chunk * 2, GFP_KERNEL);
+	if (!dst16)
+		return -ENOMEM;
+
+	spi_message_init_with_transfers(&m, &tr, 1);
+	tr.tx_buf = dst16;
+
+	while (len) {
+		size_t chunk = min(len, max_src_chunk);
+		unsigned int i;
+
+		if (bits_per_word == 8) {
+			for (i = 0; i < chunk; i++) {
+				dst16[i] = *src8++;
+				if (dc)
+					dst16[i] |= 0x0100;
+			}
+		} else {
+			for (i = 0; i < (chunk * 2); i += 2) {
+				dst16[i]     = *src16 >> 8;
+				dst16[i + 1] = *src16++ & 0xFF;
+				if (dc) {
+					dst16[i]     |= 0x0100;
+					dst16[i + 1] |= 0x0100;
+				}
+			}
+		}
+		tr.len = chunk;
+		len -= chunk;
+
+		mipi_dbi_vdbg_spi_message(spi, &m);
+		ret = spi_sync(spi, &m);
+		if (ret)
+			goto err_free;
+	};
+
+err_free:
+	kfree(dst16);
+
+	return ret;
+}
+
+static int mipi_dbi_spi3_gather_write(void *context, const void *reg, size_t reg_len, const void *val, size_t val_len)
+{
+	struct lcdreg2 *lcdreg = context;
+	size_t val_bytes = regmap_get_val_bytes(lcdreg->map);
+	unsigned int regnr;
+	int ret;
+
+	if (reg_len == 1)
+		regnr = *(u8 *) reg;
+	else if (reg_len == 2)
+		regnr = *(u16 *) reg;
+	else
+		return -EINVAL;
+
+	if (regnr == lcdreg->ram_reg)
+		val_bytes = 2;
+
+	lcdreg_debug(reg, reg_len, val, val_len, val_bytes);
+
+	ret = mipi_dbi_spi3_transfer(lcdreg, reg_len * 8, 0, reg, reg_len, 4096);
+	if (ret)
+		return ret;
+
+	if (val && val_len)
+		ret = mipi_dbi_spi3_transfer(lcdreg, val_bytes * 8, 1, val, val_len, 4096);
+
+	return ret;
+}
+
+static int mipi_dbi_spi3_write(void *context, const void *data, size_t count)
+{
+	struct lcdreg2 *lcdreg = context;
+	const void *val = data + lcdreg->reg_bytes;
+
+	return mipi_dbi_spi3_gather_write(context, data, lcdreg->reg_bytes,
+					 val, count - lcdreg->reg_bytes);
+}
+
+static int mipi_dbi_spi3_read(void *context, const void *reg, size_t reg_size, void *val, size_t val_size)
+{
+	return -ENOTSUPP;
+}
+
+/* MIPI DBI Type C Option 1 */
+static const struct regmap_bus mipi_dbi_regmap_bus3 = {
+	.write = mipi_dbi_spi3_write,
+	.gather_write = mipi_dbi_spi3_gather_write,
+	.read = mipi_dbi_spi3_read,
+	.reg_format_endian_default = REGMAP_ENDIAN_DEFAULT,
+	.val_format_endian_default = REGMAP_ENDIAN_DEFAULT,
+};
+
+
+
+int mipi_dbi_regmap_init(struct device *dev, struct mipi_dbi *mipi,
+			 void *context, struct gpio_desc *dc)
+{
+	struct regmap_config config = {
+		.reg_bits = 8,
+		.val_bits = 8,
+		.cache_type = REGCACHE_NONE,
+	};
+	struct lcdreg2 *lcdreg;
+	struct regmap *map;
+
+	lcdreg = devm_kzalloc(dev, sizeof(*lcdreg), GFP_KERNEL);
+	if (!lcdreg)
+		return -ENOMEM;
+
+	lcdreg->ram_reg = MIPI_DCS_WRITE_MEMORY_START;
+	lcdreg->reg_bytes = DIV_ROUND_UP(config.reg_bits, 8); // ALWAYS 8 now
+	lcdreg->context = context;
+
+	if (dc)
+		map = devm_regmap_init(dev, &mipi_dbi_regmap_bus, lcdreg,
+				       &config);
+	else
+		map = devm_regmap_init(dev, &mipi_dbi_regmap_bus3, lcdreg,
+				       &config);
+	if (IS_ERR(map))
+		return PTR_ERR(map);
+
+	lcdreg->map = map;
+	mipi->reg = map;
+	mipi->lcdreg2 = lcdreg;
+	mipi->lcdreg2->dc = dc;
+
+	return 0;
+}
+
+int mipi_dbi_spi_init(struct mipi_dbi *mipi, struct spi_device *spi,
+		      struct gpio_desc *dc, struct gpio_desc *reset,
+		      bool writeonly)
+{
+	mipi->reset = reset;
+
+	return mipi_dbi_regmap_init(&spi->dev, mipi, spi, dc);
+}
+EXPORT_SYMBOL(mipi_dbi_spi_init);
+
+
+
+
 
 /**
  * DOC: overview
@@ -56,7 +760,7 @@ int mipi_dbi_dirty(struct drm_framebuffer *fb,
 {
 	struct tinydrm_device *tdev = fb->dev->dev_private;
 	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
-	struct lcdreg *reg = mipi->reg;
+	struct regmap *reg = mipi->reg;
 	struct drm_clip_rect clip;
 	int ret;
 
@@ -71,14 +775,14 @@ int mipi_dbi_dirty(struct drm_framebuffer *fb,
 
 	tinydrm_debugfs_dirty_begin(tdev, fb, &clip);
 
-	lcdreg_writereg(reg, MIPI_DCS_SET_COLUMN_ADDRESS,
-			(clip.x1 >> 8) & 0xFF, clip.x1 & 0xFF,
-			(clip.x2 >> 8) & 0xFF, (clip.x2 - 1) & 0xFF);
-	lcdreg_writereg(reg, MIPI_DCS_SET_PAGE_ADDRESS,
-			(clip.y1 >> 8) & 0xFF, clip.y1 & 0xFF,
-			(clip.y2 >> 8) & 0xFF, (clip.y2 - 1) & 0xFF);
+	mipi_dbi_write(reg, MIPI_DCS_SET_COLUMN_ADDRESS,
+		       (clip.x1 >> 8) & 0xFF, clip.x1 & 0xFF,
+		       (clip.x2 >> 8) & 0xFF, (clip.x2 - 1) & 0xFF);
+	mipi_dbi_write(reg, MIPI_DCS_SET_PAGE_ADDRESS,
+		       (clip.y1 >> 8) & 0xFF, clip.y1 & 0xFF,
+		       (clip.y2 >> 8) & 0xFF, (clip.y2 - 1) & 0xFF);
 
-	ret = tinydrm_lcdreg_flush_rgb565(reg, MIPI_DCS_WRITE_MEMORY_START,
+	ret = tinydrm_regmap_flush_rgb565(reg, MIPI_DCS_WRITE_MEMORY_START,
 					  fb, cma_obj->vaddr, &clip);
 	if (ret)
 		dev_err_once(tdev->base->dev, "Failed to update display %d\n",
@@ -111,23 +815,20 @@ static void mipi_dbi_blank(struct mipi_dbi *mipi)
 	int height = drm->mode_config.min_height;
 	int width = drm->mode_config.min_width;
 	unsigned num_pixels = width * height;
-	struct lcdreg *reg = mipi->reg;
-	struct lcdreg_transfer tr = {
-		.index = 1,
-		.width = 16,
-		.count = num_pixels
-	};
+	struct regmap *reg = mipi->reg;
+	u16 *buf;
 
-	tr.buf = kzalloc(num_pixels * 2, GFP_KERNEL);
-	if (!tr.buf)
+	buf = kzalloc(num_pixels * 2, GFP_KERNEL);
+	if (!buf)
 		return;
 
-	lcdreg_writereg(reg, MIPI_DCS_SET_COLUMN_ADDRESS, 0, 0,
-			(width >> 8) & 0xFF, (width - 1) & 0xFF);
-	lcdreg_writereg(reg, MIPI_DCS_SET_PAGE_ADDRESS, 0, 0,
-			(height >> 8) & 0xFF, (height - 1) & 0xFF);
-	lcdreg_write(reg, MIPI_DCS_WRITE_MEMORY_START, &tr);
-	kfree(tr.buf);
+	mipi_dbi_write(reg, MIPI_DCS_SET_COLUMN_ADDRESS, 0, 0,
+		       (width >> 8) & 0xFF, (width - 1) & 0xFF);
+	mipi_dbi_write(reg, MIPI_DCS_SET_PAGE_ADDRESS, 0, 0,
+		       (height >> 8) & 0xFF, (height - 1) & 0xFF);
+	regmap_raw_write(reg, MIPI_DCS_WRITE_MEMORY_START, buf,
+			 num_pixels * 2);
+	kfree(buf);
 }
 
 /**
@@ -162,11 +863,11 @@ EXPORT_SYMBOL(mipi_dbi_disable_backlight);
 void mipi_dbi_unprepare(struct tinydrm_device *tdev)
 {
 	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
-	struct lcdreg *reg = mipi->reg;
+	struct regmap *reg = mipi->reg;
 
 	if (mipi->backlight) {
-		lcdreg_writereg(reg, MIPI_DCS_SET_DISPLAY_OFF);
-		lcdreg_writereg(reg, MIPI_DCS_ENTER_SLEEP_MODE);
+		mipi_dbi_write(reg, MIPI_DCS_SET_DISPLAY_OFF);
+		mipi_dbi_write(reg, MIPI_DCS_ENTER_SLEEP_MODE);
 	} else if (!mipi->regulator) {
 		mipi->prepared_once = true;
 	}
@@ -213,7 +914,7 @@ int tinydrm_rotate_mode(struct drm_display_mode *mode, unsigned int rotation)
  * detach (devres).
  */
 int mipi_dbi_init(struct device *dev, struct mipi_dbi *mipi,
-		  struct lcdreg *reg, struct drm_driver *driver,
+		  struct drm_driver *driver,
 		  const struct drm_display_mode *mode, unsigned int rotation)
 {
 	struct tinydrm_device *tdev = &mipi->tinydrm;
@@ -236,9 +937,6 @@ int mipi_dbi_init(struct device *dev, struct mipi_dbi *mipi,
 	ret = devm_tinydrm_init(dev, tdev, driver);
 	if (ret)
 		return ret;
-
-	reg->def_width = 8;
-	mipi->reg = reg;
 
 	drm = tdev->base;
 	drm->mode_config.min_width = mode_copy->hdisplay;
@@ -264,6 +962,18 @@ int mipi_dbi_init(struct device *dev, struct mipi_dbi *mipi,
 }
 EXPORT_SYMBOL(mipi_dbi_init);
 
+void mipi_dbi_hw_reset(struct mipi_dbi *mipi)
+{
+	if (!mipi->reset)
+		return;
+
+	gpiod_set_value_cansleep(mipi->reset, 0);
+	msleep(20);
+	gpiod_set_value_cansleep(mipi->reset, 1);
+	msleep(120);
+}
+EXPORT_SYMBOL(mipi_dbi_hw_reset);
+
 /**
  * mipi_dbi_display_is_on - check if display is on
  * @reg: LCD register
@@ -277,8 +987,9 @@ EXPORT_SYMBOL(mipi_dbi_init);
  * true if the display can be verified to be on
  * false otherwise.
  */
-bool mipi_dbi_display_is_on(struct lcdreg *reg)
+bool mipi_dbi_display_is_on(struct regmap *reg)
 {
+#if 0
 	u32 val;
 
 	if (!lcdreg_is_readable(reg))
@@ -296,6 +1007,8 @@ bool mipi_dbi_display_is_on(struct lcdreg *reg)
 	DRM_DEBUG_DRIVER("Display is ON\n");
 
 	return true;
+#endif
+	return false;
 }
 EXPORT_SYMBOL(mipi_dbi_display_is_on);
 
@@ -305,8 +1018,9 @@ EXPORT_SYMBOL(mipi_dbi_display_is_on);
  *
  * Dump some MIPI DCS registers using DRM_DEBUG_DRIVER().
  */
-void mipi_dbi_debug_dump_regs(struct lcdreg *reg)
+void mipi_dbi_debug_dump_regs(struct regmap *reg)
 {
+#if 0
 	u32 val[4];
 	int ret;
 
@@ -350,6 +1064,7 @@ void mipi_dbi_debug_dump_regs(struct lcdreg *reg)
 	lcdreg_readreg_buf32(reg, MIPI_DCS_GET_DIAGNOSTIC_RESULT, val, 1);
 	DRM_DEBUG_DRIVER("Diagnostic result (%02x): %02x\n",
 			 MIPI_DCS_GET_DIAGNOSTIC_RESULT, val[0]);
+#endif
 }
 EXPORT_SYMBOL(mipi_dbi_debug_dump_regs);
 
