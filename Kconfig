@@ -11,11 +11,11 @@ menuconfig DRM_TINYDRM
 
 config TINYDRM_MIPI_DBI
 	tristate
+	select REGMAP
 
 config TINYDRM_MI0283QT
 	tristate "DRM support for MI0283QT"
 	depends on DRM_TINYDRM && SPI
-	select LCDREG_SPI
 	select TINYDRM_MIPI_DBI
 	help
 	  DRM driver for the following Multi-Inno MI0283QT display panels:
@@ -24,11 +24,8 @@ config TINYDRM_MI0283QT
 config TINYDRM_ADAFRUIT_TFT
 	tristate "DRM driver for Adafruit SPI TFT displays"
 	depends on DRM_TINYDRM && SPI
-	select LCDREG_SPI
 	select TINYDRM_MIPI_DBI
 	help
 	  DRM driver for the following Adafruit displays:
 	    2.2" Color TFT LCD display - HX8340BN, 9-bit mode (#797)
 	    1.8" Color TFT LCD display - ST7735R (#358)
-
-source "drivers/gpu/drm/tinydrm/lcdreg/Kconfig"
