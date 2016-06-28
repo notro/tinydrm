@@ -10,6 +10,7 @@
 #include <drm/drmP.h>
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_crtc_helper.h>
+#include <drm/drm_fb_helper.h>
 #include <drm/drm_modes.h>
 #include <drm/drm_simple_kms_helper.h>
 #include <drm/tinydrm/tinydrm.h>
@@ -178,6 +179,7 @@ static void tinydrm_display_pipe_disable(struct drm_simple_display_pipe *pipe)
 static void tinydrm_display_pipe_update(struct drm_simple_display_pipe *pipe,
 					struct drm_plane_state *old_state)
 {
+	struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
 	struct drm_framebuffer *fb = pipe->plane.state->fb;
 
 	if (!fb)
@@ -193,6 +195,9 @@ static void tinydrm_display_pipe_update(struct drm_simple_display_pipe *pipe,
 		pipe->plane.fb = fb;
 		schedule_work(&tdev->dirty_work);
 	}
+
+	if (tdev->fbdev_helper && fb == tdev->fbdev_helper->fb)
+		tdev->fbdev_used = true;
 }
 
 static const struct drm_simple_display_pipe_funcs tinydrm_display_pipe_funcs = {

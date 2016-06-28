@@ -41,7 +41,10 @@ void tinydrm_lastclose(struct drm_device *drm)
 	struct tinydrm_device *tdev = drm->dev_private;
 
 	DRM_DEBUG_KMS("\n");
-	drm_fbdev_cma_restore_mode(tdev->fbdev_cma);
+	if (tdev->fbdev_used)
+		drm_fbdev_cma_restore_mode(tdev->fbdev_cma);
+	else
+		drm_crtc_force_disable_all(drm);
 }
 EXPORT_SYMBOL(tinydrm_lastclose);
 
@@ -220,20 +223,11 @@ static int tinydrm_register(struct tinydrm_device *tdev,
 	if (ret)
 		return ret;
 
-	ret = drm_connector_register_all(drm);
-	if (ret)
-		goto err_unreg;
-
 	ret = tinydrm_fbdev_init(tdev);
 	if (ret)
 		DRM_ERROR("Failed to initialize fbdev: %d\n", ret);
 
 	return 0;
-
-err_unreg:
-	drm_dev_unregister(drm);
-
-	return ret;
 }
 
 static void tinydrm_unregister(struct tinydrm_device *tdev)
@@ -242,9 +236,8 @@ static void tinydrm_unregister(struct tinydrm_device *tdev)
 
 	DRM_DEBUG_KMS("\n");
 
-	tinydrm_shutdown(tdev);
+	drm_crtc_force_disable_all(drm);
 	tinydrm_fbdev_fini(tdev);
-	drm_connector_unregister_all(drm);
 	drm_dev_unregister(drm);
 }
 
@@ -299,13 +292,9 @@ EXPORT_SYMBOL(devm_tinydrm_register);
  */
 void tinydrm_shutdown(struct tinydrm_device *tdev)
 {
-/*
- * TODO
- * Use drm_crtc_force_disable_all() if patch is accepted:
- *     drm: Add helpers to turn off CRTCs
- */
-	if (tdev->pipe.funcs && tdev->pipe.funcs->disable)
-		tdev->pipe.funcs->disable(&tdev->pipe);
+	struct drm_device *drm = tdev->base;
+
+	drm_crtc_force_disable_all(drm);
 }
 EXPORT_SYMBOL(tinydrm_shutdown);
 
@@ -315,7 +304,13 @@ static void tinydrm_fbdev_set_suspend(struct tinydrm_device *tdev, int state)
 		return;
 
 	console_lock();
-	/* TODO: drm_fbdev_cma_set_suspend(tdev->fbdev_cma, state); */
+	/*
+	 * TODO
+	 * Use: drm_fbdev_cma_set_suspend(tdev->fbdev_cma, state);
+	 * Or maybe do a
+	 * drm_fbdev_cma_set_suspend_with_lock()
+	 * that doesn't take the lock if it's disabled.
+	 */
 	drm_fb_helper_set_suspend(tdev->fbdev_helper, state);
 	console_unlock();
 }

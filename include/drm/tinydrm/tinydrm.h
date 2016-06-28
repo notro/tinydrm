@@ -72,6 +72,7 @@ struct tinydrm_funcs {
  * @enabled: device enabled state
  * @fbdev_cma: fbdev CMA structure
  * @fbdev_helper: fbdev helper
+ * @fbdev_used: fbdev has actually been used
  * @suspend_state: atomic state when suspended
  * @debugfs_dirty: debugfs dirty file control structure
  * @funcs: tinydrm device operations (optional)
@@ -85,6 +86,7 @@ struct tinydrm_device {
 	bool enabled;
 	struct drm_fbdev_cma *fbdev_cma;
 	struct drm_fb_helper *fbdev_helper;
+	bool fbdev_used;
 	struct drm_atomic_state *suspend_state;
 	struct tinydrm_debugfs_dirty *debugfs_dirty;
 	const struct tinydrm_funcs *funcs;
