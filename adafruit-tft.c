@@ -39,11 +39,12 @@ enum adafruit_tft_display_ids {
 static int adafruit_tft_797_prepare(struct tinydrm_device *tdev)
 {
 	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
+	struct device *dev = tdev->drm.dev;
 	struct regmap *reg = mipi->reg;
 	u8 addr_mode;
 	int ret;
 
-	dev_dbg(tdev->base->dev, "%s\n", __func__);
+	dev_dbg(dev, "%s\n", __func__);
 
 	if (mipi->prepared_once)
 		return 0;
@@ -51,8 +52,7 @@ static int adafruit_tft_797_prepare(struct tinydrm_device *tdev)
 	if (mipi->regulator) {
 		ret = regulator_enable(mipi->regulator);
 		if (ret) {
-			dev_err(tdev->base->dev,
-				"Failed to enable regulator %d\n", ret);
+			dev_err(dev, "Failed to enable regulator %d\n", ret);
 			return ret;
 		}
 	}
@@ -60,7 +60,7 @@ static int adafruit_tft_797_prepare(struct tinydrm_device *tdev)
 	mipi_dbi_hw_reset(mipi);
 	ret = mipi_dbi_write(reg, HX8340_SETEXTCMD, 0xFF, 0x83, 0x40);
 	if (ret) {
-		dev_err(tdev->base->dev, "Error writing command %d\n", ret);
+		dev_err(dev, "Error writing command %d\n", ret);
 		return ret;
 	}
 
@@ -116,11 +116,12 @@ static int adafruit_tft_797_prepare(struct tinydrm_device *tdev)
 static int adafruit_tft_358_prepare(struct tinydrm_device *tdev)
 {
 	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
+	struct device *dev = tdev->drm.dev;
 	struct regmap *reg = mipi->reg;
 	u8 addr_mode;
 	int ret;
 
-	dev_dbg(tdev->base->dev, "%s\n", __func__);
+	dev_dbg(dev, "%s\n", __func__);
 
 	if (mipi->prepared_once)
 		return 0;
@@ -128,8 +129,7 @@ static int adafruit_tft_358_prepare(struct tinydrm_device *tdev)
 	if (mipi->regulator) {
 		ret = regulator_enable(mipi->regulator);
 		if (ret) {
-			dev_err(tdev->base->dev,
-				"Failed to enable regulator %d\n", ret);
+			dev_err(dev, "Failed to enable regulator %d\n", ret);
 			return ret;
 		}
 	}
@@ -137,7 +137,7 @@ static int adafruit_tft_358_prepare(struct tinydrm_device *tdev)
 	mipi_dbi_hw_reset(mipi);
 	ret = mipi_dbi_write(reg, MIPI_DCS_SOFT_RESET);
 	if (ret) {
-		dev_err(tdev->base->dev, "Error writing command %d\n", ret);
+		dev_err(dev, "Error writing command %d\n", ret);
 		return ret;
 	}
 
@@ -323,8 +323,8 @@ static int adafruit_tft_probe(struct spi_device *spi)
 	spi_set_drvdata(spi, tdev);
 
 	DRM_DEBUG_DRIVER("Initialized %s:%s on minor %d\n",
-			 tdev->base->driver->name, dev_name(dev),
-			 tdev->base->primary->index);
+			 tdev->drm.driver->name, dev_name(dev),
+			 tdev->drm.primary->index);
 
 	return 0;
 }

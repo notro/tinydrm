@@ -37,7 +37,7 @@ static int tinydrm_fb_dirty(struct drm_framebuffer *fb,
 			    unsigned num_clips)
 {
 	struct drm_gem_cma_object *cma_obj = drm_fb_cma_get_gem_obj(fb, 0);
-	struct tinydrm_device *tdev = fb->dev->dev_private;
+	struct tinydrm_device *tdev = drm_to_tinydrm(fb->dev);
 	int ret = 0;
 
 	if (!tdev->funcs || !tdev->funcs->dirty)
@@ -122,7 +122,7 @@ EXPORT_SYMBOL(tinydrm_fb_create);
 static int tinydrm_fbdev_create(struct drm_fb_helper *helper,
 				struct drm_fb_helper_surface_size *sizes)
 {
-	struct tinydrm_device *tdev = helper->dev->dev_private;
+	struct tinydrm_device *tdev = drm_to_tinydrm(helper->dev);
 	int ret;
 
 	ret = drm_fbdev_cma_create_with_funcs(helper, sizes,
@@ -161,7 +161,7 @@ static const struct drm_fb_helper_funcs tinydrm_fb_helper_funcs = {
  */
 int tinydrm_fbdev_init(struct tinydrm_device *tdev)
 {
-	struct drm_device *drm = tdev->base;
+	struct drm_device *drm = &tdev->drm;
 	struct drm_fbdev_cma *fbdev;
 	int bpp;
 

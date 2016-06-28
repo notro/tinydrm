@@ -38,7 +38,7 @@
  */
 void tinydrm_lastclose(struct drm_device *drm)
 {
-	struct tinydrm_device *tdev = drm->dev_private;
+	struct tinydrm_device *tdev = drm_to_tinydrm(drm);
 
 	DRM_DEBUG_KMS("\n");
 	if (tdev->fbdev_used)
@@ -141,25 +141,24 @@ static const struct drm_mode_config_funcs tinydrm_mode_config_funcs = {
 static int tinydrm_init(struct device *parent, struct tinydrm_device *tdev,
 			struct drm_driver *driver)
 {
-	struct drm_device *drm;
+	struct drm_device *drm = &tdev->drm;
+	int ret;
 
-	drm = drm_dev_alloc(driver, parent);
-	if (!drm)
-		return -ENOMEM;
+	ret = drm_dev_init(drm, driver, parent);
+	if (ret)
+		return ret;
 
 	drm_mode_config_init(drm);
 	drm->mode_config.funcs = &tinydrm_mode_config_funcs;
 
 	mutex_init(&tdev->dev_lock);
-	tdev->base = drm;
-	drm->dev_private = tdev;
 
 	return 0;
 }
 
 static void tinydrm_fini(struct tinydrm_device *tdev)
 {
-	struct drm_device *drm = tdev->base;
+	struct drm_device *drm = &tdev->drm;
 
 	DRM_DEBUG_KMS("\n");
 
@@ -214,7 +213,7 @@ EXPORT_SYMBOL(devm_tinydrm_init);
 static int tinydrm_register(struct tinydrm_device *tdev,
 			    const struct tinydrm_funcs *funcs)
 {
-	struct drm_device *drm = tdev->base;
+	struct drm_device *drm = &tdev->drm;
 	int ret;
 
 	tdev->funcs = funcs;
@@ -232,7 +231,7 @@ static int tinydrm_register(struct tinydrm_device *tdev,
 
 static void tinydrm_unregister(struct tinydrm_device *tdev)
 {
-	struct drm_device *drm = tdev->base;
+	struct drm_device *drm = &tdev->drm;
 
 	DRM_DEBUG_KMS("\n");
 
@@ -261,6 +260,7 @@ static void devm_tinydrm_register_release(struct device *dev, void *res)
 int devm_tinydrm_register(struct tinydrm_device *tdev,
 			  const struct tinydrm_funcs *funcs)
 {
+	struct device *dev = tdev->drm.dev;
 	struct tinydrm_device **ptr;
 	int ret;
 
@@ -276,7 +276,7 @@ int devm_tinydrm_register(struct tinydrm_device *tdev,
 	}
 
 	*ptr = tdev;
-	devres_add(tdev->base->dev, ptr);
+	devres_add(dev, ptr);
 
 	return 0;
 }
@@ -292,7 +292,7 @@ EXPORT_SYMBOL(devm_tinydrm_register);
  */
 void tinydrm_shutdown(struct tinydrm_device *tdev)
 {
-	struct drm_device *drm = tdev->base;
+	struct drm_device *drm = &tdev->drm;
 
 	drm_crtc_force_disable_all(drm);
 }
@@ -328,7 +328,7 @@ static void tinydrm_fbdev_set_suspend(struct tinydrm_device *tdev, int state)
  */
 int tinydrm_suspend(struct tinydrm_device *tdev)
 {
-	struct drm_device *drm = tdev->base;
+	struct drm_device *drm = &tdev->drm;
 	struct drm_atomic_state *state;
 
 	if (tdev->suspend_state) {
@@ -362,7 +362,7 @@ EXPORT_SYMBOL(tinydrm_suspend);
 int tinydrm_resume(struct tinydrm_device *tdev)
 {
 	struct drm_atomic_state *state = tdev->suspend_state;
-	struct drm_device *drm = tdev->base;
+	struct drm_device *drm = &tdev->drm;
 	int ret;
 
 	if (!state) {

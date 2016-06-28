@@ -63,7 +63,7 @@ struct tinydrm_funcs {
 
 /**
  * struct tinydrm_device - tinydrm device
- * @base: DRM device
+ * @drm: DRM device
  * @pipe: Display pipe structure
  * @dirty_work: framebuffer flusher
  * @dev_lock: serializes &tinydrm_funcs operations and protects
@@ -78,7 +78,7 @@ struct tinydrm_funcs {
  * @funcs: tinydrm device operations (optional)
  */
 struct tinydrm_device {
-	struct drm_device *base;
+	struct drm_device drm;
 	struct drm_simple_display_pipe pipe;
 	struct work_struct dirty_work;
 	struct mutex dev_lock;
@@ -91,6 +91,12 @@ struct tinydrm_device {
 	struct tinydrm_debugfs_dirty *debugfs_dirty;
 	const struct tinydrm_funcs *funcs;
 };
+
+static inline struct tinydrm_device *
+drm_to_tinydrm(struct drm_device *drm)
+{
+	return container_of(drm, struct tinydrm_device, drm);
+}
 
 /*
  * TINYDRM_DRM_DRIVER - default tinydrm driver structure

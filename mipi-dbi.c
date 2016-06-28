@@ -750,7 +750,7 @@ int mipi_dbi_dirty(struct drm_framebuffer *fb,
 		   unsigned flags, unsigned color,
 		   struct drm_clip_rect *clips, unsigned num_clips)
 {
-	struct tinydrm_device *tdev = fb->dev->dev_private;
+	struct tinydrm_device *tdev = drm_to_tinydrm(fb->dev);
 	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
 	struct regmap *reg = mipi->reg;
 	struct drm_clip_rect clip;
@@ -777,7 +777,7 @@ int mipi_dbi_dirty(struct drm_framebuffer *fb,
 	ret = tinydrm_regmap_flush_rgb565(reg, MIPI_DCS_WRITE_MEMORY_START,
 					  fb, cma_obj->vaddr, &clip);
 	if (ret)
-		dev_err_once(tdev->base->dev, "Failed to update display %d\n",
+		dev_err_once(fb->dev->dev, "Failed to update display %d\n",
 			     ret);
 
 	tinydrm_debugfs_dirty_end(tdev, 0, 16);
@@ -803,7 +803,7 @@ EXPORT_SYMBOL(mipi_dbi_enable_backlight);
 
 static void mipi_dbi_blank(struct mipi_dbi *mipi)
 {
-	struct drm_device *drm = mipi->tinydrm.base;
+	struct drm_device *drm = &mipi->tinydrm.drm;
 	int height = drm->mode_config.min_height;
 	int width = drm->mode_config.min_width;
 	unsigned num_pixels = width * height;
@@ -930,7 +930,7 @@ int mipi_dbi_init(struct device *dev, struct mipi_dbi *mipi,
 	if (ret)
 		return ret;
 
-	drm = tdev->base;
+	drm = &tdev->drm;
 	drm->mode_config.min_width = mode_copy->hdisplay;
 	drm->mode_config.max_width = mode_copy->hdisplay;
 	drm->mode_config.min_height = mode_copy->vdisplay;

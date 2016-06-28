@@ -65,7 +65,7 @@ int tinydrm_debugfs_dirty_init(struct tinydrm_device *tdev)
 {
 	struct tinydrm_debugfs_dirty *dirty;
 
-	dirty = devm_kzalloc(tdev->base->dev, sizeof(*dirty), GFP_KERNEL);
+	dirty = devm_kzalloc(tdev->drm.dev, sizeof(*dirty), GFP_KERNEL);
 	if (!dirty)
 		return -ENOMEM;
 
@@ -266,7 +266,7 @@ static int tinydrm_debugfs_dirty_open(struct inode *inode, struct file *file)
 {
 	struct drm_info_node *node = inode->i_private;
 	struct drm_device *drm = node->minor->dev;
-	struct tinydrm_device *tdev = drm->dev_private;
+	struct tinydrm_device *tdev = drm_to_tinydrm(drm);
 
 	return single_open(file, tinydrm_debugfs_dirty_seq_show,
 			   tdev->debugfs_dirty);
@@ -401,7 +401,7 @@ EXPORT_SYMBOL(tinydrm_debugfs_init);
 
 void tinydrm_debugfs_cleanup(struct drm_minor *minor)
 {
-	struct tinydrm_device *tdev = minor->dev->dev_private;
+	struct tinydrm_device *tdev = drm_to_tinydrm(minor->dev);
 
 	drm_debugfs_remove_files(tinydrm_debugfs_list,
 				 ARRAY_SIZE(tinydrm_debugfs_list), minor);

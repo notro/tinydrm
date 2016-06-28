@@ -237,7 +237,7 @@ int tinydrm_display_pipe_init(struct tinydrm_device *tdev,
 			      const struct drm_display_mode *mode,
 			      uint64_t dirty_val)
 {
-	struct drm_device *drm = tdev->base;
+	struct drm_device *drm = &tdev->drm;
 	struct drm_connector *connector;
 	int ret;
 
