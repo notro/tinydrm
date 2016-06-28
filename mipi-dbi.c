@@ -42,38 +42,30 @@ struct gpio_desc *dc;
 
 
 /**
- * mipi_dbi_write_buf32 - Write 32-bit wide buffer to register
+ * mipi_dbi_write_buf - Write command and parameter array
  * @reg: Controller register
- * @regnr: Register number
- * @buf: Buffer to write
- * @count: Number of 32-bit words to write
+ * @cmd: Command
+ * @parameters: Array of parameters
+ * @num: Number of parameters
  */
-int mipi_dbi_write_buf32(struct regmap *reg, unsigned regnr, const u32 *buf32,
-			 size_t count)
+int mipi_dbi_write_buf(struct regmap *reg, unsigned cmd, const u8 *parameters,
+		       size_t num)
 {
-	size_t i, val_bytes = regmap_get_val_bytes(reg);
-	void *buf;
+	u8 *buf;
 	int ret;
 
-	buf = kmalloc_array(count, val_bytes, GFP_KERNEL);
+	buf = kmalloc(num, GFP_KERNEL);
 	if (!buf)
 		return -ENOMEM;
 
-	if (val_bytes == 1)
-		for (i = 0; i < count; i++)
-			((u8 *)buf)[i] = buf32[i];
-	else if (val_bytes == 2)
-		for (i = 0; i < count; i++)
-			((u16 *)buf)[i] = buf32[i];
-	else
-		return -EINVAL;
+	memcpy(buf, parameters, num);
 
-	ret = regmap_raw_write(reg, regnr, buf, count * val_bytes);
+	ret = regmap_raw_write(reg, cmd, buf, num);
 	kfree(buf);
 
 	return ret;
 }
-EXPORT_SYMBOL(mipi_dbi_write_buf32);
+EXPORT_SYMBOL(mipi_dbi_write_buf);
 
 
 

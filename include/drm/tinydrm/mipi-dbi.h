@@ -63,13 +63,18 @@ bool mipi_dbi_display_is_on(struct regmap *reg);
 void mipi_dbi_debug_dump_regs(struct regmap *reg);
 void mipi_dbi_unprepare(struct tinydrm_device *tdev);
 
-#define mipi_dbi_write(reg, regnr, seq...) \
+/**
+ * mipi_dbi_write - Write command and optional parameter(s)
+ * @cmd: Command
+ * @...: Parameters
+ */
+#define mipi_dbi_write(reg, cmd, seq...) \
 ({ \
-	u32 d[] = { seq }; \
-	mipi_dbi_write_buf32(reg, regnr, d, ARRAY_SIZE(d)); \
+	u8 d[] = { seq }; \
+	mipi_dbi_write_buf(reg, cmd, d, ARRAY_SIZE(d)); \
 })
 
-int mipi_dbi_write_buf32(struct regmap *reg, unsigned regnr, const u32 *buf32,
-			 size_t count);
+int mipi_dbi_write_buf(struct regmap *reg, unsigned cmd, const u8 *parameters,
+		       size_t num);
 
 #endif /* __LINUX_MIPI_DBI_H */

@@ -101,7 +101,7 @@ static int mi0283qt_prepare(struct tinydrm_device *tdev)
 	mipi_dbi_hw_reset(mipi);
 	ret = mipi_dbi_write(reg, MIPI_DCS_SOFT_RESET);
 	if (ret) {
-		dev_err(tdev->base->dev, "Error writing lcdreg %d\n", ret);
+		dev_err(tdev->base->dev, "Error writing command %d\n", ret);
 		return ret;
 	}
 
