@@ -309,29 +309,15 @@ void tinydrm_shutdown(struct tinydrm_device *tdev)
 }
 EXPORT_SYMBOL(tinydrm_shutdown);
 
-/*
- * TODO
- * Use drm_fbdev_cma_set_suspend() if patch is accepted:
- *     drm/fb_cma_helper: add suspend helper
- */
-static void tinydrm_fbdev_suspend(struct tinydrm_device *tdev)
+static void tinydrm_fbdev_set_suspend(struct tinydrm_device *tdev, int state)
 {
 	if (!tdev->fbdev_helper)
 		return;
 
 	console_lock();
-	drm_fb_helper_set_suspend(tdev->fbdev_helper, 1);
+	/* TODO: drm_fbdev_cma_set_suspend(tdev->fbdev_cma, state); */
+	drm_fb_helper_set_suspend(tdev->fbdev_helper, state);
 	console_unlock();
-}
-
-static void tinydrm_fbdev_resume(struct tinydrm_device *tdev)
-{
-	if (!tdev->fbdev_helper)
-		return;
-
-        console_lock();
-        drm_fb_helper_set_suspend(tdev->fbdev_helper, 0);
-        console_unlock();
 }
 
 /**
@@ -355,10 +341,10 @@ int tinydrm_suspend(struct tinydrm_device *tdev)
 		return -EINVAL;
 	}
 
-	tinydrm_fbdev_suspend(tdev);
+	tinydrm_fbdev_set_suspend(tdev, 1);
 	state = drm_atomic_helper_suspend(drm);
 	if (IS_ERR(state)) {
-		tinydrm_fbdev_resume(tdev);
+		tinydrm_fbdev_set_suspend(tdev, 0);
 		return PTR_ERR(state);
 	}
 
@@ -398,7 +384,7 @@ int tinydrm_resume(struct tinydrm_device *tdev)
 		return ret;
 	}
 
-	tinydrm_fbdev_resume(tdev);
+	tinydrm_fbdev_set_suspend(tdev, 0);
 
 	return 0;
 }
