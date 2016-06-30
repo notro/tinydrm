@@ -36,6 +36,7 @@ struct mipi_dbi_spi {
 	void *context;
 	unsigned int ram_reg;
 	struct gpio_desc *dc;
+	bool write_only;
 };
 
 /**
@@ -123,7 +124,7 @@ static void mipi_dbi_vdbg_spi_message(struct spi_device *spi,
 			mipi_dbi_hexdump(linebuf, ARRAY_SIZE(linebuf),
 					tmp->rx_buf, tmp->len,
 					tmp->bits_per_word, 16);
-			pr_debug("    tr[%i]: bpw=%i, len=%u, rx_buf(%p)=[%s%s]\n",
+			pr_debug("    tr[%i]: bpw=%i,        len=%u, rx_buf(%p)=[%s%s]\n",
 				 i, tmp->bits_per_word, tmp->len, tmp->rx_buf,
 				 linebuf, tmp->len > 16 ? " ..." : "");
 		}
@@ -171,6 +172,25 @@ static size_t mipi_dbi_spi_clamp_size(struct spi_device *spi, size_t size)
 	clamped &= ~0x3;
 
 	return clamped;
+}
+
+static bool mipi_dbi_spi_bpw_supported(struct spi_device *spi, u8 bpw)
+{
+	u32 bpw_mask = spi->master->bits_per_word_mask;
+
+	if (bpw == 8)
+		return true;
+
+	if (!bpw_mask) {
+		dev_warn_once(&spi->dev,
+			      "bits_per_word_mask not set, assume only 8\n");
+		return false;
+	}
+
+	if (bpw_mask & SPI_BPW_MASK(bpw))
+		return true;
+
+	return false;
 }
 
 /*
@@ -222,7 +242,6 @@ static int mipi_dbi_spi1e_transfer(struct mipi_dbi_spi *mspi, u8 bits_per_word,
 			return -ENOMEM;
 
 		dst[8] = *src;
-
 		tr.tx_buf = dst;
 		tr.len = 9;
 
@@ -342,8 +361,7 @@ static int mipi_dbi_spi1_transfer(struct mipi_dbi_spi *mspi, u8 bits_per_word,
 	int ret = 0;
 	u16 *dst16;
 
-	/* TODO: check for 9-bit support */
-	if (1)
+	if (!mipi_dbi_spi_bpw_supported(spi, 9))
 		return mipi_dbi_spi1e_transfer(mspi, bits_per_word, dc, buf,
 					       len, max_chunk);
 
@@ -438,7 +456,14 @@ static int mipi_dbi_spi1_write(void *context, const void *data, size_t count)
 					 data + 1, count - 1);
 }
 
-/* TODO: This didn't work just returns zeroes. Problem with display or code? */
+/*
+ * TODO
+ *
+ * Tested on 8-bit only SPI controller and it didn't work.
+ * It just returns zeroes.
+ *
+ * Should I drop this code that hasn't been verified, or just leave a note?
+ */
 static int mipi_dbi_spi1_read(void *context, const void *reg, size_t reg_size,
 			      void *val, size_t val_size)
 {
@@ -458,8 +483,8 @@ static int mipi_dbi_spi1_read(void *context, const void *reg, size_t reg_size,
 	u8 *cmd, *buf;
 	int ret;
 
-	if (0) /* TODO write-only check */
-		return -EIO;
+	if (mspi->write_only)
+		return -EACCES;
 
 #ifdef VERBOSE_DEBUG
 	DRM_DEBUG("%s: regnr=0x%02x, len=%zu, transfers:\n",
@@ -476,7 +501,7 @@ static int mipi_dbi_spi1_read(void *context, const void *reg, size_t reg_size,
 	tr[0].tx_buf = cmd;
 	tr[1].rx_buf = buf;
 
-	if (0) { /* TODO 9-bit support */
+	if (mipi_dbi_spi_bpw_supported(spi, 9)) {
 		*(u16 *)cmd = *(u8 *)reg;
 		tr[0].bits_per_word = 9;
 		tr[0].len = 2;
@@ -523,7 +548,7 @@ static int mipi_dbi_spi3_transfer(struct mipi_dbi_spi *mspi, u8 bits_per_word,
 	int ret = 0;
 
 #if defined(__LITTLE_ENDIAN)
-	if (tr.bits_per_word == 16) {
+	if (!mipi_dbi_spi_bpw_supported(spi, 16) && tr.bits_per_word == 16) {
 		swap = true;
 		tr.bits_per_word = 8;
 	}
@@ -633,8 +658,8 @@ static int mipi_dbi_spi3_read(void *context, const void *reg, size_t reg_size,
 	u8 *buf;
 	int ret;
 
-	if (0) /* TODO write-only check */
-		return -EIO;
+	if (mspi->write_only)
+		return -EACCES;
 
 #ifdef VERBOSE_DEBUG
 	DRM_DEBUG("%s: regnr=0x%02x, dc=0, len=%zu, transfers:\n",
@@ -668,7 +693,7 @@ static const struct regmap_bus mipi_dbi_regmap_bus3 = {
 
 int mipi_dbi_spi_init(struct mipi_dbi *mipi, struct spi_device *spi,
 		      struct gpio_desc *dc, struct gpio_desc *reset,
-		      bool writeonly)
+		      bool write_only)
 {
 	struct regmap_config config = {
 		.reg_bits = 8,
@@ -697,6 +722,7 @@ int mipi_dbi_spi_init(struct mipi_dbi *mipi, struct spi_device *spi,
 	mspi->map = map;
 	mipi->reg = map;
 	mspi->dc = dc;
+	mspi->write_only = write_only;
 
 	mipi->reset = reset;
 
