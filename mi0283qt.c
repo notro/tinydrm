@@ -92,7 +92,7 @@ static int mi0283qt_prepare(struct tinydrm_device *tdev)
 		}
 	}
 
-//	mipi_dbi_debug_dump_regs(reg);
+	mipi_dbi_debug_dump_regs(reg);
 
 	/* Avoid flicker by skipping setup if the bootloader has done it */
 	if (mipi_dbi_display_is_on(reg))
@@ -166,11 +166,23 @@ static int mi0283qt_prepare(struct tinydrm_device *tdev)
 	msleep(100);
 
 	mipi_dbi_write(reg, MIPI_DCS_SET_DISPLAY_ON);
-	msleep(50);
+	msleep(100);
 
-//	mipi_dbi_debug_dump_regs(reg);
+	mipi_dbi_debug_dump_regs(reg);
 
 	return 0;
+}
+
+/*
+ * The delay was necessary on a MI0283QT-8 and -9 to avoid white flicker/tear
+ * in the lower right corner following rotation.
+ */
+static int mi0283qt_enable(struct tinydrm_device *tdev)
+{
+	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
+
+	msleep(50);
+	return tinydrm_enable_backlight(mipi->backlight);
 }
 
 static const struct drm_display_mode mi0283qt_mode = {
@@ -180,7 +192,7 @@ static const struct drm_display_mode mi0283qt_mode = {
 static const struct tinydrm_funcs mi0283qt_funcs = {
 	.prepare = mi0283qt_prepare,
 	.unprepare = mipi_dbi_unprepare,
-	.enable = mipi_dbi_enable_backlight,
+	.enable = mi0283qt_enable,
 	.disable = mipi_dbi_disable_backlight,
 	.dirty = mipi_dbi_dirty,
 };
@@ -265,8 +277,9 @@ static int mi0283qt_probe(struct spi_device *spi)
 
 	spi_set_drvdata(spi, tdev);
 
-	DRM_DEBUG_DRIVER("Initialized %s:%s on minor %d\n",
+	DRM_DEBUG_DRIVER("Initialized %s:%s @%uMHz on minor %d\n",
 			 tdev->drm.driver->name, dev_name(dev),
+			 spi->max_speed_hz / 1000000,
 			 tdev->drm.primary->index);
 
 	return 0;

@@ -22,6 +22,8 @@
 #include <linux/swab.h>
 #include <video/mipi_display.h>
 
+#define MIPI_DBI_DEFAULT_SPI_READ_SPEED 2000000 /* 2MHz */
+
 #define DCS_POWER_MODE_DISPLAY			BIT(2)
 #define DCS_POWER_MODE_DISPLAY_NORMAL_MODE	BIT(3)
 #define DCS_POWER_MODE_SLEEP_MODE		BIT(4)
@@ -295,7 +297,7 @@ static int mipi_dbi_spi_transfer(struct lcdreg2 *lcdreg, u8 bits_per_word, int d
 	max_chunk = mipi_dbi_spi_clamp_size(spi, max_chunk);
 
 #ifdef VERBOSE_DEBUG
-	DRM_DEBUG("dev=%s, dc=%d, max_chunk=%zu, transfers:\n",
+	DRM_DEBUG("%s: dc=%d, max_chunk=%zu, transfers:\n",
 		  dev_name(&spi->dev), dc, max_chunk);
 #endif
 	gpiod_set_value_cansleep(lcdreg->dc, dc);
@@ -378,9 +380,49 @@ static int mipi_dbi_spi_write(void *context, const void *data, size_t count)
 					 val, count - lcdreg->reg_bytes);
 }
 
-static int mipi_dbi_spi_read(void *context, const void *reg, size_t reg_size, void *val, size_t val_size)
+static int mipi_dbi_spi_read(void *context, const void *reg, size_t reg_size,
+			     void *val, size_t val_size)
 {
-	return -ENOTSUPP;
+	struct lcdreg2 *lcdreg = context;
+	struct spi_device *spi = lcdreg->context;
+	u32 speed_hz = min_t(u32, MIPI_DBI_DEFAULT_SPI_READ_SPEED,
+			     spi->max_speed_hz / 2);
+	struct spi_transfer tr[2] = {
+		{
+			.speed_hz = speed_hz,
+			.tx_buf = reg,
+			.len = 1,
+		}, {
+			.speed_hz = speed_hz,
+			.len = val_size,
+		},
+	};
+	struct spi_message m;
+	u8 *buf;
+	int ret;
+
+	if (0) /* TODO write-only check */
+		return -EIO;
+
+#ifdef VERBOSE_DEBUG
+	DRM_DEBUG("%s: regnr=0x%02x, dc=0, len=%zu, transfers:\n",
+		  dev_name(&spi->dev), *(u8 *)reg, val_size);
+#endif
+	buf = kmalloc(val_size, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	tr[1].rx_buf = buf;
+	gpiod_set_value_cansleep(lcdreg->dc, 0);
+
+	spi_message_init_with_transfers(&m, tr, ARRAY_SIZE(tr));
+	ret = spi_sync(spi, &m);
+	mipi_dbi_vdbg_spi_message(spi, &m);
+
+	memcpy(val, buf, val_size);
+	kfree(buf);
+
+	return ret;
 }
 
 /* MIPI DBI Type C Option 3 */
@@ -655,9 +697,63 @@ static int mipi_dbi_spi3_write(void *context, const void *data, size_t count)
 					 val, count - lcdreg->reg_bytes);
 }
 
-static int mipi_dbi_spi3_read(void *context, const void *reg, size_t reg_size, void *val, size_t val_size)
+/* TODO: This didn't work just returns zeroes. Problem with display or code? */
+static int mipi_dbi_spi3_read(void *context, const void *reg, size_t reg_size,
+			      void *val, size_t val_size)
 {
-	return -ENOTSUPP;
+	struct lcdreg2 *lcdreg = context;
+	struct spi_device *spi = lcdreg->context;
+	u32 speed_hz = min_t(u32, MIPI_DBI_DEFAULT_SPI_READ_SPEED,
+			     spi->max_speed_hz / 2);
+	struct spi_transfer tr[2] = {
+		{
+			.speed_hz = speed_hz,
+		}, {
+			.speed_hz = speed_hz,
+			.len = val_size,
+		},
+	};
+	struct spi_message m;
+	u8 *cmd, *buf;
+	int ret;
+
+	if (0) /* TODO write-only check */
+		return -EIO;
+
+#ifdef VERBOSE_DEBUG
+	DRM_DEBUG("%s: regnr=0x%02x, len=%zu, transfers:\n",
+		  dev_name(&spi->dev), *(u8 *)reg, val_size);
+#endif
+	cmd = kzalloc(9, GFP_KERNEL);
+	buf = kmalloc(val_size, GFP_KERNEL);
+	if (!cmd || !buf) {
+		kfree(cmd);
+		kfree(buf);
+		return -ENOMEM;
+	}
+
+	tr[0].tx_buf = cmd;
+	tr[1].rx_buf = buf;
+
+	if (0) { /* TODO 9-bit support */
+		*(u16 *)cmd = *(u8 *)reg;
+		tr[0].bits_per_word = 9;
+		tr[0].len = 2;
+	} else {
+		/* 8x 9-bit, pad with leading zeroes (no-ops) */
+		cmd[8] = *(u8 *)reg;
+		tr[0].len = 9;
+	}
+
+	spi_message_init_with_transfers(&m, tr, ARRAY_SIZE(tr));
+	ret = spi_sync(spi, &m);
+	mipi_dbi_vdbg_spi_message(spi, &m);
+
+	memcpy(val, buf, val_size);
+	kfree(cmd);
+	kfree(buf);
+
+	return ret;
 }
 
 /* MIPI DBI Type C Option 1 */
@@ -981,13 +1077,12 @@ EXPORT_SYMBOL(mipi_dbi_hw_reset);
  */
 bool mipi_dbi_display_is_on(struct regmap *reg)
 {
-#if 0
-	u32 val;
+	u8 val;
 
-	if (!lcdreg_is_readable(reg))
+	if (0) /* TODO write-only */
 		return false;
 
-	if (lcdreg_readreg_buf32(reg, MIPI_DCS_GET_POWER_MODE, &val, 1))
+	if (regmap_raw_read(reg, MIPI_DCS_GET_POWER_MODE, &val, 1))
 		return false;
 
 	val &= ~DCS_POWER_MODE_RESERVED_MASK;
@@ -999,8 +1094,6 @@ bool mipi_dbi_display_is_on(struct regmap *reg)
 	DRM_DEBUG_DRIVER("Display is ON\n");
 
 	return true;
-#endif
-	return false;
 }
 EXPORT_SYMBOL(mipi_dbi_display_is_on);
 
@@ -1012,51 +1105,50 @@ EXPORT_SYMBOL(mipi_dbi_display_is_on);
  */
 void mipi_dbi_debug_dump_regs(struct regmap *reg)
 {
-#if 0
-	u32 val[4];
+	u8 val[4];
 	int ret;
 
-	if (!(lcdreg_is_readable(reg) && (drm_debug & DRM_UT_DRIVER)))
+	if (!(drm_debug & DRM_UT_DRIVER))
 		return;
 
-	ret = lcdreg_readreg_buf32(reg, MIPI_DCS_GET_DISPLAY_ID, val, 3);
+	ret = regmap_raw_read(reg, MIPI_DCS_GET_DISPLAY_ID, val, 3);
 	if (ret) {
-		dev_warn(reg->dev,
-			 "failed to read from controller: %d", ret);
+		struct device *dev = regmap_get_device(reg);
+
+		dev_warn(dev, "failed to read from controller: %d", ret);
 		return;
 	}
 
 	DRM_DEBUG_DRIVER("Display ID (%02x): %02x %02x %02x\n",
 			 MIPI_DCS_GET_DISPLAY_ID, val[0], val[1], val[2]);
 
-	lcdreg_readreg_buf32(reg, MIPI_DCS_GET_DISPLAY_STATUS, val, 4);
+	regmap_raw_read(reg, MIPI_DCS_GET_DISPLAY_STATUS, val, 4);
 	DRM_DEBUG_DRIVER("Display status (%02x): %02x %02x %02x %02x\n",
 			 MIPI_DCS_GET_DISPLAY_STATUS, val[0], val[1], val[2], val[3]);
 
-	lcdreg_readreg_buf32(reg, MIPI_DCS_GET_POWER_MODE, val, 1);
+	regmap_raw_read(reg, MIPI_DCS_GET_POWER_MODE, val, 1);
 	DRM_DEBUG_DRIVER("Power mode (%02x): %02x\n",
 			 MIPI_DCS_GET_POWER_MODE, val[0]);
 
-	lcdreg_readreg_buf32(reg, MIPI_DCS_GET_ADDRESS_MODE, val, 1);
+	regmap_raw_read(reg, MIPI_DCS_GET_ADDRESS_MODE, val, 1);
 	DRM_DEBUG_DRIVER("Address mode (%02x): %02x\n",
 			 MIPI_DCS_GET_ADDRESS_MODE, val[0]);
 
-	lcdreg_readreg_buf32(reg, MIPI_DCS_GET_PIXEL_FORMAT, val, 1);
+	regmap_raw_read(reg, MIPI_DCS_GET_PIXEL_FORMAT, val, 1);
 	DRM_DEBUG_DRIVER("Pixel format (%02x): %02x\n",
 			 MIPI_DCS_GET_PIXEL_FORMAT, val[0]);
 
-	lcdreg_readreg_buf32(reg, MIPI_DCS_GET_DISPLAY_MODE, val, 1);
+	regmap_raw_read(reg, MIPI_DCS_GET_DISPLAY_MODE, val, 1);
 	DRM_DEBUG_DRIVER("Display mode (%02x): %02x\n",
 			 MIPI_DCS_GET_DISPLAY_MODE, val[0]);
 
-	lcdreg_readreg_buf32(reg, MIPI_DCS_GET_SIGNAL_MODE, val, 1);
+	regmap_raw_read(reg, MIPI_DCS_GET_SIGNAL_MODE, val, 1);
 	DRM_DEBUG_DRIVER("Display signal mode (%02x): %02x\n",
 			 MIPI_DCS_GET_SIGNAL_MODE, val[0]);
 
-	lcdreg_readreg_buf32(reg, MIPI_DCS_GET_DIAGNOSTIC_RESULT, val, 1);
+	regmap_raw_read(reg, MIPI_DCS_GET_DIAGNOSTIC_RESULT, val, 1);
 	DRM_DEBUG_DRIVER("Diagnostic result (%02x): %02x\n",
 			 MIPI_DCS_GET_DIAGNOSTIC_RESULT, val[0]);
-#endif
 }
 EXPORT_SYMBOL(mipi_dbi_debug_dump_regs);
 

@@ -322,8 +322,9 @@ static int adafruit_tft_probe(struct spi_device *spi)
 
 	spi_set_drvdata(spi, tdev);
 
-	DRM_DEBUG_DRIVER("Initialized %s:%s on minor %d\n",
+	DRM_DEBUG_DRIVER("Initialized %s:%s @%uMHz on minor %d\n",
 			 tdev->drm.driver->name, dev_name(dev),
+			 spi->max_speed_hz / 1000000,
 			 tdev->drm.primary->index);
 
 	return 0;
