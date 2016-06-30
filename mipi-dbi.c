@@ -187,7 +187,7 @@ static size_t mipi_dbi_spi_clamp_size(struct spi_device *spi, size_t size)
 	(_dst) |= (u64)(_src) << (63 - 8 - ((_pos) * 9)); \
 }
 
-static int mipi_dbi_spi3e_transfer(struct mipi_dbi_spi *mspi, u8 bits_per_word,
+static int mipi_dbi_spi1e_transfer(struct mipi_dbi_spi *mspi, u8 bits_per_word,
 				   int dc, const void *buf, size_t len,
 				   size_t max_chunk)
 {
@@ -327,7 +327,7 @@ err_free:
 
 #undef SHIFT_U9_INTO_U64
 
-static int mipi_dbi_spi3_transfer(struct mipi_dbi_spi *mspi, u8 bits_per_word,
+static int mipi_dbi_spi1_transfer(struct mipi_dbi_spi *mspi, u8 bits_per_word,
 				  int dc, const void *buf, size_t len,
 				  size_t max_chunk)
 {
@@ -344,7 +344,7 @@ static int mipi_dbi_spi3_transfer(struct mipi_dbi_spi *mspi, u8 bits_per_word,
 
 	/* TODO: check for 9-bit support */
 	if (1)
-		return mipi_dbi_spi3e_transfer(mspi, bits_per_word, dc, buf,
+		return mipi_dbi_spi1e_transfer(mspi, bits_per_word, dc, buf,
 					       len, max_chunk);
 
 	if (WARN_ON_ONCE(bits_per_word == 16 && len % 2))
@@ -400,7 +400,7 @@ err_free:
 	return ret;
 }
 
-static int mipi_dbi_spi3_gather_write(void *context, const void *reg,
+static int mipi_dbi_spi1_gather_write(void *context, const void *reg,
 				      size_t reg_len, const void *val,
 				      size_t val_len)
 {
@@ -421,25 +421,25 @@ static int mipi_dbi_spi3_gather_write(void *context, const void *reg,
 
 	mspi_debug(reg, reg_len, val, val_len, val_bytes);
 
-	ret = mipi_dbi_spi3_transfer(mspi, reg_len * 8, 0, reg, reg_len, 4096);
+	ret = mipi_dbi_spi1_transfer(mspi, reg_len * 8, 0, reg, reg_len, 4096);
 	if (ret)
 		return ret;
 
 	if (val && val_len)
-		ret = mipi_dbi_spi3_transfer(mspi, val_bytes * 8, 1, val,
+		ret = mipi_dbi_spi1_transfer(mspi, val_bytes * 8, 1, val,
 					     val_len, 4096);
 
 	return ret;
 }
 
-static int mipi_dbi_spi3_write(void *context, const void *data, size_t count)
+static int mipi_dbi_spi1_write(void *context, const void *data, size_t count)
 {
-	return mipi_dbi_spi3_gather_write(context, data, 1,
+	return mipi_dbi_spi1_gather_write(context, data, 1,
 					 data + 1, count - 1);
 }
 
 /* TODO: This didn't work just returns zeroes. Problem with display or code? */
-static int mipi_dbi_spi3_read(void *context, const void *reg, size_t reg_size,
+static int mipi_dbi_spi1_read(void *context, const void *reg, size_t reg_size,
 			      void *val, size_t val_size)
 {
 	struct mipi_dbi_spi *mspi = context;
@@ -497,19 +497,19 @@ static int mipi_dbi_spi3_read(void *context, const void *reg, size_t reg_size,
 	return ret;
 }
 
-static const struct regmap_bus mipi_dbi_regmap_bus3 = {
-	.write = mipi_dbi_spi3_write,
-	.gather_write = mipi_dbi_spi3_gather_write,
-	.read = mipi_dbi_spi3_read,
+static const struct regmap_bus mipi_dbi_regmap_bus1 = {
+	.write = mipi_dbi_spi1_write,
+	.gather_write = mipi_dbi_spi1_gather_write,
+	.read = mipi_dbi_spi1_read,
 	.reg_format_endian_default = REGMAP_ENDIAN_DEFAULT,
 	.val_format_endian_default = REGMAP_ENDIAN_DEFAULT,
 };
 
 /* MIPI DBI Type C Option 3 */
 
-static int mipi_dbi_spi_transfer(struct mipi_dbi_spi *mspi, u8 bits_per_word,
-				 int dc, const void *buf, size_t len,
-				 size_t max_chunk)
+static int mipi_dbi_spi3_transfer(struct mipi_dbi_spi *mspi, u8 bits_per_word,
+				  int dc, const void *buf, size_t len,
+				  size_t max_chunk)
 {
 	struct spi_device *spi = mspi->context;
 	struct spi_transfer tr = {
@@ -574,9 +574,9 @@ err_free:
 	return ret;
 }
 
-static int mipi_dbi_spi_gather_write(void *context, const void *reg,
-				     size_t reg_len, const void *val,
-				     size_t val_len)
+static int mipi_dbi_spi3_gather_write(void *context, const void *reg,
+				      size_t reg_len, const void *val,
+				      size_t val_len)
 {
 	struct mipi_dbi_spi *mspi = context;
 	size_t val_bytes = regmap_get_val_bytes(mspi->map);
@@ -595,25 +595,25 @@ static int mipi_dbi_spi_gather_write(void *context, const void *reg,
 
 	mspi_debug(reg, reg_len, val, val_len, val_bytes);
 
-	ret = mipi_dbi_spi_transfer(mspi, reg_len * 8, 0, reg, reg_len, 4096);
+	ret = mipi_dbi_spi3_transfer(mspi, reg_len * 8, 0, reg, reg_len, 4096);
 	if (ret)
 		return ret;
 
 	if (val && val_len)
-		ret = mipi_dbi_spi_transfer(mspi, val_bytes * 8, 1, val,
-					    val_len, 4096);
+		ret = mipi_dbi_spi3_transfer(mspi, val_bytes * 8, 1, val,
+					     val_len, 4096);
 
 	return ret;
 }
 
-static int mipi_dbi_spi_write(void *context, const void *data, size_t count)
+static int mipi_dbi_spi3_write(void *context, const void *data, size_t count)
 {
-	return mipi_dbi_spi_gather_write(context, data, 1,
-					 data + 1, count - 1);
+	return mipi_dbi_spi3_gather_write(context, data, 1,
+					  data + 1, count - 1);
 }
 
-static int mipi_dbi_spi_read(void *context, const void *reg, size_t reg_size,
-			     void *val, size_t val_size)
+static int mipi_dbi_spi3_read(void *context, const void *reg, size_t reg_size,
+			      void *val, size_t val_size)
 {
 	struct mipi_dbi_spi *mspi = context;
 	struct spi_device *spi = mspi->context;
@@ -658,10 +658,10 @@ static int mipi_dbi_spi_read(void *context, const void *reg, size_t reg_size,
 }
 
 /* MIPI DBI Type C Option 3 */
-static const struct regmap_bus mipi_dbi_regmap_bus = {
-	.write = mipi_dbi_spi_write,
-	.gather_write = mipi_dbi_spi_gather_write,
-	.read = mipi_dbi_spi_read,
+static const struct regmap_bus mipi_dbi_regmap_bus3 = {
+	.write = mipi_dbi_spi3_write,
+	.gather_write = mipi_dbi_spi3_gather_write,
+	.read = mipi_dbi_spi3_read,
 	.reg_format_endian_default = REGMAP_ENDIAN_DEFAULT,
 	.val_format_endian_default = REGMAP_ENDIAN_DEFAULT,
 };
@@ -684,10 +684,10 @@ int mipi_dbi_spi_init(struct mipi_dbi *mipi, struct spi_device *spi,
 		return -ENOMEM;
 
 	if (dc)
-		map = devm_regmap_init(dev, &mipi_dbi_regmap_bus, mspi,
+		map = devm_regmap_init(dev, &mipi_dbi_regmap_bus3, mspi,
 				       &config);
 	else
-		map = devm_regmap_init(dev, &mipi_dbi_regmap_bus3, mspi,
+		map = devm_regmap_init(dev, &mipi_dbi_regmap_bus1, mspi,
 				       &config);
 	if (IS_ERR(map))
 		return PTR_ERR(map);
