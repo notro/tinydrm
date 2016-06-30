@@ -173,167 +173,10 @@ static size_t mipi_dbi_spi_clamp_size(struct spi_device *spi, size_t size)
 	return clamped;
 }
 
-static int mipi_dbi_spi_transfer(struct mipi_dbi_spi *mspi, u8 bits_per_word,
-				 int dc, const void *buf, size_t len,
-				 size_t max_chunk)
-{
-	struct spi_device *spi = mspi->context;
-	struct spi_transfer tr = {
-		.bits_per_word = bits_per_word,
-//		.speed_hz = spi->max_speed_hz,
-	};
-	struct spi_message m;
-	u16 *swap_buf = NULL;
-	bool swap = false;
-	size_t chunk;
-	int ret = 0;
-
-#if defined(__LITTLE_ENDIAN)
-	if (tr.bits_per_word == 16) {
-		swap = true;
-		tr.bits_per_word = 8;
-	}
-#endif
-	max_chunk = mipi_dbi_spi_clamp_size(spi, max_chunk);
-
-#ifdef VERBOSE_DEBUG
-	DRM_DEBUG("%s: dc=%d, max_chunk=%zu, transfers:\n",
-		  dev_name(&spi->dev), dc, max_chunk);
-#endif
-	gpiod_set_value_cansleep(mspi->dc, dc);
-
-	spi_message_init_with_transfers(&m, &tr, 1);
-
-	while (len) {
-		chunk = min(len, max_chunk);
-
-		tr.tx_buf = buf;
-		tr.len = chunk;
-
-		if (swap) {
-			const u16 *buf16 = buf;
-			unsigned int i;
-
-			if (!swap_buf)
-				swap_buf = kmalloc(chunk, GFP_KERNEL);
-			if (!swap_buf)
-				return -ENOMEM;
-
-			for (i = 0; i < chunk / 2; i++)
-				swap_buf[i] = swab16(buf16[i]);
-
-			tr.tx_buf = swap_buf;
-		}
-
-		buf += chunk;
-		len -= chunk;
-
-		mipi_dbi_vdbg_spi_message(spi, &m);
-		ret = spi_sync(spi, &m);
-		if (ret)
-			goto err_free;
-	};
-
-err_free:
-	kfree(swap_buf);
-
-	return ret;
-}
-
-static int mipi_dbi_spi_gather_write(void *context, const void *reg,
-				     size_t reg_len, const void *val,
-				     size_t val_len)
-{
-	struct mipi_dbi_spi *mspi = context;
-	size_t val_bytes = regmap_get_val_bytes(mspi->map);
-	unsigned int regnr;
-	int ret;
-
-	if (reg_len == 1)
-		regnr = *(u8 *) reg;
-	else if (reg_len == 2)
-		regnr = *(u16 *) reg;
-	else
-		return -EINVAL;
-
-	if (regnr == mspi->ram_reg)
-		val_bytes = 2;
-
-	mspi_debug(reg, reg_len, val, val_len, val_bytes);
-
-	ret = mipi_dbi_spi_transfer(mspi, reg_len * 8, 0, reg, reg_len, 4096);
-	if (ret)
-		return ret;
-
-	if (val && val_len)
-		ret = mipi_dbi_spi_transfer(mspi, val_bytes * 8, 1, val,
-					    val_len, 4096);
-
-	return ret;
-}
-
-static int mipi_dbi_spi_write(void *context, const void *data, size_t count)
-{
-	return mipi_dbi_spi_gather_write(context, data, 1,
-					 data + 1, count - 1);
-}
-
-static int mipi_dbi_spi_read(void *context, const void *reg, size_t reg_size,
-			     void *val, size_t val_size)
-{
-	struct mipi_dbi_spi *mspi = context;
-	struct spi_device *spi = mspi->context;
-	u32 speed_hz = min_t(u32, MIPI_DBI_DEFAULT_SPI_READ_SPEED,
-			     spi->max_speed_hz / 2);
-	struct spi_transfer tr[2] = {
-		{
-			.speed_hz = speed_hz,
-			.tx_buf = reg,
-			.len = 1,
-		}, {
-			.speed_hz = speed_hz,
-			.len = val_size,
-		},
-	};
-	struct spi_message m;
-	u8 *buf;
-	int ret;
-
-	if (0) /* TODO write-only check */
-		return -EIO;
-
-#ifdef VERBOSE_DEBUG
-	DRM_DEBUG("%s: regnr=0x%02x, dc=0, len=%zu, transfers:\n",
-		  dev_name(&spi->dev), *(u8 *)reg, val_size);
-#endif
-	buf = kmalloc(val_size, GFP_KERNEL);
-	if (!buf)
-		return -ENOMEM;
-
-	tr[1].rx_buf = buf;
-	gpiod_set_value_cansleep(mspi->dc, 0);
-
-	spi_message_init_with_transfers(&m, tr, ARRAY_SIZE(tr));
-	ret = spi_sync(spi, &m);
-	mipi_dbi_vdbg_spi_message(spi, &m);
-
-	memcpy(val, buf, val_size);
-	kfree(buf);
-
-	return ret;
-}
-
-/* MIPI DBI Type C Option 3 */
-static const struct regmap_bus mipi_dbi_regmap_bus = {
-	.write = mipi_dbi_spi_write,
-	.gather_write = mipi_dbi_spi_gather_write,
-	.read = mipi_dbi_spi_read,
-	.reg_format_endian_default = REGMAP_ENDIAN_DEFAULT,
-	.val_format_endian_default = REGMAP_ENDIAN_DEFAULT,
-};
-
 /*
- * MIPI DBI Type C Option 1 on SPI controller without 9 bits per word support,
+ * MIPI DBI Type C Option 1
+ *
+ * If the SPI controller doesn't have 9 bits per word support,
  * use blocks of 9 bytes to send 8x 9-bit words with a 8-bit SPI transfer.
  * Pad partial blocks with MIPI_DCS_NOP (zero).
  */
@@ -654,11 +497,171 @@ static int mipi_dbi_spi3_read(void *context, const void *reg, size_t reg_size,
 	return ret;
 }
 
-/* MIPI DBI Type C Option 1 */
 static const struct regmap_bus mipi_dbi_regmap_bus3 = {
 	.write = mipi_dbi_spi3_write,
 	.gather_write = mipi_dbi_spi3_gather_write,
 	.read = mipi_dbi_spi3_read,
+	.reg_format_endian_default = REGMAP_ENDIAN_DEFAULT,
+	.val_format_endian_default = REGMAP_ENDIAN_DEFAULT,
+};
+
+/* MIPI DBI Type C Option 3 */
+
+static int mipi_dbi_spi_transfer(struct mipi_dbi_spi *mspi, u8 bits_per_word,
+				 int dc, const void *buf, size_t len,
+				 size_t max_chunk)
+{
+	struct spi_device *spi = mspi->context;
+	struct spi_transfer tr = {
+		.bits_per_word = bits_per_word,
+//		.speed_hz = spi->max_speed_hz,
+	};
+	struct spi_message m;
+	u16 *swap_buf = NULL;
+	bool swap = false;
+	size_t chunk;
+	int ret = 0;
+
+#if defined(__LITTLE_ENDIAN)
+	if (tr.bits_per_word == 16) {
+		swap = true;
+		tr.bits_per_word = 8;
+	}
+#endif
+	max_chunk = mipi_dbi_spi_clamp_size(spi, max_chunk);
+
+#ifdef VERBOSE_DEBUG
+	DRM_DEBUG("%s: dc=%d, max_chunk=%zu, transfers:\n",
+		  dev_name(&spi->dev), dc, max_chunk);
+#endif
+	gpiod_set_value_cansleep(mspi->dc, dc);
+
+	spi_message_init_with_transfers(&m, &tr, 1);
+
+	while (len) {
+		chunk = min(len, max_chunk);
+
+		tr.tx_buf = buf;
+		tr.len = chunk;
+
+		if (swap) {
+			const u16 *buf16 = buf;
+			unsigned int i;
+
+			if (!swap_buf)
+				swap_buf = kmalloc(chunk, GFP_KERNEL);
+			if (!swap_buf)
+				return -ENOMEM;
+
+			for (i = 0; i < chunk / 2; i++)
+				swap_buf[i] = swab16(buf16[i]);
+
+			tr.tx_buf = swap_buf;
+		}
+
+		buf += chunk;
+		len -= chunk;
+
+		mipi_dbi_vdbg_spi_message(spi, &m);
+		ret = spi_sync(spi, &m);
+		if (ret)
+			goto err_free;
+	};
+
+err_free:
+	kfree(swap_buf);
+
+	return ret;
+}
+
+static int mipi_dbi_spi_gather_write(void *context, const void *reg,
+				     size_t reg_len, const void *val,
+				     size_t val_len)
+{
+	struct mipi_dbi_spi *mspi = context;
+	size_t val_bytes = regmap_get_val_bytes(mspi->map);
+	unsigned int regnr;
+	int ret;
+
+	if (reg_len == 1)
+		regnr = *(u8 *) reg;
+	else if (reg_len == 2)
+		regnr = *(u16 *) reg;
+	else
+		return -EINVAL;
+
+	if (regnr == mspi->ram_reg)
+		val_bytes = 2;
+
+	mspi_debug(reg, reg_len, val, val_len, val_bytes);
+
+	ret = mipi_dbi_spi_transfer(mspi, reg_len * 8, 0, reg, reg_len, 4096);
+	if (ret)
+		return ret;
+
+	if (val && val_len)
+		ret = mipi_dbi_spi_transfer(mspi, val_bytes * 8, 1, val,
+					    val_len, 4096);
+
+	return ret;
+}
+
+static int mipi_dbi_spi_write(void *context, const void *data, size_t count)
+{
+	return mipi_dbi_spi_gather_write(context, data, 1,
+					 data + 1, count - 1);
+}
+
+static int mipi_dbi_spi_read(void *context, const void *reg, size_t reg_size,
+			     void *val, size_t val_size)
+{
+	struct mipi_dbi_spi *mspi = context;
+	struct spi_device *spi = mspi->context;
+	u32 speed_hz = min_t(u32, MIPI_DBI_DEFAULT_SPI_READ_SPEED,
+			     spi->max_speed_hz / 2);
+	struct spi_transfer tr[2] = {
+		{
+			.speed_hz = speed_hz,
+			.tx_buf = reg,
+			.len = 1,
+		}, {
+			.speed_hz = speed_hz,
+			.len = val_size,
+		},
+	};
+	struct spi_message m;
+	u8 *buf;
+	int ret;
+
+	if (0) /* TODO write-only check */
+		return -EIO;
+
+#ifdef VERBOSE_DEBUG
+	DRM_DEBUG("%s: regnr=0x%02x, dc=0, len=%zu, transfers:\n",
+		  dev_name(&spi->dev), *(u8 *)reg, val_size);
+#endif
+	buf = kmalloc(val_size, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	tr[1].rx_buf = buf;
+	gpiod_set_value_cansleep(mspi->dc, 0);
+
+	spi_message_init_with_transfers(&m, tr, ARRAY_SIZE(tr));
+	ret = spi_sync(spi, &m);
+	mipi_dbi_vdbg_spi_message(spi, &m);
+
+	memcpy(val, buf, val_size);
+	kfree(buf);
+
+	return ret;
+}
+
+/* MIPI DBI Type C Option 3 */
+static const struct regmap_bus mipi_dbi_regmap_bus = {
+	.write = mipi_dbi_spi_write,
+	.gather_write = mipi_dbi_spi_gather_write,
+	.read = mipi_dbi_spi_read,
 	.reg_format_endian_default = REGMAP_ENDIAN_DEFAULT,
 	.val_format_endian_default = REGMAP_ENDIAN_DEFAULT,
 };
