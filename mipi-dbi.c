@@ -31,17 +31,12 @@
 #define DCS_POWER_MODE_IDLE_MODE		BIT(6)
 #define DCS_POWER_MODE_RESERVED_MASK		(BIT(0) | BIT(1) | BIT(7))
 
-
-
-struct lcdreg2 {
+struct mipi_dbi_spi {
 	struct regmap *map;
-	size_t reg_bytes;
-	unsigned int ram_reg;
 	void *context;
-struct gpio_desc *dc;
+	unsigned int ram_reg;
+	struct gpio_desc *dc;
 };
-
-
 
 /**
  * mipi_dbi_write_buf - Write command and parameter array
@@ -69,9 +64,6 @@ int mipi_dbi_write_buf(struct regmap *reg, unsigned cmd, const u8 *parameters,
 }
 EXPORT_SYMBOL(mipi_dbi_write_buf);
 
-
-
-
 static void mipi_dbi_hexdump(char *linebuf, size_t linebuflen, const void *buf, size_t len, size_t bpw, size_t max)
 {
 
@@ -98,7 +90,8 @@ static void mipi_dbi_hexdump(char *linebuf, size_t linebuflen, const void *buf, 
 }
 
 #ifdef VERBOSE_DEBUG
-static void mipi_dbi_vdbg_spi_message(struct spi_device *spi, struct spi_message *m)
+static void mipi_dbi_vdbg_spi_message(struct spi_device *spi,
+				      struct spi_message *m)
 {
 	struct spi_master *master = spi->master;
 	struct spi_transfer *tmp;
@@ -119,14 +112,17 @@ static void mipi_dbi_vdbg_spi_message(struct spi_device *spi, struct spi_message
 				dma = master->can_dma(master, spi, tmp);
 
 			mipi_dbi_hexdump(linebuf, ARRAY_SIZE(linebuf),
-					tmp->tx_buf, tmp->len, tmp->bits_per_word, 16);
+					tmp->tx_buf, tmp->len,
+					tmp->bits_per_word, 16);
 			pr_debug("    tr[%i]: bpw=%i, dma=%u, len=%u, tx_buf(%p)=[%s%s]\n",
 				 i, tmp->bits_per_word, dma, tmp->len,
-				 tmp->tx_buf, linebuf, tmp->len > 16 ? " ..." : "");
+				 tmp->tx_buf, linebuf,
+				 tmp->len > 16 ? " ..." : "");
 		}
 		if (tmp->rx_buf) {
 			mipi_dbi_hexdump(linebuf, ARRAY_SIZE(linebuf),
-					tmp->rx_buf, tmp->len, tmp->bits_per_word, 16);
+					tmp->rx_buf, tmp->len,
+					tmp->bits_per_word, 16);
 			pr_debug("    tr[%i]: bpw=%i, len=%u, rx_buf(%p)=[%s%s]\n",
 				 i, tmp->bits_per_word, tmp->len, tmp->rx_buf,
 				 linebuf, tmp->len > 16 ? " ..." : "");
@@ -135,111 +131,14 @@ static void mipi_dbi_vdbg_spi_message(struct spi_device *spi, struct spi_message
 	}
 }
 #else
-static void mipi_dbi_vdbg_spi_message(struct spi_device *spi, struct spi_message *m)
+static void mipi_dbi_vdbg_spi_message(struct spi_device *spi,
+				      struct spi_message *m)
 {
 }
 #endif
 
-/*
-static void swab16_buf(u16 *dst, const u16 *src, size_t len)
-{
-	int i;
-
-	for (i = 0; i < (len / 2); i++)
-		*dst++ = swab16(*src++);
-}
-*/
-
-/*
-int lcdreg_spi_transfer_in_chunks(struct spi_device *spi, struct spi_transfer *header, struct spi_transfer *transfer, size_t max_chunk, bool swap)
-
-size_t transform(void *dst, void *src, size_t len)
-
-
-int lcdreg2_spi_transfer(struct spi_device *spi, bool slow, const void *buf, size_t len, size_t bpw, bool swap, size_t max_chunk, const void *header, size_t header_len)
-*/
-
-int lcdreg2_spi_transfer(struct spi_device *spi, u32 speed_hz, u8 bits_per_word, const void *buf, size_t len, bool swap, size_t max_chunk, const void *header, size_t header_len)
-{
-	struct spi_transfer hdr_tr = {
-		.bits_per_word = 8,
-		.speed_hz = speed_hz,
-		.tx_buf = header,
-		.len = header_len,
-	};
-	struct spi_transfer tr = {
-		.bits_per_word = bits_per_word,
-		.speed_hz = speed_hz,
-	};
-	struct spi_message m;
-	size_t chunk;
-	int ret;
-
-//	max_chunk = max_chunk > PAGE_SIZE ? max_chunk & PAGE_MASK : rounddown_pow_of_two(max_chunk);
-	if (max_chunk < 4)
-		max_chunk = 4;
-
-#ifdef VERBOSE_DEBUG
-	DRM_DEBUG("dev=%s, max_chunk=%zu, transfers:\n", dev_name(&spi->dev), max_chunk);
-#endif
-	spi_message_init(&m);
-	if (header && header_len)
-		spi_message_add_tail(&hdr_tr, &m);
-	spi_message_add_tail(&tr, &m);
-
-//	spi_message_init_with_transfers(&m, &tr, 1);
-
-	while (len) {
-		chunk = min(len, max_chunk);
-
-		if (swap)
-			tr.bits_per_word = 8;
-
-		tr.tx_buf = buf;
-		tr.len = chunk;
-		buf += chunk;
-		len -= chunk;
-
-		mipi_dbi_vdbg_spi_message(spi, &m);
-		ret = spi_sync(spi, &m);
-		if (ret)
-			return ret;
-	};
-
-	return 0;
-}
-
-
-/*
-for_each_buf_chunk(buf, len, max_chunk)
-
-
-
-
-
-
-	while (len) {
-		struct spi_message m;
-
-		spi_message_init(&m);
-		chunk = min(len, max_chunk);
-
-		tr.tx_buf = buf;
-		tr.len = chunk;
-		buf += chunk;
-		len -= chunk;
-		spi_message_add_tail(&tr, &m);
-
-		lcdreg_vdbg_spi_message(&spi->dev, &m, swap);
-//		ret = spi_sync(spi, &m);
-		ret = 0;
-		if (ret)
-			return ret;
-	};
-*/
-
-
-static void lcdreg_debug(const void *reg, size_t reg_bytes, const void *buf, size_t len, size_t val_bytes)
+static void mspi_debug(const void *reg, size_t reg_bytes, const void *buf,
+		       size_t len, size_t val_bytes)
 {
 	unsigned int regnr;
 
@@ -251,7 +150,8 @@ static void lcdreg_debug(const void *reg, size_t reg_bytes, const void *buf, siz
 	if (buf && len) {
 		char linebuf[3 * 32];
 
-		mipi_dbi_hexdump(linebuf, ARRAY_SIZE(linebuf), buf, len, val_bytes * 8, 16);
+		mipi_dbi_hexdump(linebuf, ARRAY_SIZE(linebuf), buf, len,
+				 val_bytes * 8, 16);
 		DRM_DEBUG("reg=0x%0*x, data(%zu)= %s%s\n",
 			  reg_bytes == 1 ? 2 : 4, regnr, len, linebuf,
 			  len > 32 ? " ..." : "");
@@ -259,7 +159,6 @@ static void lcdreg_debug(const void *reg, size_t reg_bytes, const void *buf, siz
 		DRM_DEBUG("reg=0x%0*x\n", reg_bytes == 1 ? 2 : 4, regnr);
 	}
 }
-
 
 static size_t mipi_dbi_spi_clamp_size(struct spi_device *spi, size_t size)
 {
@@ -274,10 +173,11 @@ static size_t mipi_dbi_spi_clamp_size(struct spi_device *spi, size_t size)
 	return clamped;
 }
 
-
-static int mipi_dbi_spi_transfer(struct lcdreg2 *lcdreg, u8 bits_per_word, int dc, const void *buf, size_t len, size_t max_chunk)
+static int mipi_dbi_spi_transfer(struct mipi_dbi_spi *mspi, u8 bits_per_word,
+				 int dc, const void *buf, size_t len,
+				 size_t max_chunk)
 {
-	struct spi_device *spi = lcdreg->context;
+	struct spi_device *spi = mspi->context;
 	struct spi_transfer tr = {
 		.bits_per_word = bits_per_word,
 //		.speed_hz = spi->max_speed_hz,
@@ -300,8 +200,7 @@ static int mipi_dbi_spi_transfer(struct lcdreg2 *lcdreg, u8 bits_per_word, int d
 	DRM_DEBUG("%s: dc=%d, max_chunk=%zu, transfers:\n",
 		  dev_name(&spi->dev), dc, max_chunk);
 #endif
-	gpiod_set_value_cansleep(lcdreg->dc, dc);
-//	ret = lcdreg2_spi_transfer(spi, spi->max_speed_hz, bits_per_word, buf, len, swap && bits_per_word > 8, max_chunk, NULL, 0);
+	gpiod_set_value_cansleep(mspi->dc, dc);
 
 	spi_message_init_with_transfers(&m, &tr, 1);
 
@@ -341,11 +240,12 @@ err_free:
 	return ret;
 }
 
-
-static int mipi_dbi_spi_gather_write(void *context, const void *reg, size_t reg_len, const void *val, size_t val_len)
+static int mipi_dbi_spi_gather_write(void *context, const void *reg,
+				     size_t reg_len, const void *val,
+				     size_t val_len)
 {
-	struct lcdreg2 *lcdreg = context;
-	size_t val_bytes = regmap_get_val_bytes(lcdreg->map);
+	struct mipi_dbi_spi *mspi = context;
+	size_t val_bytes = regmap_get_val_bytes(mspi->map);
 	unsigned int regnr;
 	int ret;
 
@@ -356,35 +256,33 @@ static int mipi_dbi_spi_gather_write(void *context, const void *reg, size_t reg_
 	else
 		return -EINVAL;
 
-	if (regnr == lcdreg->ram_reg)
+	if (regnr == mspi->ram_reg)
 		val_bytes = 2;
 
-	lcdreg_debug(reg, reg_len, val, val_len, val_bytes);
+	mspi_debug(reg, reg_len, val, val_len, val_bytes);
 
-	ret = mipi_dbi_spi_transfer(lcdreg, reg_len * 8, 0, reg, reg_len, 4096);
+	ret = mipi_dbi_spi_transfer(mspi, reg_len * 8, 0, reg, reg_len, 4096);
 	if (ret)
 		return ret;
 
 	if (val && val_len)
-		ret = mipi_dbi_spi_transfer(lcdreg, val_bytes * 8, 1, val, val_len, 4096);
+		ret = mipi_dbi_spi_transfer(mspi, val_bytes * 8, 1, val,
+					    val_len, 4096);
 
 	return ret;
 }
 
 static int mipi_dbi_spi_write(void *context, const void *data, size_t count)
 {
-	struct lcdreg2 *lcdreg = context;
-	const void *val = data + lcdreg->reg_bytes;
-
-	return mipi_dbi_spi_gather_write(context, data, lcdreg->reg_bytes,
-					 val, count - lcdreg->reg_bytes);
+	return mipi_dbi_spi_gather_write(context, data, 1,
+					 data + 1, count - 1);
 }
 
 static int mipi_dbi_spi_read(void *context, const void *reg, size_t reg_size,
 			     void *val, size_t val_size)
 {
-	struct lcdreg2 *lcdreg = context;
-	struct spi_device *spi = lcdreg->context;
+	struct mipi_dbi_spi *mspi = context;
+	struct spi_device *spi = mspi->context;
 	u32 speed_hz = min_t(u32, MIPI_DBI_DEFAULT_SPI_READ_SPEED,
 			     spi->max_speed_hz / 2);
 	struct spi_transfer tr[2] = {
@@ -413,7 +311,7 @@ static int mipi_dbi_spi_read(void *context, const void *reg, size_t reg_size,
 		return -ENOMEM;
 
 	tr[1].rx_buf = buf;
-	gpiod_set_value_cansleep(lcdreg->dc, 0);
+	gpiod_set_value_cansleep(mspi->dc, 0);
 
 	spi_message_init_with_transfers(&m, tr, ARRAY_SIZE(tr));
 	ret = spi_sync(spi, &m);
@@ -434,14 +332,9 @@ static const struct regmap_bus mipi_dbi_regmap_bus = {
 	.val_format_endian_default = REGMAP_ENDIAN_DEFAULT,
 };
 
-
-
-
-
-
 /*
- * MIPI DBI Type C Option 1 on SPI controller without 9 bits per word support.
- * Use blocks of 9 bytes to send 8x 9-bit words with a 8-bit SPI transfer.
+ * MIPI DBI Type C Option 1 on SPI controller without 9 bits per word support,
+ * use blocks of 9 bytes to send 8x 9-bit words with a 8-bit SPI transfer.
  * Pad partial blocks with MIPI_DCS_NOP (zero).
  */
 
@@ -451,9 +344,11 @@ static const struct regmap_bus mipi_dbi_regmap_bus = {
 	(_dst) |= (u64)(_src) << (63 - 8 - ((_pos) * 9)); \
 }
 
-static int mipi_dbi_spi3e_transfer(struct lcdreg2 *lcdreg, u8 bits_per_word, int dc, const void *buf, size_t len, size_t max_chunk)
+static int mipi_dbi_spi3e_transfer(struct mipi_dbi_spi *mspi, u8 bits_per_word,
+				   int dc, const void *buf, size_t len,
+				   size_t max_chunk)
 {
-	struct spi_device *spi = lcdreg->context;
+	struct spi_device *spi = mspi->context;
 	struct spi_transfer tr = {
 		.bits_per_word = 8,
 	};
@@ -589,9 +484,11 @@ err_free:
 
 #undef SHIFT_U9_INTO_U64
 
-static int mipi_dbi_spi3_transfer(struct lcdreg2 *lcdreg, u8 bits_per_word, int dc, const void *buf, size_t len, size_t max_chunk)
+static int mipi_dbi_spi3_transfer(struct mipi_dbi_spi *mspi, u8 bits_per_word,
+				  int dc, const void *buf, size_t len,
+				  size_t max_chunk)
 {
-	struct spi_device *spi = lcdreg->context;
+	struct spi_device *spi = mspi->context;
 	struct spi_transfer tr = {
 		.bits_per_word = 9,
 	};
@@ -604,7 +501,8 @@ static int mipi_dbi_spi3_transfer(struct lcdreg2 *lcdreg, u8 bits_per_word, int 
 
 	/* TODO: check for 9-bit support */
 	if (1)
-		return mipi_dbi_spi3e_transfer(lcdreg, bits_per_word, dc, buf, len, max_chunk);
+		return mipi_dbi_spi3e_transfer(mspi, bits_per_word, dc, buf,
+					       len, max_chunk);
 
 	if (WARN_ON_ONCE(bits_per_word == 16 && len % 2))
 		return -EINVAL;
@@ -659,10 +557,12 @@ err_free:
 	return ret;
 }
 
-static int mipi_dbi_spi3_gather_write(void *context, const void *reg, size_t reg_len, const void *val, size_t val_len)
+static int mipi_dbi_spi3_gather_write(void *context, const void *reg,
+				      size_t reg_len, const void *val,
+				      size_t val_len)
 {
-	struct lcdreg2 *lcdreg = context;
-	size_t val_bytes = regmap_get_val_bytes(lcdreg->map);
+	struct mipi_dbi_spi *mspi = context;
+	size_t val_bytes = regmap_get_val_bytes(mspi->map);
 	unsigned int regnr;
 	int ret;
 
@@ -673,36 +573,34 @@ static int mipi_dbi_spi3_gather_write(void *context, const void *reg, size_t reg
 	else
 		return -EINVAL;
 
-	if (regnr == lcdreg->ram_reg)
+	if (regnr == mspi->ram_reg)
 		val_bytes = 2;
 
-	lcdreg_debug(reg, reg_len, val, val_len, val_bytes);
+	mspi_debug(reg, reg_len, val, val_len, val_bytes);
 
-	ret = mipi_dbi_spi3_transfer(lcdreg, reg_len * 8, 0, reg, reg_len, 4096);
+	ret = mipi_dbi_spi3_transfer(mspi, reg_len * 8, 0, reg, reg_len, 4096);
 	if (ret)
 		return ret;
 
 	if (val && val_len)
-		ret = mipi_dbi_spi3_transfer(lcdreg, val_bytes * 8, 1, val, val_len, 4096);
+		ret = mipi_dbi_spi3_transfer(mspi, val_bytes * 8, 1, val,
+					     val_len, 4096);
 
 	return ret;
 }
 
 static int mipi_dbi_spi3_write(void *context, const void *data, size_t count)
 {
-	struct lcdreg2 *lcdreg = context;
-	const void *val = data + lcdreg->reg_bytes;
-
-	return mipi_dbi_spi3_gather_write(context, data, lcdreg->reg_bytes,
-					 val, count - lcdreg->reg_bytes);
+	return mipi_dbi_spi3_gather_write(context, data, 1,
+					 data + 1, count - 1);
 }
 
 /* TODO: This didn't work just returns zeroes. Problem with display or code? */
 static int mipi_dbi_spi3_read(void *context, const void *reg, size_t reg_size,
 			      void *val, size_t val_size)
 {
-	struct lcdreg2 *lcdreg = context;
-	struct spi_device *spi = lcdreg->context;
+	struct mipi_dbi_spi *mspi = context;
+	struct spi_device *spi = mspi->context;
 	u32 speed_hz = min_t(u32, MIPI_DBI_DEFAULT_SPI_READ_SPEED,
 			     spi->max_speed_hz / 2);
 	struct spi_transfer tr[2] = {
@@ -765,51 +663,41 @@ static const struct regmap_bus mipi_dbi_regmap_bus3 = {
 	.val_format_endian_default = REGMAP_ENDIAN_DEFAULT,
 };
 
-
-
-int mipi_dbi_regmap_init(struct device *dev, struct mipi_dbi *mipi,
-			 void *context, struct gpio_desc *dc)
+int mipi_dbi_spi_init(struct mipi_dbi *mipi, struct spi_device *spi,
+		      struct gpio_desc *dc, struct gpio_desc *reset,
+		      bool writeonly)
 {
 	struct regmap_config config = {
 		.reg_bits = 8,
 		.val_bits = 8,
 		.cache_type = REGCACHE_NONE,
 	};
-	struct lcdreg2 *lcdreg;
+	struct device *dev = &spi->dev;
+	struct mipi_dbi_spi *mspi;
 	struct regmap *map;
 
-	lcdreg = devm_kzalloc(dev, sizeof(*lcdreg), GFP_KERNEL);
-	if (!lcdreg)
+	mspi = devm_kzalloc(dev, sizeof(*mspi), GFP_KERNEL);
+	if (!mspi)
 		return -ENOMEM;
 
-	lcdreg->ram_reg = MIPI_DCS_WRITE_MEMORY_START;
-	lcdreg->reg_bytes = DIV_ROUND_UP(config.reg_bits, 8); // ALWAYS 8 now
-	lcdreg->context = context;
-
 	if (dc)
-		map = devm_regmap_init(dev, &mipi_dbi_regmap_bus, lcdreg,
+		map = devm_regmap_init(dev, &mipi_dbi_regmap_bus, mspi,
 				       &config);
 	else
-		map = devm_regmap_init(dev, &mipi_dbi_regmap_bus3, lcdreg,
+		map = devm_regmap_init(dev, &mipi_dbi_regmap_bus3, mspi,
 				       &config);
 	if (IS_ERR(map))
 		return PTR_ERR(map);
 
-	lcdreg->map = map;
+	mspi->ram_reg = MIPI_DCS_WRITE_MEMORY_START;
+	mspi->context = spi;
+	mspi->map = map;
 	mipi->reg = map;
-	mipi->lcdreg2 = lcdreg;
-	mipi->lcdreg2->dc = dc;
+	mspi->dc = dc;
 
-	return 0;
-}
-
-int mipi_dbi_spi_init(struct mipi_dbi *mipi, struct spi_device *spi,
-		      struct gpio_desc *dc, struct gpio_desc *reset,
-		      bool writeonly)
-{
 	mipi->reset = reset;
 
-	return mipi_dbi_regmap_init(&spi->dev, mipi, spi, dc);
+	return 0;
 }
 EXPORT_SYMBOL(mipi_dbi_spi_init);
 
