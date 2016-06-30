@@ -52,6 +52,12 @@ static int tinydrm_fb_dirty(struct drm_framebuffer *fb,
 	if (tdev->pipe.plane.fb != fb)
 		goto out_unlock;
 
+	/* Make sure to flush everything the first time */
+	if (!tdev->enabled) {
+		clips = NULL;
+		num_clips = 0;
+	}
+
 	ret = tdev->funcs->dirty(fb, cma_obj, flags, color, clips, num_clips);
 	if (ret)
 		goto out_unlock;
