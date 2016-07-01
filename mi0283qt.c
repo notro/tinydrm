@@ -209,8 +209,19 @@ static const struct spi_device_id mi0283qt_id[] = {
 };
 MODULE_DEVICE_TABLE(spi, mi0283qt_id);
 
-TINYDRM_DRM_DRIVER(mi0283qt_driver, "mi0283qt", "Multi-Inno MI0283QT",
-		   "20160614");
+static struct drm_driver mi0283qt_driver = {
+	.driver_features	= DRIVER_GEM | DRIVER_MODESET | DRIVER_PRIME \
+				| DRIVER_ATOMIC,
+	TINYDRM_GEM_DRIVER_OPS,
+	.lastclose		= tinydrm_lastclose,
+	.debugfs_init		= mipi_dbi_debugfs_init,
+	.debugfs_cleanup	= mipi_dbi_debugfs_cleanup,
+	.name			= "mi0283qt",
+	.desc			= "Multi-Inno MI0283QT",
+	.date			= "20160614",
+	.major			= 1,
+	.minor			= 0,
+};
 
 static int mi0283qt_probe(struct spi_device *spi)
 {

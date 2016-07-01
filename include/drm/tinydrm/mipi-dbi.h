@@ -77,4 +77,12 @@ void mipi_dbi_unprepare(struct tinydrm_device *tdev);
 int mipi_dbi_write_buf(struct regmap *reg, unsigned cmd, const u8 *parameters,
 		       size_t num);
 
+#ifdef CONFIG_DEBUG_FS
+int mipi_dbi_debugfs_init(struct drm_minor *minor);
+void mipi_dbi_debugfs_cleanup(struct drm_minor *minor);
+#else
+#define mipi_dbi_debugfs_init		NULL
+#define mipi_dbi_debugfs_cleanup	NULL
+#endif
+
 #endif /* __LINUX_MIPI_DBI_H */

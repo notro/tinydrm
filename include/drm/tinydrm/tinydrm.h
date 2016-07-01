@@ -99,19 +99,12 @@ drm_to_tinydrm(struct drm_device *drm)
 }
 
 /*
- * TINYDRM_DRM_DRIVER - default tinydrm driver structure
- * @name_struct: structure name
- * @name_str: driver name
- * @desc_str: driver description
- * @date_str: driver date
+ * TINYDRM_GEM_DRIVER_OPS - default tinydrm gem operations
  *
- * This macro provides a default &drm_driver structure for drivers.
+ * This macro provides a shortcut for setting the tinydrm GEM operations in
+ * the &drm_driver structure.
  */
-#define TINYDRM_DRM_DRIVER(name_struct, name_str, desc_str, date_str) \
-static struct drm_driver name_struct = { \
-	.driver_features	= DRIVER_GEM | DRIVER_MODESET | DRIVER_PRIME \
-				| DRIVER_ATOMIC, \
-	.lastclose		= tinydrm_lastclose, \
+#define TINYDRM_GEM_DRIVER_OPS \
 	.gem_free_object	= tinydrm_gem_cma_free_object, \
 	.gem_vm_ops		= &drm_gem_cma_vm_ops, \
 	.prime_handle_to_fd	= drm_gem_prime_handle_to_fd, \
@@ -126,17 +119,9 @@ static struct drm_driver name_struct = { \
 	.dumb_create		= drm_gem_cma_dumb_create, \
 	.dumb_map_offset	= drm_gem_cma_dumb_map_offset, \
 	.dumb_destroy		= drm_gem_dumb_destroy, \
-	.debugfs_init		= tinydrm_debugfs_init, \
-	.debugfs_cleanup	= tinydrm_debugfs_cleanup, \
-	.fops			= &tinydrm_fops, \
-	.name			= name_str, \
-	.desc			= desc_str, \
-	.date			= date_str, \
-	.major			= 1, \
-	.minor			= 0, \
-}
+	.fops			= &tinydrm_fops
 
-/*
+/**
  * TINYDRM_MODE - tinydrm display mode
  * @hd: horizontal resolution, width
  * @vd: vertical resolution, height

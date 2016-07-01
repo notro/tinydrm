@@ -996,9 +996,6 @@ bool mipi_dbi_display_is_on(struct regmap *reg)
 {
 	u8 val;
 
-	if (0) /* TODO write-only */
-		return false;
-
 	if (regmap_raw_read(reg, MIPI_DCS_GET_POWER_MODE, &val, 1))
 		return false;
 
@@ -1068,5 +1065,259 @@ void mipi_dbi_debug_dump_regs(struct regmap *reg)
 			 MIPI_DCS_GET_DIAGNOSTIC_RESULT, val[0]);
 }
 EXPORT_SYMBOL(mipi_dbi_debug_dump_regs);
+
+#ifdef CONFIG_DEBUG_FS
+
+static bool mipi_dbi_debugfs_readreg(struct seq_file *m, struct regmap *reg,
+				     unsigned regnr, const char *desc,
+				     u8 *buf, size_t len)
+{
+	int ret;
+
+	ret = regmap_raw_read(reg, regnr, buf, len);
+	if (ret) {
+		seq_printf(m, "\n%s: command %02Xh failed: %d \n", desc, regnr,
+			   ret);
+		return false;
+	} else {
+		seq_printf(m, "\n%s (%02Xh=%*phN):\n", desc, regnr, len, buf);
+	}
+
+	return true;
+}
+
+static void
+seq_bit_val(struct seq_file *m, const char *desc, u32 val, u8 bit)
+{
+	bool bit_val = !!(val & BIT(bit));
+
+	seq_printf(m, "    D%u=%u: %s\n", bit, bit_val, desc);
+}
+
+static void
+seq_bit_reserved(struct seq_file *m, u32 val, u8 end, u8 start)
+{
+	int i;
+
+	for (i = end; i >= start; i--)
+		seq_bit_val(m, "Reserved", val, i);
+}
+
+static void
+seq_bit_array(struct seq_file *m, const char *desc, u32 val, u8 end, u8 start)
+{
+	u32 bits_val = (val & GENMASK(end, start)) >> start;
+	int i;
+
+	seq_printf(m, "    D[%u:%u]=%u: %s ", end, start, bits_val, desc);
+	for (i = end; i >= start; i--)
+		seq_printf(m, "%u ", !!(val & BIT(i)));
+
+	seq_putc(m, '\n');
+}
+
+static void
+seq_bit_text(struct seq_file *m, const char *desc, u32 val, u8 bit, const char *on, const char *off)
+{
+	bool bit_val = val & BIT(bit);
+
+	seq_printf(m, "    D%u=%u: %s %s\n", bit, bit_val, desc, bit_val ? on : off);
+}
+
+static inline void
+seq_bit_on_off(struct seq_file *m, const char *desc, u32 val, u8 bit)
+{
+	seq_bit_text(m, desc, val, bit, "On", "Off");
+}
+
+static char *mipi_pixel_format_str(u8 val)
+{
+	switch (val) {
+	case 0:
+		return "Reserved";
+	case 1:
+		return "3 bits/pixel";
+	case 2:
+		return "8 bits/pixel";
+	case 3:
+		return "12 bits/pixel";
+	case 4:
+		return "Reserved";
+	case 5:
+		return "16 bits/pixel";
+	case 6:
+		return "18 bits/pixel";
+	case 7:
+		return "24 bits/pixel";
+	default:
+		return "Illegal format";
+	}
+}
+
+static int mipi_dbi_debugfs_show(struct seq_file *m, void *arg)
+{
+	struct drm_info_node *node = (struct drm_info_node *)m->private;
+	struct drm_device *drm = node->minor->dev;
+	struct tinydrm_device *tdev = drm_to_tinydrm(drm);
+	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
+	struct regmap *reg = mipi->reg;
+	u8 buf[4];
+	u8 val8;
+	int ret;
+
+	ret = regmap_raw_read(reg, MIPI_DCS_GET_POWER_MODE, buf, 1);
+	if (ret == -EACCES || ret == -ENOTSUPP) {
+		seq_printf(m, "Controller is write-only\n");
+		return 0;
+	}
+
+	if (mipi_dbi_debugfs_readreg(m, reg, MIPI_DCS_GET_DISPLAY_ID,
+				     "Display ID", buf, 3)) {
+		seq_printf(m, "    ID1 = 0x%02x\n", buf[0]);
+		seq_printf(m, "    ID2 = 0x%02x\n", buf[1]);
+		seq_printf(m, "    ID3 = 0x%02x\n", buf[2]);
+	}
+
+	if (mipi_dbi_debugfs_readreg(m, reg, MIPI_DCS_GET_DISPLAY_STATUS,
+				     "Display status", buf, 4)) {
+		u32 stat;
+
+		stat = (buf[0] << 24) | (buf[1] << 16) | (buf[2] << 8) | buf[3];
+stat <<= 1;
+		seq_bit_on_off(m, "Booster voltage status:", stat, 31);
+		seq_bit_val(m, "Row address order", stat, 30);
+		seq_bit_val(m, "Column address order", stat, 29);
+		seq_bit_val(m, "Row/column exchange", stat, 28);
+		seq_bit_text(m, "Vertical refresh:", stat, 27,
+			     "Bottom to Top", "Top to Bottom");
+		seq_bit_text(m, "RGB/BGR order:", stat, 26, "BGR", "RGB");
+		seq_bit_text(m, "Horizontal refresh order:", stat, 25,
+			     "Right to Left", "Left to Right");
+		seq_bit_reserved(m, stat, 24, 23);
+		seq_bit_array(m, "Interface color pixel format:", stat, 22, 20);
+		seq_bit_on_off(m, "Idle mode:", stat, 19);
+		seq_bit_on_off(m, "Partial mode:", stat, 18);
+		seq_bit_text(m, "Sleep:", stat, 17, "Out", "In");
+		seq_bit_on_off(m, "Display normal mode:", stat, 16);
+		seq_bit_on_off(m, "Vertical scrolling status:", stat, 15);
+		seq_bit_reserved(m, stat, 14, 14);
+		seq_bit_val(m, "Inversion status", stat, 13);
+		seq_bit_val(m, "All pixel ON", stat, 12);
+		seq_bit_val(m, "All pixel OFF", stat, 11);
+		seq_bit_on_off(m, "Display:", stat, 10);
+		seq_bit_on_off(m, "Tearing effect line:", stat, 9);
+		seq_bit_array(m, "Gamma curve selection:", stat, 8, 6);
+		seq_bit_text(m, "Tearing effect line mode:", stat, 5,
+			     "Mode 2, both H-Blanking and V-Blanking",
+			     "Mode 1, V-Blanking only");
+		seq_bit_reserved(m, stat, 4, 0);
+	}
+
+	if (mipi_dbi_debugfs_readreg(m, reg, MIPI_DCS_GET_POWER_MODE,
+				     "Power mode", &val8, 1)) {
+		seq_bit_text(m, "Booster", val8, 7, "On", "Off or faulty");
+		seq_bit_on_off(m, "Idle Mode", val8, 6);
+		seq_bit_on_off(m, "Partial Mode", val8, 5);
+		seq_bit_text(m, "Sleep", val8, 4, "Out Mode", "In Mode");
+		seq_bit_on_off(m, "Display Normal Mode", val8, 3);
+		seq_bit_on_off(m, "Display is", val8, 2);
+		seq_bit_reserved(m, val8, 1, 0);
+	}
+
+	if (mipi_dbi_debugfs_readreg(m, reg, MIPI_DCS_GET_ADDRESS_MODE,
+				     "Address mode", &val8, 1)) {
+		seq_bit_text(m, "Page Address Order:", val8, 7,
+			     "Bottom to Top", "Top to Bottom");
+		seq_bit_text(m, "Column Address Order:", val8, 6,
+			     "Right to Left", "Left to Right");
+		seq_bit_text(m, "Page/Column Order:", val8, 5,
+			     "Reverse Mode", "Normal Mode");
+		seq_bit_text(m, "Line Address Order: LCD Refresh", val8, 4,
+			     "Bottom to Top", "Top to Bottom");
+		seq_bit_text(m, "RGB/BGR Order:", val8, 3, "BGR", "RGB");
+		seq_bit_text(m, "Display Data Latch Data Order: LCD Refresh",
+			     val8, 2, "Right to Left", "Left to Right");
+		seq_bit_reserved(m, val8, 1, 0);
+	}
+
+	if (mipi_dbi_debugfs_readreg(m, reg, MIPI_DCS_GET_PIXEL_FORMAT,
+				     "Pixel format", &val8, 1)) {
+		u8 dpi = (val8 >> 4) & 0x7;
+		u8 dbi = val8 & 0x7;
+
+		seq_bit_reserved(m, val8, 7, 7);
+		seq_printf(m, "    D[6:4]=%u: DPI: %s\n", dpi,
+			   mipi_pixel_format_str(dpi));
+		seq_bit_reserved(m, val8, 3, 3);
+		seq_printf(m, "    D[2:0]=%u: DBI: %s\n", dbi,
+			   mipi_pixel_format_str(dbi));
+	}
+
+	if (mipi_dbi_debugfs_readreg(m, reg, MIPI_DCS_GET_DISPLAY_MODE,
+				     "Image Mode", &val8, 1)) {
+		u8 gc = val8 & 0x7;
+
+		seq_bit_on_off(m, "Vertical Scrolling Status:", val8, 7);
+		seq_bit_reserved(m, val8, 6, 6);
+		seq_bit_on_off(m, "Inversion:", val8, 5);
+		seq_bit_reserved(m, val8, 4, 3);
+		seq_printf(m, "    D[2:0]=%u: Gamma Curve Selection: ", gc);
+		if (gc < 4)
+			seq_printf(m, "GC%u\n", gc);
+		else
+			seq_puts(m, "Reserved\n");
+	}
+
+	if (mipi_dbi_debugfs_readreg(m, reg, MIPI_DCS_GET_SIGNAL_MODE,
+				     "Signal Mode", &val8, 1)) {
+		seq_bit_on_off(m, "Tearing Effect Line:", val8, 7);
+		seq_bit_text(m, "Tearing Effect Line Output Mode: Mode",
+			     val8, 6, "2", "1");
+		seq_bit_reserved(m, val8, 5, 0);
+	}
+
+	if (mipi_dbi_debugfs_readreg(m, reg, MIPI_DCS_GET_DIAGNOSTIC_RESULT,
+				     "Diagnostic result", &val8, 1)) {
+		seq_bit_text(m, "Register Loading Detection:", val8, 7,
+			     "OK", "Fault or reset");
+		seq_bit_text(m, "Functionality Detection:", val8, 6,
+			     "OK", "Fault or reset");
+		seq_bit_text(m, "Chip Attachment Detection:", val8, 5,
+			     "Fault", "OK or unimplemented");
+		seq_bit_text(m, "Display Glass Break Detection:", val8, 4,
+			     "Fault", "OK or unimplemented");
+		seq_bit_reserved(m, val8, 3, 0);
+	}
+
+	return 0;
+}
+
+static const struct drm_info_list mipi_dbi_debugfs_list[] = {
+	{ "mipi",   mipi_dbi_debugfs_show, 0 },
+};
+
+int mipi_dbi_debugfs_init(struct drm_minor *minor)
+{
+	int ret;
+
+	ret = tinydrm_debugfs_init(minor);
+	if (ret)
+		return ret;
+
+	return drm_debugfs_create_files(mipi_dbi_debugfs_list,
+					ARRAY_SIZE(mipi_dbi_debugfs_list),
+					minor->debugfs_root, minor);
+}
+EXPORT_SYMBOL(mipi_dbi_debugfs_init);
+
+void mipi_dbi_debugfs_cleanup(struct drm_minor *minor)
+{
+	tinydrm_debugfs_cleanup(minor);
+	drm_debugfs_remove_files(mipi_dbi_debugfs_list,
+				 ARRAY_SIZE(mipi_dbi_debugfs_list), minor);
+}
+EXPORT_SYMBOL(mipi_dbi_debugfs_cleanup);
+
+#endif
 
 MODULE_LICENSE("GPL");

@@ -258,8 +258,19 @@ static const struct spi_device_id adafruit_tft_id[] = {
 };
 MODULE_DEVICE_TABLE(spi, adafruit_tft_id);
 
-TINYDRM_DRM_DRIVER(adafruit_tft_driver, "adafruit-tft", "Adafruit TFT",
-		   "20160317");
+static struct drm_driver adafruit_tft_driver = {
+	.driver_features	= DRIVER_GEM | DRIVER_MODESET | DRIVER_PRIME \
+				| DRIVER_ATOMIC,
+	TINYDRM_GEM_DRIVER_OPS,
+	.lastclose		= tinydrm_lastclose,
+	.debugfs_init		= mipi_dbi_debugfs_init,
+	.debugfs_cleanup	= mipi_dbi_debugfs_cleanup,
+	.name			= "adafruit-tft",
+	.desc			= "Adafruit TFT",
+	.date			= "20160317",
+	.major			= 1,
+	.minor			= 0,
+};
 
 static int adafruit_tft_probe(struct spi_device *spi)
 {
