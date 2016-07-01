@@ -27,6 +27,7 @@
 struct adafruit_tft_display {
 	const struct drm_display_mode mode;
 	const struct tinydrm_funcs funcs;
+	bool write_only;
 	bool dc;
 };
 
@@ -35,7 +36,19 @@ enum adafruit_tft_display_ids {
 	ADAFRUIT_358,
 };
 
-/* Init sequence taken from the Adafruit-HX8340B library */
+/*
+ * 2.2" Color TFT LCD display - HX8340BN, 9-bit mode (#797)
+ * Product: http://www.adafruit.com/products/797
+ * Schematics: https://github.com/adafruit/Adafruit-2.2-SPI-TFT
+ *
+ * It's hard to tell if it should be possible to read from the controller.
+ * The datasheet says that SDI is used for input and output, but
+ * the schematics indicate that MISO is connected.
+ * One user reports a failed attempt to read from it. So err on the safe
+ * side and mark it is as write-only in case it tries to drive MOSI.
+ *
+ * Init sequence taken from the BTL221722-276L datasheet
+ */
 static int adafruit_tft_797_prepare(struct tinydrm_device *tdev)
 {
 	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
@@ -72,11 +85,12 @@ static int adafruit_tft_797_prepare(struct tinydrm_device *tdev)
 
 	mipi_dbi_write(reg, HX8340_SETOSC, 0x01, 0x11);
 
-	/* Undocumented register */
+	/* Driving ability Setting */
 	mipi_dbi_write(reg, 0xC9,
 		       0x90, 0x49, 0x10, 0x28, 0x28, 0x10, 0x00, 0x06);
 	msleep(20);
 
+	/* Gamma 2.2 Setting */
 	mipi_dbi_write(reg, HX8340_SETGAMMAP,
 		       0x60, 0x71, 0x01, 0x0E, 0x05, 0x02, 0x09, 0x31, 0x0A);
 	mipi_dbi_write(reg, HX8340_SETGAMMAN,
@@ -112,7 +126,12 @@ static int adafruit_tft_797_prepare(struct tinydrm_device *tdev)
 	return 0;
 }
 
-/* Init sequence taken from the Adafruit-ST7735-Library (Black Tab) */
+/*
+ * 1.8" Color TFT LCD display - ST7735R (#358)
+ * Product: https://www.adafruit.com/products/358
+ *
+ * Init sequence taken from the Adafruit-ST7735-Library (Black Tab)
+ */
 static int adafruit_tft_358_prepare(struct tinydrm_device *tdev)
 {
 	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
@@ -196,7 +215,6 @@ static int adafruit_tft_358_prepare(struct tinydrm_device *tdev)
 }
 
 static const struct adafruit_tft_display adafruit_tft_displays[] = {
-	/* 2.2" Color TFT LCD display - HX8340BN, 9-bit mode (#797) */
 	[ADAFRUIT_797] = {
 		.mode = {
 			TINYDRM_MODE(176, 220, 34, 43),
@@ -208,8 +226,8 @@ static const struct adafruit_tft_display adafruit_tft_displays[] = {
 			.disable = mipi_dbi_disable_backlight,
 			.dirty = mipi_dbi_dirty,
 		},
+		.write_only = true,
 	},
-	/* 1.8" Color TFT LCD display - ST7735R (#358) */
 	[ADAFRUIT_358] = {
 		.mode = {
 			TINYDRM_MODE(128, 160, 28, 35),
@@ -222,6 +240,7 @@ static const struct adafruit_tft_display adafruit_tft_displays[] = {
 			.dirty = mipi_dbi_dirty,
 		},
 		.dc = true,
+		.write_only = true,
 	},
 };
 
@@ -244,13 +263,13 @@ TINYDRM_DRM_DRIVER(adafruit_tft_driver, "adafruit-tft", "Adafruit TFT",
 
 static int adafruit_tft_probe(struct spi_device *spi)
 {
+	const struct adafruit_tft_display *display;
 	struct gpio_desc *reset, *dc = NULL;
 	const struct of_device_id *of_id;
 	struct device *dev = &spi->dev;
 	struct tinydrm_device *tdev;
 	struct mipi_dbi *mipi;
 	u32 rotation = 0;
-	bool writeonly;
 	int id, ret;
 
 	of_id = of_match_device(adafruit_tft_of_match, dev);
@@ -271,6 +290,8 @@ static int adafruit_tft_probe(struct spi_device *spi)
 			dev_warn(dev, "Failed to set dma mask %d\n", ret);
 	}
 
+	display = &adafruit_tft_displays[id];
+
 	mipi = devm_kzalloc(dev, sizeof(*mipi), GFP_KERNEL);
 	if (!mipi)
 		return -ENOMEM;
@@ -281,7 +302,7 @@ static int adafruit_tft_probe(struct spi_device *spi)
 		return PTR_ERR(reset);
 	}
 
-	if (adafruit_tft_displays[id].dc) {
+	if (display->dc) {
 		dc = devm_gpiod_get_optional(dev, "dc", GPIOD_OUT_LOW);
 		if (IS_ERR(dc)) {
 			dev_err(dev, "Failed to get gpio 'dc'\n");
@@ -302,21 +323,20 @@ static int adafruit_tft_probe(struct spi_device *spi)
 	if (IS_ERR(mipi->backlight))
 		return PTR_ERR(mipi->backlight);
 
-	writeonly = device_property_read_bool(dev, "write-only");
 	device_property_read_u32(dev, "rotation", &rotation);
 
-	ret = mipi_dbi_spi_init(mipi, spi, dc, reset, writeonly);
+	ret = mipi_dbi_spi_init(mipi, spi, dc, reset, display->write_only);
 	if (ret)
 		return ret;
 
-	ret = mipi_dbi_init(dev, mipi, &adafruit_tft_driver,
-			    &adafruit_tft_displays[id].mode, rotation);
+	ret = mipi_dbi_init(dev, mipi, &adafruit_tft_driver, &display->mode,
+			    rotation);
 	if (ret)
 		return ret;
 
 	tdev = &mipi->tinydrm;
 
-	ret = devm_tinydrm_register(tdev, &adafruit_tft_displays[id].funcs);
+	ret = devm_tinydrm_register(tdev, &display->funcs);
 	if (ret)
 		return ret;
 
