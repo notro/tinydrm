@@ -655,6 +655,7 @@ static int mipi_dbi_spi3_read(void *context, const void *reg, size_t reg_size,
 		},
 	};
 	struct spi_message m;
+	u8 cmd = *(u8 *)reg;
 	u8 *buf;
 	int ret;
 
@@ -665,7 +666,20 @@ static int mipi_dbi_spi3_read(void *context, const void *reg, size_t reg_size,
 	DRM_DEBUG("%s: regnr=0x%02x, dc=0, len=%zu, transfers:\n",
 		  dev_name(&spi->dev), *(u8 *)reg, val_size);
 #endif
-	buf = kmalloc(val_size, GFP_KERNEL);
+
+	/*
+	 * Support non-standard 24-bit and 32-bit Nokia read commands which
+	 * starts with a dummy clock, so we need to read an extra byte.
+	 */
+	if (cmd == MIPI_DCS_GET_DISPLAY_ID ||
+	    cmd == MIPI_DCS_GET_DISPLAY_STATUS) {
+		if (!(val_size == 3 || val_size == 4))
+			return -EINVAL;
+
+		tr[1].len = val_size + 1;
+	}
+
+	buf = kmalloc(tr[1].len, GFP_KERNEL);
 	if (!buf)
 		return -ENOMEM;
 
@@ -676,7 +690,15 @@ static int mipi_dbi_spi3_read(void *context, const void *reg, size_t reg_size,
 	ret = spi_sync(spi, &m);
 	mipi_dbi_vdbg_spi_message(spi, &m);
 
-	memcpy(val, buf, val_size);
+	if (tr[1].len == val_size) {
+		memcpy(val, buf, val_size);
+	} else {
+		u8 *data = val;
+		unsigned int i;
+
+		for (i = 0; i < val_size; i++)
+			data[i] = (buf[i] << 1) | !!(buf[i + 1] & BIT(7));
+	}
 	kfree(buf);
 
 	return ret;
@@ -1171,6 +1193,11 @@ static int mipi_dbi_debugfs_show(struct seq_file *m, void *arg)
 		return 0;
 	}
 
+	/*
+	 * Read Display ID (04h) and Read Display Status (09h) are
+	 * non-standard commands that Nokia wanted back in the day,
+	 * so most vendors implemented them.
+	 */
 	if (mipi_dbi_debugfs_readreg(m, reg, MIPI_DCS_GET_DISPLAY_ID,
 				     "Display ID", buf, 3)) {
 		seq_printf(m, "    ID1 = 0x%02x\n", buf[0]);
@@ -1183,7 +1210,7 @@ static int mipi_dbi_debugfs_show(struct seq_file *m, void *arg)
 		u32 stat;
 
 		stat = (buf[0] << 24) | (buf[1] << 16) | (buf[2] << 8) | buf[3];
-stat <<= 1;
+
 		seq_bit_on_off(m, "Booster voltage status:", stat, 31);
 		seq_bit_val(m, "Row address order", stat, 30);
 		seq_bit_val(m, "Column address order", stat, 29);

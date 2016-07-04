@@ -1,7 +1,7 @@
 #define DEBUG
 
 /*
- * DRM driver for Mulri-Inno MI0283QT panels
+ * DRM driver for Multi-Inno MI0283QT panels
  *
  * Copyright 2016 Noralf Trønnes
  *
