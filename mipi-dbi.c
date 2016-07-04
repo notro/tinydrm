@@ -456,70 +456,10 @@ static int mipi_dbi_spi1_write(void *context, const void *data, size_t count)
 					 data + 1, count - 1);
 }
 
-/*
- * TODO
- *
- * Tested on 8-bit only SPI controller and it didn't work.
- * It just returns zeroes.
- *
- * Should I drop this code that hasn't been verified, or just leave a note?
- */
 static int mipi_dbi_spi1_read(void *context, const void *reg, size_t reg_size,
 			      void *val, size_t val_size)
 {
-	struct mipi_dbi_spi *mspi = context;
-	struct spi_device *spi = mspi->context;
-	u32 speed_hz = min_t(u32, MIPI_DBI_DEFAULT_SPI_READ_SPEED,
-			     spi->max_speed_hz / 2);
-	struct spi_transfer tr[2] = {
-		{
-			.speed_hz = speed_hz,
-		}, {
-			.speed_hz = speed_hz,
-			.len = val_size,
-		},
-	};
-	struct spi_message m;
-	u8 *cmd, *buf;
-	int ret;
-
-	if (mspi->write_only)
-		return -EACCES;
-
-#ifdef VERBOSE_DEBUG
-	DRM_DEBUG("%s: regnr=0x%02x, len=%zu, transfers:\n",
-		  dev_name(&spi->dev), *(u8 *)reg, val_size);
-#endif
-	cmd = kzalloc(9, GFP_KERNEL);
-	buf = kmalloc(val_size, GFP_KERNEL);
-	if (!cmd || !buf) {
-		kfree(cmd);
-		kfree(buf);
-		return -ENOMEM;
-	}
-
-	tr[0].tx_buf = cmd;
-	tr[1].rx_buf = buf;
-
-	if (mipi_dbi_spi_bpw_supported(spi, 9)) {
-		*(u16 *)cmd = *(u8 *)reg;
-		tr[0].bits_per_word = 9;
-		tr[0].len = 2;
-	} else {
-		/* 8x 9-bit, pad with leading zeroes (no-ops) */
-		cmd[8] = *(u8 *)reg;
-		tr[0].len = 9;
-	}
-
-	spi_message_init_with_transfers(&m, tr, ARRAY_SIZE(tr));
-	ret = spi_sync(spi, &m);
-	mipi_dbi_vdbg_spi_message(spi, &m);
-
-	memcpy(val, buf, val_size);
-	kfree(cmd);
-	kfree(buf);
-
-	return ret;
+	return -ENOTSUPP;
 }
 
 static const struct regmap_bus mipi_dbi_regmap_bus1 = {
@@ -686,6 +626,10 @@ static int mipi_dbi_spi3_read(void *context, const void *reg, size_t reg_size,
 	tr[1].rx_buf = buf;
 	gpiod_set_value_cansleep(mspi->dc, 0);
 
+	/*
+	 * Can't use spi_write_then_read() because reading speed is slower
+	 * than writing speed and that is set on the transfer.
+	 */
 	spi_message_init_with_transfers(&m, tr, ARRAY_SIZE(tr));
 	ret = spi_sync(spi, &m);
 	mipi_dbi_vdbg_spi_message(spi, &m);
