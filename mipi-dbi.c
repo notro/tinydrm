@@ -34,7 +34,6 @@
 struct mipi_dbi_spi {
 	struct spi_device *spi;
 	struct regmap *map;
-void *context;
 	unsigned int ram_reg;
 	struct gpio_desc *dc;
 	bool write_only;
@@ -99,7 +98,7 @@ static int mipi_dbi_spi1e_transfer(struct mipi_dbi_spi *mspi, u8 bits_per_word,
 				   int dc, const void *buf, size_t len,
 				   size_t max_chunk)
 {
-	struct spi_device *spi = mspi->context;
+	struct spi_device *spi = mspi->spi;
 	struct spi_transfer tr = {
 		.bits_per_word = 8,
 	};
@@ -236,7 +235,7 @@ static int mipi_dbi_spi1_transfer(struct mipi_dbi_spi *mspi, u8 bits_per_word,
 				  int dc, const void *buf, size_t len,
 				  size_t max_chunk)
 {
-	struct spi_device *spi = mspi->context;
+	struct spi_device *spi = mspi->spi;
 	struct spi_transfer tr = {
 		.bits_per_word = 9,
 	};
@@ -392,7 +391,7 @@ static int mipi_dbi_spi3_read(void *context, const void *reg, size_t reg_len,
 			      void *val, size_t val_len)
 {
 	struct mipi_dbi_spi *mspi = context;
-	struct spi_device *spi = mspi->context;
+	struct spi_device *spi = mspi->spi;
 	u32 speed_hz = min_t(u32, MIPI_DBI_DEFAULT_SPI_READ_SPEED,
 			     spi->max_speed_hz / 2);
 	struct spi_transfer tr[2] = {
@@ -504,7 +503,6 @@ int mipi_dbi_spi_init(struct mipi_dbi *mipi, struct spi_device *spi,
 
 	mspi->ram_reg = MIPI_DCS_WRITE_MEMORY_START;
 	mspi->spi = spi;
-mspi->context = spi;
 	mspi->map = map;
 	mipi->reg = map;
 	mspi->dc = dc;
