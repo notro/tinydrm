@@ -32,11 +32,14 @@
 #define DCS_POWER_MODE_RESERVED_MASK		(BIT(0) | BIT(1) | BIT(7))
 
 struct mipi_dbi_spi {
+	struct spi_device *spi;
 	struct regmap *map;
-	void *context;
+void *context;
 	unsigned int ram_reg;
 	struct gpio_desc *dc;
 	bool write_only;
+	u16 *swap_buf;
+	size_t chunk_size;
 };
 
 /**
@@ -65,102 +68,6 @@ int mipi_dbi_write_buf(struct regmap *reg, unsigned cmd, const u8 *parameters,
 }
 EXPORT_SYMBOL(mipi_dbi_write_buf);
 
-static void mipi_dbi_hexdump(char *linebuf, size_t linebuflen, const void *buf, size_t len, size_t bpw, size_t max)
-{
-
-	if (bpw > 16) {
-		snprintf(linebuf, linebuflen, "bpw not supported");
-	} else if (bpw > 8) {
-		size_t count = len > max ? max / 2 : (len / 2);
-		const u16 *buf16 = buf;
-		unsigned int j, lx = 0;
-		int ret;
-
-		for (j = 0; j < count; j++) {
-			ret = snprintf(linebuf + lx, linebuflen - lx,
-				       "%s%4.4x", j ? " " : "", *buf16++);
-			if (ret >= linebuflen - lx) {
-				snprintf(linebuf, linebuflen, "ERROR");
-				break;
-			}
-			lx += ret;
-		}
-	} else {
-		hex_dump_to_buffer(buf, len, max, 1, linebuf, linebuflen, false);
-	}
-}
-
-#ifdef VERBOSE_DEBUG
-static void mipi_dbi_vdbg_spi_message(struct spi_device *spi,
-				      struct spi_message *m)
-{
-	struct spi_master *master = spi->master;
-	struct spi_transfer *tmp;
-	struct list_head *pos;
-	char linebuf[3 * 32];
-	int i = 0;
-
-	if (!(drm_debug & DRM_UT_CORE))
-		return;
-
-	list_for_each(pos, &m->transfers) {
-		tmp = list_entry(pos, struct spi_transfer, transfer_list);
-
-		if (tmp->tx_buf) {
-			bool dma = false;
-
-			if (master->can_dma)
-				dma = master->can_dma(master, spi, tmp);
-
-			mipi_dbi_hexdump(linebuf, ARRAY_SIZE(linebuf),
-					tmp->tx_buf, tmp->len,
-					tmp->bits_per_word, 16);
-			pr_debug("    tr[%i]: bpw=%i, dma=%u, len=%u, tx_buf(%p)=[%s%s]\n",
-				 i, tmp->bits_per_word, dma, tmp->len,
-				 tmp->tx_buf, linebuf,
-				 tmp->len > 16 ? " ..." : "");
-		}
-		if (tmp->rx_buf) {
-			mipi_dbi_hexdump(linebuf, ARRAY_SIZE(linebuf),
-					tmp->rx_buf, tmp->len,
-					tmp->bits_per_word, 16);
-			pr_debug("    tr[%i]: bpw=%i,        len=%u, rx_buf(%p)=[%s%s]\n",
-				 i, tmp->bits_per_word, tmp->len, tmp->rx_buf,
-				 linebuf, tmp->len > 16 ? " ..." : "");
-		}
-		i++;
-	}
-}
-#else
-static void mipi_dbi_vdbg_spi_message(struct spi_device *spi,
-				      struct spi_message *m)
-{
-}
-#endif
-
-static void mspi_debug(const void *reg, size_t reg_bytes, const void *buf,
-		       size_t len, size_t val_bytes)
-{
-	unsigned int regnr;
-
-	if (!(drm_debug & DRM_UT_CORE))
-		return;
-
-	regnr = reg_bytes == 1 ? *(u8 *) reg : *(u16 *) reg;
-
-	if (buf && len) {
-		char linebuf[3 * 32];
-
-		mipi_dbi_hexdump(linebuf, ARRAY_SIZE(linebuf), buf, len,
-				 val_bytes * 8, 16);
-		DRM_DEBUG("reg=0x%0*x, data(%zu)= %s%s\n",
-			  reg_bytes == 1 ? 2 : 4, regnr, len, linebuf,
-			  len > 32 ? " ..." : "");
-	} else {
-		DRM_DEBUG("reg=0x%0*x\n", reg_bytes == 1 ? 2 : 4, regnr);
-	}
-}
-
 static size_t mipi_dbi_spi_clamp_size(struct spi_device *spi, size_t size)
 {
 	size_t max_spi, clamped;
@@ -172,25 +79,6 @@ static size_t mipi_dbi_spi_clamp_size(struct spi_device *spi, size_t size)
 	clamped &= ~0x3;
 
 	return clamped;
-}
-
-static bool mipi_dbi_spi_bpw_supported(struct spi_device *spi, u8 bpw)
-{
-	u32 bpw_mask = spi->master->bits_per_word_mask;
-
-	if (bpw == 8)
-		return true;
-
-	if (!bpw_mask) {
-		dev_warn_once(&spi->dev,
-			      "bits_per_word_mask not set, assume only 8\n");
-		return false;
-	}
-
-	if (bpw_mask & SPI_BPW_MASK(bpw))
-		return true;
-
-	return false;
 }
 
 /*
@@ -226,10 +114,10 @@ static int mipi_dbi_spi1e_transfer(struct mipi_dbi_spi *mspi, u8 bits_per_word,
 	if (max_chunk < 9)
 		return -EINVAL;
 
-#ifdef VERBOSE_DEBUG
-	DRM_DEBUG("dev=%s, dc=%d, max_chunk=%zu, transfers:\n",
-		  dev_name(&spi->dev), dc, max_chunk);
-#endif
+	if (drm_debug & DRM_UT_CORE)
+		pr_debug("[drm:%s] bpw=%u, dc=%d, max_chunk=%zu, transfers:\n",
+			 __func__, bits_per_word, dc, max_chunk);
+
 	spi_message_init_with_transfers(&m, &tr, 1);
 
 	if (!dc) {
@@ -245,7 +133,7 @@ static int mipi_dbi_spi1e_transfer(struct mipi_dbi_spi *mspi, u8 bits_per_word,
 		tr.tx_buf = dst;
 		tr.len = 9;
 
-		mipi_dbi_vdbg_spi_message(spi, &m);
+		tinydrm_dbg_spi_message(spi, &m);
 		ret = spi_sync(spi, &m);
 		kfree(dst);
 
@@ -332,7 +220,7 @@ static int mipi_dbi_spi1e_transfer(struct mipi_dbi_spi *mspi, u8 bits_per_word,
 
 		tr.len = chunk + added;
 
-		mipi_dbi_vdbg_spi_message(spi, &m);
+		tinydrm_dbg_spi_message(spi, &m);
 		ret = spi_sync(spi, &m);
 		if (ret)
 			goto err_free;
@@ -343,8 +231,6 @@ err_free:
 
 	return ret;
 }
-
-#undef SHIFT_U9_INTO_U64
 
 static int mipi_dbi_spi1_transfer(struct mipi_dbi_spi *mspi, u8 bits_per_word,
 				  int dc, const void *buf, size_t len,
@@ -361,7 +247,7 @@ static int mipi_dbi_spi1_transfer(struct mipi_dbi_spi *mspi, u8 bits_per_word,
 	int ret = 0;
 	u16 *dst16;
 
-	if (!mipi_dbi_spi_bpw_supported(spi, 9))
+	if (!tinydrm_spi_bpw_supported(spi, 9))
 		return mipi_dbi_spi1e_transfer(mspi, bits_per_word, dc, buf,
 					       len, max_chunk);
 
@@ -370,10 +256,10 @@ static int mipi_dbi_spi1_transfer(struct mipi_dbi_spi *mspi, u8 bits_per_word,
 
 	max_chunk = mipi_dbi_spi_clamp_size(spi, max_chunk);
 
-#ifdef VERBOSE_DEBUG
-	DRM_DEBUG("dev=%s, dc=%d, max_chunk=%zu, transfers:\n",
-		  dev_name(&spi->dev), dc, max_chunk);
-#endif
+	if (drm_debug & DRM_UT_CORE)
+		pr_debug("[drm:%s] bpw=%u, dc=%d, max_chunk=%zu, transfers:\n",
+			 __func__, bits_per_word, dc, max_chunk);
+
 	max_src_chunk = min(max_chunk / 2, len);
 
 	dst16 = kmalloc(max_src_chunk * 2, GFP_KERNEL);
@@ -406,7 +292,7 @@ static int mipi_dbi_spi1_transfer(struct mipi_dbi_spi *mspi, u8 bits_per_word,
 		tr.len = chunk;
 		len -= chunk;
 
-		mipi_dbi_vdbg_spi_message(spi, &m);
+		tinydrm_dbg_spi_message(spi, &m);
 		ret = spi_sync(spi, &m);
 		if (ret)
 			goto err_free;
@@ -423,28 +309,21 @@ static int mipi_dbi_spi1_gather_write(void *context, const void *reg,
 				      size_t val_len)
 {
 	struct mipi_dbi_spi *mspi = context;
-	size_t val_bytes = regmap_get_val_bytes(mspi->map);
-	unsigned int regnr;
+	size_t val_width;
 	int ret;
 
-	if (reg_len == 1)
-		regnr = *(u8 *) reg;
-	else if (reg_len == 2)
-		regnr = *(u16 *) reg;
-	else
+	if (reg_len != 1)
 		return -EINVAL;
 
-	if (regnr == mspi->ram_reg)
-		val_bytes = 2;
+	val_width = (*(u8 *)reg == mspi->ram_reg) ? 16 : 8;
+	TINYDRM_DEBUG_REG_WRITE(reg, reg_len, val, val_len, val_width);
 
-	mspi_debug(reg, reg_len, val, val_len, val_bytes);
-
-	ret = mipi_dbi_spi1_transfer(mspi, reg_len * 8, 0, reg, reg_len, 4096);
+	ret = mipi_dbi_spi1_transfer(mspi, 8, 0, reg, reg_len, 4096);
 	if (ret)
 		return ret;
 
 	if (val && val_len)
-		ret = mipi_dbi_spi1_transfer(mspi, val_bytes * 8, 1, val,
+		ret = mipi_dbi_spi1_transfer(mspi, val_width, 1, val,
 					     val_len, 4096);
 
 	return ret;
@@ -472,101 +351,33 @@ static const struct regmap_bus mipi_dbi_regmap_bus1 = {
 
 /* MIPI DBI Type C Option 3 */
 
-static int mipi_dbi_spi3_transfer(struct mipi_dbi_spi *mspi, u8 bits_per_word,
-				  int dc, const void *buf, size_t len,
-				  size_t max_chunk)
-{
-	struct spi_device *spi = mspi->context;
-	struct spi_transfer tr = {
-		.bits_per_word = bits_per_word,
-//		.speed_hz = spi->max_speed_hz,
-	};
-	struct spi_message m;
-	u16 *swap_buf = NULL;
-	bool swap = false;
-	size_t chunk;
-	int ret = 0;
-
-#if defined(__LITTLE_ENDIAN)
-	if (!mipi_dbi_spi_bpw_supported(spi, 16) && tr.bits_per_word == 16) {
-		swap = true;
-		tr.bits_per_word = 8;
-	}
-#endif
-	max_chunk = mipi_dbi_spi_clamp_size(spi, max_chunk);
-
-#ifdef VERBOSE_DEBUG
-	DRM_DEBUG("%s: dc=%d, max_chunk=%zu, transfers:\n",
-		  dev_name(&spi->dev), dc, max_chunk);
-#endif
-	gpiod_set_value_cansleep(mspi->dc, dc);
-
-	spi_message_init_with_transfers(&m, &tr, 1);
-
-	while (len) {
-		chunk = min(len, max_chunk);
-
-		tr.tx_buf = buf;
-		tr.len = chunk;
-
-		if (swap) {
-			const u16 *buf16 = buf;
-			unsigned int i;
-
-			if (!swap_buf)
-				swap_buf = kmalloc(chunk, GFP_KERNEL);
-			if (!swap_buf)
-				return -ENOMEM;
-
-			for (i = 0; i < chunk / 2; i++)
-				swap_buf[i] = swab16(buf16[i]);
-
-			tr.tx_buf = swap_buf;
-		}
-
-		buf += chunk;
-		len -= chunk;
-
-		mipi_dbi_vdbg_spi_message(spi, &m);
-		ret = spi_sync(spi, &m);
-		if (ret)
-			goto err_free;
-	};
-
-err_free:
-	kfree(swap_buf);
-
-	return ret;
-}
-
 static int mipi_dbi_spi3_gather_write(void *context, const void *reg,
 				      size_t reg_len, const void *val,
 				      size_t val_len)
 {
 	struct mipi_dbi_spi *mspi = context;
-	size_t val_bytes = regmap_get_val_bytes(mspi->map);
-	unsigned int regnr;
+	struct spi_device *spi = mspi->spi;
+	size_t val_width;
 	int ret;
 
-	if (reg_len == 1)
-		regnr = *(u8 *) reg;
-	else if (reg_len == 2)
-		regnr = *(u16 *) reg;
-	else
+	if (reg_len != 1)
 		return -EINVAL;
 
-	if (regnr == mspi->ram_reg)
-		val_bytes = 2;
+	val_width = (*(u8 *)reg == mspi->ram_reg) ? 16 : 8;
+	TINYDRM_DEBUG_REG_WRITE(reg, reg_len, val, val_len, val_width);
 
-	mspi_debug(reg, reg_len, val, val_len, val_bytes);
-
-	ret = mipi_dbi_spi3_transfer(mspi, reg_len * 8, 0, reg, reg_len, 4096);
+	gpiod_set_value_cansleep(mspi->dc, 0);
+	ret = tinydrm_spi_transfer(spi, 0, NULL, 8, reg, 1, mspi->swap_buf,
+				   mspi->chunk_size);
 	if (ret)
 		return ret;
 
-	if (val && val_len)
-		ret = mipi_dbi_spi3_transfer(mspi, val_bytes * 8, 1, val,
-					     val_len, 4096);
+	if (val && val_len) {
+		gpiod_set_value_cansleep(mspi->dc, 1);
+		ret = tinydrm_spi_transfer(spi, 0, NULL, val_width, val,
+					   val_len, mspi->swap_buf,
+					   mspi->chunk_size);
+	}
 
 	return ret;
 }
@@ -577,8 +388,8 @@ static int mipi_dbi_spi3_write(void *context, const void *data, size_t count)
 					  data + 1, count - 1);
 }
 
-static int mipi_dbi_spi3_read(void *context, const void *reg, size_t reg_size,
-			      void *val, size_t val_size)
+static int mipi_dbi_spi3_read(void *context, const void *reg, size_t reg_len,
+			      void *val, size_t val_len)
 {
 	struct mipi_dbi_spi *mspi = context;
 	struct spi_device *spi = mspi->context;
@@ -591,7 +402,7 @@ static int mipi_dbi_spi3_read(void *context, const void *reg, size_t reg_size,
 			.len = 1,
 		}, {
 			.speed_hz = speed_hz,
-			.len = val_size,
+			.len = val_len,
 		},
 	};
 	struct spi_message m;
@@ -602,10 +413,9 @@ static int mipi_dbi_spi3_read(void *context, const void *reg, size_t reg_size,
 	if (mspi->write_only)
 		return -EACCES;
 
-#ifdef VERBOSE_DEBUG
-	DRM_DEBUG("%s: regnr=0x%02x, dc=0, len=%zu, transfers:\n",
-		  dev_name(&spi->dev), *(u8 *)reg, val_size);
-#endif
+	if (drm_debug & DRM_UT_CORE)
+		pr_debug("[drm:%s] regnr=0x%02x, len=%zu, transfers:\n",
+			 __func__, cmd, val_len);
 
 	/*
 	 * Support non-standard 24-bit and 32-bit Nokia read commands which
@@ -613,10 +423,10 @@ static int mipi_dbi_spi3_read(void *context, const void *reg, size_t reg_size,
 	 */
 	if (cmd == MIPI_DCS_GET_DISPLAY_ID ||
 	    cmd == MIPI_DCS_GET_DISPLAY_STATUS) {
-		if (!(val_size == 3 || val_size == 4))
+		if (!(val_len == 3 || val_len == 4))
 			return -EINVAL;
 
-		tr[1].len = val_size + 1;
+		tr[1].len = val_len + 1;
 	}
 
 	buf = kmalloc(tr[1].len, GFP_KERNEL);
@@ -632,15 +442,15 @@ static int mipi_dbi_spi3_read(void *context, const void *reg, size_t reg_size,
 	 */
 	spi_message_init_with_transfers(&m, tr, ARRAY_SIZE(tr));
 	ret = spi_sync(spi, &m);
-	mipi_dbi_vdbg_spi_message(spi, &m);
+	tinydrm_dbg_spi_message(spi, &m);
 
-	if (tr[1].len == val_size) {
-		memcpy(val, buf, val_size);
+	if (tr[1].len == val_len) {
+		memcpy(val, buf, val_len);
 	} else {
 		u8 *data = val;
 		unsigned int i;
 
-		for (i = 0; i < val_size; i++)
+		for (i = 0; i < val_len; i++)
 			data[i] = (buf[i] << 1) | !!(buf[i + 1] & BIT(7));
 	}
 	kfree(buf);
@@ -674,6 +484,15 @@ int mipi_dbi_spi_init(struct mipi_dbi *mipi, struct spi_device *spi,
 	if (!mspi)
 		return -ENOMEM;
 
+	mspi->chunk_size = tinydrm_spi_max_transfer_size(spi, 0);
+#if defined(__LITTLE_ENDIAN)
+	if (dc && !tinydrm_spi_bpw_supported(spi, 16)) {
+		mspi->swap_buf = devm_kmalloc(dev, mspi->chunk_size,
+					      GFP_KERNEL);
+		if (!mspi->swap_buf)
+			return -ENOMEM;
+	}
+#endif
 	if (dc)
 		map = devm_regmap_init(dev, &mipi_dbi_regmap_bus3, mspi,
 				       &config);
@@ -684,7 +503,8 @@ int mipi_dbi_spi_init(struct mipi_dbi *mipi, struct spi_device *spi,
 		return PTR_ERR(map);
 
 	mspi->ram_reg = MIPI_DCS_WRITE_MEMORY_START;
-	mspi->context = spi;
+	mspi->spi = spi;
+mspi->context = spi;
 	mspi->map = map;
 	mipi->reg = map;
 	mspi->dc = dc;

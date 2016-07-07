@@ -16,6 +16,8 @@
 
 struct tinydrm_debugfs_dirty;
 struct tinydrm_device;
+struct spi_transfer;
+struct spi_message;
 struct spi_device;
 struct regulator;
 struct regmap;
@@ -174,6 +176,66 @@ void tinydrm_fbdev_fini(struct tinydrm_device *tdev);
 int tinydrm_regmap_flush_rgb565(struct regmap *reg, u32 regnr,
 				struct drm_framebuffer *fb, void *vmem,
 				struct drm_clip_rect *clip);
+size_t tinydrm_spi_max_transfer_size(struct spi_device *spi, size_t max_len);
+bool tinydrm_spi_bpw_supported(struct spi_device *spi, u8 bpw);
+int tinydrm_spi_transfer(struct spi_device *spi, u32 speed_hz,
+			 struct spi_transfer *header, u8 bpw, const void *buf,
+			 size_t len, u16 *swap_buf, size_t max_chunk);
+void tinydrm_debug_reg_write(const char *fname, const void *reg,
+			     size_t reg_len, const void *val,
+			     size_t val_len, size_t val_width);
+void _tinydrm_dbg_spi_message(struct spi_device *spi, struct spi_message *m);
+
+#if defined(DEBUG)
+/**
+ * TINYDRM_DEBUG_REG_WRITE - Print info about register write
+ * @reg: Register number buffer
+ * @reg_len: Length of @reg buffer
+ * @val: Value buffer
+ * @val_len: Length of @val buffer
+ * @val_width: Word width of @val buffer
+ *
+ * This macro prints info to the log about a register write. Can be used in
+ * &regmap_bus ->gather_write functions. It's a wrapper around
+ * tinydrm_debug_reg_write().
+ * DEBUG has to be defined for this macro to be enabled alongside setting
+ * the DRM_UT_CORE bit of drm_debug.
+ */
+#define TINYDRM_DEBUG_REG_WRITE(reg, reg_len, val, val_len, val_width) \
+	do { \
+		if (unlikely(drm_debug & DRM_UT_CORE)) \
+			tinydrm_debug_reg_write(__func__, reg, reg_len, \
+						val, val_len, val_width); \
+	} while (0)
+
+/**
+ * tinydrm_dbg_spi_message - Dump SPI message
+ * @spi: SPI device
+ * @m: SPI message
+ *
+ * Dumps info about the transfers in a SPI message including start of buffers.
+ * DEBUG has to be defined for this function to be enabled alongside setting
+ * the DRM_UT_CORE bit of drm_debug.
+ */
+static inline void tinydrm_dbg_spi_message(struct spi_device *spi,
+					   struct spi_message *m)
+{
+	if (drm_debug & DRM_UT_CORE)
+		_tinydrm_dbg_spi_message(spi, m);
+}
+#else
+#define TINYDRM_DEBUG_REG_WRITE(reg, reg_len, val, val_len, val_width) \
+	do { \
+		if (0) \
+			tinydrm_debug_reg_write(__func__, reg, reg_len, \
+						val, val_len, val_width); \
+	} while (0)
+
+static inline void tinydrm_dbg_spi_message(struct spi_device *spi,
+					   struct spi_message *m)
+{
+}
+#endif
 
 /* tinydrm-debugfs.c */
 #ifdef CONFIG_DEBUG_FS
