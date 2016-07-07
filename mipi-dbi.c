@@ -487,13 +487,13 @@ struct regmap *mipi_dbi_spi_init(struct spi_device *spi, struct gpio_desc *dc,
 	mspi->spi = spi;
 	mspi->dc = dc;
 
-#if defined(__LITTLE_ENDIAN)
-	if (dc && !tinydrm_spi_bpw_supported(spi, 16)) {
+	if (tinydrm_get_machine_endian() == REGMAP_ENDIAN_LITTLE &&
+	    dc && !tinydrm_spi_bpw_supported(spi, 16)) {
 		mspi->tx_buf = devm_kmalloc(dev, mspi->chunk_size, GFP_KERNEL);
 		if (!mspi->tx_buf)
 			return ERR_PTR(-ENOMEM);
 	}
-#endif
+
 	if (dc)
 		mspi->map = devm_regmap_init(dev, &mipi_dbi_regmap_bus3, mspi,
 					     &config);

@@ -276,15 +276,16 @@ int tinydrm_spi_transfer(struct spi_device *spi, u32 speed_hz,
 	if (drm_debug & DRM_UT_CORE)
 		pr_debug("[drm:%s] bpw=%u, max_chunk=%zu, transfers:\n",
 			 __func__, bpw, max_chunk);
-#if defined(__LITTLE_ENDIAN)
-	if (bpw == 16 && !tinydrm_spi_bpw_supported(spi, 16)) {
+
+	if (tinydrm_get_machine_endian() == REGMAP_ENDIAN_LITTLE &&
+	    bpw == 16 && !tinydrm_spi_bpw_supported(spi, 16)) {
 		if (!swap_buf)
 			return -EINVAL;
 
 		swap = true;
 		tr.bits_per_word = 8;
 	}
-#endif
+
 	spi_message_init(&m);
 	if (header)
 		spi_message_add_tail(header, &m);

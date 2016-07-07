@@ -222,9 +222,9 @@ static struct drm_driver mi0283qt_driver = {
 static int mi0283qt_probe(struct spi_device *spi)
 {
 	struct device *dev = &spi->dev;
-	struct gpio_desc *reset, *dc;
 	struct tinydrm_device *tdev;
 	struct mipi_dbi *mipi;
+	struct gpio_desc *dc;
 	u32 rotation = 0;
 	bool writeonly;
 	int ret;

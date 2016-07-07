@@ -13,6 +13,7 @@
 #include <drm/drm_crtc.h>
 #include <drm/drm_gem_cma_helper.h>
 #include <drm/drm_simple_kms_helper.h>
+#include <linux/regmap.h>
 
 struct tinydrm_debugfs_dirty;
 struct tinydrm_device;
@@ -20,7 +21,6 @@ struct spi_transfer;
 struct spi_message;
 struct spi_device;
 struct regulator;
-struct regmap;
 
 /**
  * struct tinydrm_funcs - tinydrm device operations
@@ -185,6 +185,21 @@ void tinydrm_debug_reg_write(const char *fname, const void *reg,
 			     size_t reg_len, const void *val,
 			     size_t val_len, size_t val_width);
 void _tinydrm_dbg_spi_message(struct spi_device *spi, struct spi_message *m);
+
+/**
+ * tinydrm_get_machine_endian - Get machine endianess
+ *
+ * Returns:
+ * REGMAP_ENDIAN_LITTLE or REGMAP_ENDIAN_BIG
+ */
+static inline enum regmap_endian tinydrm_get_machine_endian(void)
+{
+#if defined(__LITTLE_ENDIAN)
+	return REGMAP_ENDIAN_LITTLE;
+#else
+	return REGMAP_ENDIAN_BIG;
+#endif
+}
 
 #if defined(DEBUG)
 /**
