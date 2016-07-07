@@ -92,8 +92,6 @@ static int mi0283qt_prepare(struct tinydrm_device *tdev)
 		}
 	}
 
-	mipi_dbi_debug_dump_regs(reg);
-
 	/* Avoid flicker by skipping setup if the bootloader has done it */
 	if (mipi_dbi_display_is_on(reg))
 		return 0;
@@ -167,8 +165,6 @@ static int mi0283qt_prepare(struct tinydrm_device *tdev)
 
 	mipi_dbi_write(reg, MIPI_DCS_SET_DISPLAY_ON);
 	msleep(100);
-
-	mipi_dbi_debug_dump_regs(reg);
 
 	return 0;
 }

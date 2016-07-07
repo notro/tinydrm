@@ -797,61 +797,6 @@ bool mipi_dbi_display_is_on(struct regmap *reg)
 }
 EXPORT_SYMBOL(mipi_dbi_display_is_on);
 
-/**
- * mipi_dbi_debug_dump_regs - dump some MIPI DCS registers
- * @reg: LCD register
- *
- * Dump some MIPI DCS registers using DRM_DEBUG_DRIVER().
- */
-void mipi_dbi_debug_dump_regs(struct regmap *reg)
-{
-	u8 val[4];
-	int ret;
-
-	if (!(drm_debug & DRM_UT_DRIVER))
-		return;
-
-	ret = regmap_raw_read(reg, MIPI_DCS_GET_DISPLAY_ID, val, 3);
-	if (ret) {
-		struct device *dev = regmap_get_device(reg);
-
-		dev_warn(dev, "failed to read from controller: %d", ret);
-		return;
-	}
-
-	DRM_DEBUG_DRIVER("Display ID (%02x): %02x %02x %02x\n",
-			 MIPI_DCS_GET_DISPLAY_ID, val[0], val[1], val[2]);
-
-	regmap_raw_read(reg, MIPI_DCS_GET_DISPLAY_STATUS, val, 4);
-	DRM_DEBUG_DRIVER("Display status (%02x): %02x %02x %02x %02x\n",
-			 MIPI_DCS_GET_DISPLAY_STATUS, val[0], val[1], val[2], val[3]);
-
-	regmap_raw_read(reg, MIPI_DCS_GET_POWER_MODE, val, 1);
-	DRM_DEBUG_DRIVER("Power mode (%02x): %02x\n",
-			 MIPI_DCS_GET_POWER_MODE, val[0]);
-
-	regmap_raw_read(reg, MIPI_DCS_GET_ADDRESS_MODE, val, 1);
-	DRM_DEBUG_DRIVER("Address mode (%02x): %02x\n",
-			 MIPI_DCS_GET_ADDRESS_MODE, val[0]);
-
-	regmap_raw_read(reg, MIPI_DCS_GET_PIXEL_FORMAT, val, 1);
-	DRM_DEBUG_DRIVER("Pixel format (%02x): %02x\n",
-			 MIPI_DCS_GET_PIXEL_FORMAT, val[0]);
-
-	regmap_raw_read(reg, MIPI_DCS_GET_DISPLAY_MODE, val, 1);
-	DRM_DEBUG_DRIVER("Display mode (%02x): %02x\n",
-			 MIPI_DCS_GET_DISPLAY_MODE, val[0]);
-
-	regmap_raw_read(reg, MIPI_DCS_GET_SIGNAL_MODE, val, 1);
-	DRM_DEBUG_DRIVER("Display signal mode (%02x): %02x\n",
-			 MIPI_DCS_GET_SIGNAL_MODE, val[0]);
-
-	regmap_raw_read(reg, MIPI_DCS_GET_DIAGNOSTIC_RESULT, val, 1);
-	DRM_DEBUG_DRIVER("Diagnostic result (%02x): %02x\n",
-			 MIPI_DCS_GET_DIAGNOSTIC_RESULT, val[0]);
-}
-EXPORT_SYMBOL(mipi_dbi_debug_dump_regs);
-
 #ifdef CONFIG_DEBUG_FS
 
 static bool mipi_dbi_debugfs_readreg(struct seq_file *m, struct regmap *reg,

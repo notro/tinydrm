@@ -52,16 +52,15 @@ int mipi_dbi_spi_init(struct mipi_dbi *mipi, struct spi_device *spi,
 int mipi_dbi_init(struct device *dev, struct mipi_dbi *mipi,
 		  struct drm_driver *driver,
 		  const struct drm_display_mode *mode, unsigned int rotation);
-void mipi_dbi_hw_reset(struct mipi_dbi *mipi);
 int mipi_dbi_dirty(struct drm_framebuffer *fb,
 		   struct drm_gem_cma_object *cma_obj,
 		   unsigned flags, unsigned color,
 		   struct drm_clip_rect *clips, unsigned num_clips);
 int mipi_dbi_enable_backlight(struct tinydrm_device *tdev);
 void mipi_dbi_disable_backlight(struct tinydrm_device *tdev);
-bool mipi_dbi_display_is_on(struct regmap *reg);
-void mipi_dbi_debug_dump_regs(struct regmap *reg);
 void mipi_dbi_unprepare(struct tinydrm_device *tdev);
+void mipi_dbi_hw_reset(struct mipi_dbi *mipi);
+bool mipi_dbi_display_is_on(struct regmap *reg);
 
 /**
  * mipi_dbi_write - Write command and optional parameter(s)
