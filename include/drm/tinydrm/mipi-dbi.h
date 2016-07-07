@@ -46,9 +46,8 @@ mipi_dbi_from_tinydrm(struct tinydrm_device *tdev)
 	return container_of(tdev, struct mipi_dbi, tinydrm);
 }
 
-int mipi_dbi_spi_init(struct mipi_dbi *mipi, struct spi_device *spi,
-		      struct gpio_desc *dc, struct gpio_desc *reset,
-		      bool writeonly);
+struct regmap *mipi_dbi_spi_init(struct spi_device *spi, struct gpio_desc *dc,
+				 bool write_only);
 int mipi_dbi_init(struct device *dev, struct mipi_dbi *mipi,
 		  struct drm_driver *driver,
 		  const struct drm_display_mode *mode, unsigned int rotation);

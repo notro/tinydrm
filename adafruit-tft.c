@@ -275,10 +275,10 @@ static struct drm_driver adafruit_tft_driver = {
 static int adafruit_tft_probe(struct spi_device *spi)
 {
 	const struct adafruit_tft_display *display;
-	struct gpio_desc *reset, *dc = NULL;
 	const struct of_device_id *of_id;
 	struct device *dev = &spi->dev;
 	struct tinydrm_device *tdev;
+	struct gpio_desc *dc = NULL;
 	struct mipi_dbi *mipi;
 	u32 rotation = 0;
 	int id, ret;
@@ -307,10 +307,10 @@ static int adafruit_tft_probe(struct spi_device *spi)
 	if (!mipi)
 		return -ENOMEM;
 
-	reset = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_HIGH);
-	if (IS_ERR(reset)) {
+	mipi->reset = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_HIGH);
+	if (IS_ERR(mipi->reset)) {
 		dev_err(dev, "Failed to get gpio 'reset'\n");
-		return PTR_ERR(reset);
+		return PTR_ERR(mipi->reset);
 	}
 
 	if (display->dc) {
@@ -336,9 +336,9 @@ static int adafruit_tft_probe(struct spi_device *spi)
 
 	device_property_read_u32(dev, "rotation", &rotation);
 
-	ret = mipi_dbi_spi_init(mipi, spi, dc, reset, display->write_only);
-	if (ret)
-		return ret;
+	mipi->reg = mipi_dbi_spi_init(spi, dc, display->write_only);
+	if (IS_ERR(mipi->reg))
+		return PTR_ERR(mipi->reg);
 
 	ret = mipi_dbi_init(dev, mipi, &adafruit_tft_driver, &display->mode,
 			    rotation);

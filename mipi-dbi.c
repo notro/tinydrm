@@ -37,7 +37,7 @@ struct mipi_dbi_spi {
 	unsigned int ram_reg;
 	struct gpio_desc *dc;
 	bool write_only;
-	u16 *swap_buf;
+	u16 *tx_buf;
 	size_t chunk_size;
 };
 
@@ -366,7 +366,7 @@ static int mipi_dbi_spi3_gather_write(void *context, const void *reg,
 	TINYDRM_DEBUG_REG_WRITE(reg, reg_len, val, val_len, val_width);
 
 	gpiod_set_value_cansleep(mspi->dc, 0);
-	ret = tinydrm_spi_transfer(spi, 0, NULL, 8, reg, 1, mspi->swap_buf,
+	ret = tinydrm_spi_transfer(spi, 0, NULL, 8, reg, 1, mspi->tx_buf,
 				   mspi->chunk_size);
 	if (ret)
 		return ret;
@@ -374,7 +374,7 @@ static int mipi_dbi_spi3_gather_write(void *context, const void *reg,
 	if (val && val_len) {
 		gpiod_set_value_cansleep(mspi->dc, 1);
 		ret = tinydrm_spi_transfer(spi, 0, NULL, val_width, val,
-					   val_len, mspi->swap_buf,
+					   val_len, mspi->tx_buf,
 					   mspi->chunk_size);
 	}
 
@@ -466,9 +466,8 @@ static const struct regmap_bus mipi_dbi_regmap_bus3 = {
 	.val_format_endian_default = REGMAP_ENDIAN_DEFAULT,
 };
 
-int mipi_dbi_spi_init(struct mipi_dbi *mipi, struct spi_device *spi,
-		      struct gpio_desc *dc, struct gpio_desc *reset,
-		      bool write_only)
+struct regmap *mipi_dbi_spi_init(struct spi_device *spi, struct gpio_desc *dc,
+				 bool write_only)
 {
 	struct regmap_config config = {
 		.reg_bits = 8,
@@ -477,40 +476,32 @@ int mipi_dbi_spi_init(struct mipi_dbi *mipi, struct spi_device *spi,
 	};
 	struct device *dev = &spi->dev;
 	struct mipi_dbi_spi *mspi;
-	struct regmap *map;
 
 	mspi = devm_kzalloc(dev, sizeof(*mspi), GFP_KERNEL);
 	if (!mspi)
-		return -ENOMEM;
+		return ERR_PTR(-ENOMEM);
 
 	mspi->chunk_size = tinydrm_spi_max_transfer_size(spi, 0);
+	mspi->ram_reg = MIPI_DCS_WRITE_MEMORY_START;
+	mspi->write_only = write_only;
+	mspi->spi = spi;
+	mspi->dc = dc;
+
 #if defined(__LITTLE_ENDIAN)
 	if (dc && !tinydrm_spi_bpw_supported(spi, 16)) {
-		mspi->swap_buf = devm_kmalloc(dev, mspi->chunk_size,
-					      GFP_KERNEL);
-		if (!mspi->swap_buf)
-			return -ENOMEM;
+		mspi->tx_buf = devm_kmalloc(dev, mspi->chunk_size, GFP_KERNEL);
+		if (!mspi->tx_buf)
+			return ERR_PTR(-ENOMEM);
 	}
 #endif
 	if (dc)
-		map = devm_regmap_init(dev, &mipi_dbi_regmap_bus3, mspi,
-				       &config);
+		mspi->map = devm_regmap_init(dev, &mipi_dbi_regmap_bus3, mspi,
+					     &config);
 	else
-		map = devm_regmap_init(dev, &mipi_dbi_regmap_bus1, mspi,
-				       &config);
-	if (IS_ERR(map))
-		return PTR_ERR(map);
+		mspi->map = devm_regmap_init(dev, &mipi_dbi_regmap_bus1, mspi,
+					     &config);
 
-	mspi->ram_reg = MIPI_DCS_WRITE_MEMORY_START;
-	mspi->spi = spi;
-	mspi->map = map;
-	mipi->reg = map;
-	mspi->dc = dc;
-	mspi->write_only = write_only;
-
-	mipi->reset = reset;
-
-	return 0;
+	return mspi->map;
 }
 EXPORT_SYMBOL(mipi_dbi_spi_init);
 

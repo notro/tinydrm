@@ -239,10 +239,10 @@ static int mi0283qt_probe(struct spi_device *spi)
 	if (!mipi)
 		return -ENOMEM;
 
-	reset = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_HIGH);
-	if (IS_ERR(reset)) {
+	mipi->reset = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_HIGH);
+	if (IS_ERR(mipi->reset)) {
 		dev_err(dev, "Failed to get gpio 'reset'\n");
-		return PTR_ERR(reset);
+		return PTR_ERR(mipi->reset);
 	}
 
 	dc = devm_gpiod_get_optional(dev, "dc", GPIOD_OUT_LOW);
@@ -267,9 +267,9 @@ static int mi0283qt_probe(struct spi_device *spi)
 	writeonly = device_property_read_bool(dev, "write-only");
 	device_property_read_u32(dev, "rotation", &rotation);
 
-	ret = mipi_dbi_spi_init(mipi, spi, dc, reset, writeonly);
-	if (ret)
-		return ret;
+	mipi->reg = mipi_dbi_spi_init(spi, dc, writeonly);
+	if (IS_ERR(mipi->reg))
+		return PTR_ERR(mipi->reg);
 
 	ret = mipi_dbi_init(dev, mipi, &mi0283qt_driver, &mi0283qt_mode,
 			    rotation);
