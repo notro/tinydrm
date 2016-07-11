@@ -20,70 +20,52 @@
  * object. Userspace creates this buffer by calling the
  * DRM_IOCTL_MODE_CREATE_DUMB ioctl. To flush the buffer to the display,
  * userpace calls the DRM_IOCTL_MODE_DIRTYFB ioctl on the framebuffer which
- * in turn calls the &tinydrm_funcs ->dirty hook.
- *
+ * in turn calls the &drm_framebuffer_funcs->dirty callback.
  * This functionality is available by using tinydrm_fb_create() as the
- * &drm_mode_config_funcs ->fb_create callback.
+ * &drm_mode_config_funcs->fb_create callback which devm_tinydrm_init() does.
  */
 
 static unsigned int fbdefio_delay;
 module_param(fbdefio_delay, uint, 0);
 MODULE_PARM_DESC(fbdefio_delay, "fbdev deferred io delay in milliseconds");
 
-static int tinydrm_fb_dirty(struct drm_framebuffer *fb,
-			    struct drm_file *file_priv,
-			    unsigned flags, unsigned color,
-			    struct drm_clip_rect *clips,
-			    unsigned num_clips)
+/**
+ * tinydrm_check_dirty - check before flushing framebuffer
+ * @fb: framebuffer
+ * @clips: pointer to dirty clip rectangles array
+ * @num_clips: pointer to number of clips
+ *
+ * This function checks that the device is prepared and that @fb is the
+ * framebuffer set on the plane. If the device hasn't been enabled, which
+ * makes this the first flush, do flush everything.
+ * Caller has to hold the dev_lock.
+ *
+ * Returns:
+ * True if the dirty call can proceed, false otherwise.
+ */
+bool tinydrm_check_dirty(struct drm_framebuffer *fb,
+			 struct drm_clip_rect **clips, unsigned *num_clips)
 {
-	struct drm_gem_cma_object *cma_obj = drm_fb_cma_get_gem_obj(fb, 0);
 	struct tinydrm_device *tdev = drm_to_tinydrm(fb->dev);
-	int ret = 0;
 
-	if (!tdev->funcs || !tdev->funcs->dirty)
-		return -ENOSYS;
-
-	mutex_lock(&tdev->dev_lock);
+	WARN_ON_ONCE(!mutex_is_locked(&tdev->dev_lock));
 
 	if (!tdev->prepared)
-		goto out_unlock;
+		return false;
 
 	/* fbdev can flush even when we're not interested */
 	if (tdev->pipe.plane.fb != fb)
-		goto out_unlock;
+		return false;
 
 	/* Make sure to flush everything the first time */
 	if (!tdev->enabled) {
-		clips = NULL;
-		num_clips = 0;
+		*clips = NULL;
+		*num_clips = 0;
 	}
 
-	ret = tdev->funcs->dirty(fb, cma_obj, flags, color, clips, num_clips);
-	if (ret)
-		goto out_unlock;
-
-	if (!tdev->enabled) {
-		if (tdev->funcs && tdev->funcs->enable) {
-			ret = tdev->funcs->enable(tdev);
-			if (ret) {
-				DRM_ERROR("Failed to enable() %d\n", ret);
-				goto out_unlock;
-			}
-		}
-		tdev->enabled = true;
-	}
-
-out_unlock:
-	mutex_unlock(&tdev->dev_lock);
-
-	return ret;
+	return true;
 }
-
-static const struct drm_framebuffer_funcs tinydrm_fb_funcs = {
-	.destroy	= drm_fb_cma_destroy,
-	.create_handle	= drm_fb_cma_create_handle,
-	.dirty		= tinydrm_fb_dirty,
-};
+EXPORT_SYMBOL(tinydrm_check_dirty);
 
 /**
  * tinydrm_fb_create - tinydrm .fb_create() helper
@@ -91,7 +73,7 @@ static const struct drm_framebuffer_funcs tinydrm_fb_funcs = {
  * @file_priv: DRM file info
  * @mode_cmd: metadata from the userspace fb creation request
  *
- * Helper for the &drm_mode_config_funcs ->fb_create callback.
+ * Helper for the &drm_mode_config_funcs->fb_create callback.
  * It sets up a &drm_framebuffer backed by the &drm_gem_cma_object buffer
  * object provided in @mode_cmd.
  */
@@ -99,10 +81,11 @@ struct drm_framebuffer *
 tinydrm_fb_create(struct drm_device *drm, struct drm_file *file_priv,
 		  const struct drm_mode_fb_cmd2 *mode_cmd)
 {
+	struct tinydrm_device *tdev = drm_to_tinydrm(drm);
 	struct drm_framebuffer *fb;
 
 	fb = drm_fb_cma_create_with_funcs(drm, file_priv, mode_cmd,
-					  &tinydrm_fb_funcs);
+					  tdev->fb_funcs);
 	if (!IS_ERR(fb))
 		DRM_DEBUG_KMS("[FB:%d] pixel_format: %s\n", fb->base.id,
 			      drm_get_format_name(fb->pixel_format));
@@ -117,8 +100,8 @@ EXPORT_SYMBOL(tinydrm_fb_create);
  * tinydrm provides fbdev emulation using the drm_fb_cma_helper library.
  * It is backed by it's own &drm_framebuffer and CMA buffer object.
  * Framebuffer flushing is handled by the fb helper library which in turn
- * calls the &tinydrm_funcs ->dirty hook.
- *
+ * calls the dirty callback on the framebuffer. This callback is part of
+ * &drm_framebuffer_funcs which is one of the arguments to devm_tinydrm_init().
  * fbdev support is initialized using tinydrm_fbdev_init().
  *
  * The tinydrm_lastclose() function ensures that fbdev operation is restored
@@ -131,8 +114,7 @@ static int tinydrm_fbdev_create(struct drm_fb_helper *helper,
 	struct tinydrm_device *tdev = drm_to_tinydrm(helper->dev);
 	int ret;
 
-	ret = drm_fbdev_cma_create_with_funcs(helper, sizes,
-					      &tinydrm_fb_funcs);
+	ret = drm_fbdev_cma_create_with_funcs(helper, sizes, tdev->fb_funcs);
 	if (ret)
 		return ret;
 
@@ -163,7 +145,7 @@ static const struct drm_fb_helper_funcs tinydrm_fb_helper_funcs = {
  * @tdev: tinydrm device
  *
  * Initialize tinydrm fbdev emulation. Tear down with tinydrm_fbdev_fini().
- * If &mode_config ->preferred_depth is set it is used as preferred bpp.
+ * If &mode_config->preferred_depth is set it is used as preferred bpp.
  */
 int tinydrm_fbdev_init(struct tinydrm_device *tdev)
 {

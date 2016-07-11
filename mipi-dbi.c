@@ -12,6 +12,7 @@
  */
 
 #include <drm/drm_gem_cma_helper.h>
+#include <drm/drm_fb_cma_helper.h>
 #include <drm/tinydrm/mipi-dbi.h>
 #include <drm/tinydrm/tinydrm.h>
 #include <linux/gpio/consumer.h>
@@ -521,32 +522,26 @@ EXPORT_SYMBOL(mipi_dbi_spi_init);
  * compliant.
  */
 
-/**
- * mipi_dbi_dirty - framebuffer dirty callback
- * @fb: framebuffer
- * @cma_obj: CMA buffer object
- * @flags: dirty fb ioctl flags
- * @color: color for annotated clips
- * @clips: dirty clip rectangles
- * @num_clips: number of @clips
- *
- * This function provides framebuffer flushing for MIPI DBI controllers.
- * Drivers should use this as their &tinydrm_funcs ->dirty callback.
- */
-int mipi_dbi_dirty(struct drm_framebuffer *fb,
-		   struct drm_gem_cma_object *cma_obj,
-		   unsigned flags, unsigned color,
-		   struct drm_clip_rect *clips, unsigned num_clips)
+static int mipi_dbi_fb_dirty(struct drm_framebuffer *fb,
+			     struct drm_file *file_priv,
+			     unsigned flags, unsigned color,
+			     struct drm_clip_rect *clips,
+			     unsigned num_clips)
 {
+	struct drm_gem_cma_object *cma_obj = drm_fb_cma_get_gem_obj(fb, 0);
 	struct tinydrm_device *tdev = drm_to_tinydrm(fb->dev);
 	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
 	struct regmap *reg = mipi->reg;
 	struct drm_clip_rect clip;
-	int ret;
+	int ret = 0;
+
+	mutex_lock(&tdev->dev_lock);
+
+	if (!tinydrm_check_dirty(fb, &clips, &num_clips))
+		goto out_unlock;
 
 	tinydrm_merge_clips(&clip, clips, num_clips, flags,
 			    fb->width, fb->height);
-
 	clip.x1 = 0;
 	clip.x2 = fb->width;
 
@@ -564,30 +559,37 @@ int mipi_dbi_dirty(struct drm_framebuffer *fb,
 
 	ret = tinydrm_regmap_flush_rgb565(reg, MIPI_DCS_WRITE_MEMORY_START,
 					  fb, cma_obj->vaddr, &clip);
-	if (ret)
-		dev_err_once(fb->dev->dev, "Failed to update display %d\n",
-			     ret);
 
 	tinydrm_debugfs_dirty_end(tdev, 0, 16);
 
+	if (ret) {
+		dev_err_once(fb->dev->dev, "Failed to update display %d\n",
+			     ret);
+		goto out_unlock;
+	}
+
+	if (!tdev->enabled) {
+		if (mipi->enable_delay_ms)
+			msleep(mipi->enable_delay_ms);
+		ret = tinydrm_enable_backlight(mipi->backlight);
+		if (ret) {
+			DRM_ERROR("Failed to enable backlight %d\n", ret);
+			goto out_unlock;
+		}
+		tdev->enabled = true;
+	}
+
+out_unlock:
+	mutex_unlock(&tdev->dev_lock);
+
 	return ret;
 }
-EXPORT_SYMBOL(mipi_dbi_dirty);
 
-/**
- * mipi_dbi_enable_backlight - mipi enable backlight helper
- * @tdev: tinydrm device
- *
- * Helper to enable &mipi_dbi ->backlight for the &tinydrm_funcs ->enable
- * callback.
- */
-int mipi_dbi_enable_backlight(struct tinydrm_device *tdev)
-{
-	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
-
-	return tinydrm_enable_backlight(mipi->backlight);
-}
-EXPORT_SYMBOL(mipi_dbi_enable_backlight);
+static const struct drm_framebuffer_funcs mipi_dbi_fb_funcs = {
+	.destroy	= drm_fb_cma_destroy,
+	.create_handle	= drm_fb_cma_create_handle,
+	.dirty		= mipi_dbi_fb_dirty,
+};
 
 static void mipi_dbi_blank(struct mipi_dbi *mipi)
 {
@@ -612,124 +614,103 @@ static void mipi_dbi_blank(struct mipi_dbi *mipi)
 }
 
 /**
- * mipi_dbi_disable_backlight - mipi disable backlight helper
- * @tdev: tinydrm device
+ * mipi_dbi_pipe_disable - MIPI DBI pipe disable helper
+ * @pipe: Display pipe
  *
- * Helper to disable &mipi_dbi ->backlight for the &tinydrm_funcs
- * ->disable callback.
- * If there's no backlight nor power control, blank display by writing zeroes.
+ * This function disables the display pipeline by disabling backlight and
+ * regulator if present.
  */
-void mipi_dbi_disable_backlight(struct tinydrm_device *tdev)
+void mipi_dbi_pipe_disable(struct drm_simple_display_pipe *pipe)
 {
-	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
-
-	if (mipi->backlight)
-		tinydrm_disable_backlight(mipi->backlight);
-	else if (!mipi->regulator)
-		mipi_dbi_blank(mipi);
-}
-EXPORT_SYMBOL(mipi_dbi_disable_backlight);
-
-/**
- * mipi_dbi_unprepare - mipi power off helper
- * @tdev: tinydrm device
- *
- * Helper to power off a MIPI controller.
- * Puts the controller in sleep mode if backlight control is enabled. It's done
- * like this to make sure we don't have backlight glaring through a panel with
- * all pixels turned off. If a regulator is registered it will be disabled.
- * Drivers can use this as their &tinydrm_funcs ->unprepare callback.
- */
-void mipi_dbi_unprepare(struct tinydrm_device *tdev)
-{
+	struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
 	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
 	struct regmap *reg = mipi->reg;
 
-	if (mipi->backlight) {
-		mipi_dbi_write(reg, MIPI_DCS_SET_DISPLAY_OFF);
-		mipi_dbi_write(reg, MIPI_DCS_ENTER_SLEEP_MODE);
-	} else if (!mipi->regulator) {
-		mipi->prepared_once = true;
+	DRM_DEBUG_KMS("\n");
+
+	mutex_lock(&tdev->dev_lock);
+
+	if (tdev->enabled) {
+		if (mipi->backlight)
+			tinydrm_disable_backlight(mipi->backlight);
+		else if (!mipi->regulator)
+			mipi_dbi_blank(mipi);
+	}
+	tdev->enabled = false;
+
+	if (tdev->prepared) {
+		if (mipi->backlight) {
+			/*
+			 * This usually turns the pixels off letting backlight
+			 * shine through, so only do it if we control backlight
+			 *
+			 * TODO
+			 * Maybe just leave the display prepared. Very little
+			 * power savings in doing this. And it would speed up
+			 * re-enabling the pipeline (100-500ms).
+			 */
+			mipi_dbi_write(reg, MIPI_DCS_SET_DISPLAY_OFF);
+			mipi_dbi_write(reg, MIPI_DCS_ENTER_SLEEP_MODE);
+			tdev->prepared = false;
+		}
+
+		if (mipi->regulator) {
+			regulator_disable(mipi->regulator);
+			tdev->prepared = false;
+		}
 	}
 
-	if (mipi->regulator)
-		regulator_disable(mipi->regulator);
+	mutex_unlock(&tdev->dev_lock);
 }
-EXPORT_SYMBOL(mipi_dbi_unprepare);
+EXPORT_SYMBOL(mipi_dbi_pipe_disable);
 
 static const uint32_t mipi_dbi_formats[] = {
 	DRM_FORMAT_RGB565,
 	DRM_FORMAT_XRGB8888,
 };
 
-int tinydrm_rotate_mode(struct drm_display_mode *mode, unsigned int rotation)
-{
-	if (rotation == 0 || rotation == 180) {
-		return 0;
-	} else if (rotation == 90 || rotation == 270) {
-		swap(mode->hdisplay, mode->vdisplay);
-		swap(mode->hsync_start, mode->vsync_start);
-		swap(mode->hsync_end, mode->vsync_end);
-		swap(mode->htotal, mode->vtotal);
-		swap(mode->width_mm, mode->height_mm);
-		return 0;
-	} else {
-		return -EINVAL;
-	}
-}
-
 /**
  * mipi_dbi_init - MIPI DBI initialization
- * @dev: parent device
+ * @dev: Parent device
  * @mipi: &mipi_dbi structure to initialize
- * @reg: LCD register
+ * @pipe_funcs: Display pipe functions
  * @driver: DRM driver
- * @mode: display mode
- * @rotation: initial rotation in degress Counter Clock Wise
+ * @mode: Display mode
+ * @rotation: Initial rotation in degress Counter Clock Wise
  *
  * This function initializes a &mipi_dbi structure and it's underlying
  * @tinydrm_device and &drm_device. It also sets up the display pipeline.
- * Native RGB565 format is supported and XRGB8888 is emulated.
+ * Supported formats: Native RGB565 and emulated XRGB8888.
  * Objects created by this function will be automatically freed on driver
  * detach (devres).
+ *
+ * Returns:
+ * Zero on success, negative error code on failure.
  */
 int mipi_dbi_init(struct device *dev, struct mipi_dbi *mipi,
+		  const struct drm_simple_display_pipe_funcs *pipe_funcs,
 		  struct drm_driver *driver,
 		  const struct drm_display_mode *mode, unsigned int rotation)
 {
 	struct tinydrm_device *tdev = &mipi->tinydrm;
-	struct drm_display_mode *mode_copy;
-	struct drm_device *drm;
+	struct drm_device *drm = &tdev->drm;
 	int ret;
 
-	mode_copy = devm_kmalloc(dev, sizeof(*mode_copy), GFP_KERNEL);
-	if (!mode_copy)
-		return -ENOMEM;
-
-	*mode_copy = *mode;
-	mipi->rotation = rotation;
-	ret = tinydrm_rotate_mode(mode_copy, rotation);
-	if (ret) {
-		DRM_ERROR("Illegal rotation value %u\n", rotation);
-		return -EINVAL;
-	}
-
-	ret = devm_tinydrm_init(dev, tdev, driver);
+	ret = devm_tinydrm_init(dev, tdev, &mipi_dbi_fb_funcs, driver);
 	if (ret)
 		return ret;
 
-	drm = &tdev->drm;
-	drm->mode_config.min_width = mode_copy->hdisplay;
-	drm->mode_config.max_width = mode_copy->hdisplay;
-	drm->mode_config.min_height = mode_copy->vdisplay;
-	drm->mode_config.max_height = mode_copy->vdisplay;
+	/* TODO: Maybe add DRM_MODE_CONNECTOR_SPI */
+	ret = tinydrm_display_pipe_init(tdev, pipe_funcs,
+					DRM_MODE_CONNECTOR_VIRTUAL,
+					mipi_dbi_formats,
+					ARRAY_SIZE(mipi_dbi_formats), mode,
+					rotation);
+	if (ret)
+		return ret;
+
 	drm->mode_config.preferred_depth = 16;
-
-	ret = tinydrm_display_pipe_init(tdev, mipi_dbi_formats,
-					ARRAY_SIZE(mipi_dbi_formats),
-					mode_copy, DRM_MODE_DIRTY_ON);
-	if (ret)
-		return ret;
+	mipi->rotation = rotation;
 
 	drm_mode_config_reset(drm);
 

@@ -26,7 +26,7 @@
 
 struct adafruit_tft_display {
 	const struct drm_display_mode mode;
-	const struct tinydrm_funcs funcs;
+	const struct drm_simple_display_pipe_funcs funcs;
 	bool write_only;
 	bool dc;
 };
@@ -49,8 +49,10 @@ enum adafruit_tft_display_ids {
  *
  * Init sequence taken from the BTL221722-276L datasheet
  */
-static int adafruit_tft_797_prepare(struct tinydrm_device *tdev)
+static void adafruit_tft_797_enable(struct drm_simple_display_pipe *pipe,
+				    struct drm_crtc_state *crtc_state)
 {
+	struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
 	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
 	struct device *dev = tdev->drm.dev;
 	struct regmap *reg = mipi->reg;
@@ -59,14 +61,16 @@ static int adafruit_tft_797_prepare(struct tinydrm_device *tdev)
 
 	dev_dbg(dev, "%s\n", __func__);
 
-	if (mipi->prepared_once)
-		return 0;
+	mutex_lock(&tdev->dev_lock);
+
+	if (tdev->prepared)
+		goto out_unlock;
 
 	if (mipi->regulator) {
 		ret = regulator_enable(mipi->regulator);
 		if (ret) {
 			dev_err(dev, "Failed to enable regulator %d\n", ret);
-			return ret;
+			goto out_unlock;
 		}
 	}
 
@@ -74,7 +78,7 @@ static int adafruit_tft_797_prepare(struct tinydrm_device *tdev)
 	ret = mipi_dbi_write(reg, HX8340_SETEXTCMD, 0xFF, 0x83, 0x40);
 	if (ret) {
 		dev_err(dev, "Error writing command %d\n", ret);
-		return ret;
+		goto out_unlock;
 	}
 
 	mipi_dbi_write(reg, MIPI_DCS_EXIT_SLEEP_MODE);
@@ -123,7 +127,12 @@ static int adafruit_tft_797_prepare(struct tinydrm_device *tdev)
 	mipi_dbi_write(reg, MIPI_DCS_SET_DISPLAY_ON);
 	msleep(50);
 
-	return 0;
+	tdev->prepared = true;
+	if (pipe->plane.state->fb)
+		schedule_work(&tdev->dirty_work);
+
+out_unlock:
+	mutex_unlock(&tdev->dev_lock);
 }
 
 /*
@@ -132,8 +141,10 @@ static int adafruit_tft_797_prepare(struct tinydrm_device *tdev)
  *
  * Init sequence taken from the Adafruit-ST7735-Library (Black Tab)
  */
-static int adafruit_tft_358_prepare(struct tinydrm_device *tdev)
+static void adafruit_tft_358_enable(struct drm_simple_display_pipe *pipe,
+				    struct drm_crtc_state *crtc_state)
 {
+	struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
 	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
 	struct device *dev = tdev->drm.dev;
 	struct regmap *reg = mipi->reg;
@@ -142,14 +153,16 @@ static int adafruit_tft_358_prepare(struct tinydrm_device *tdev)
 
 	dev_dbg(dev, "%s\n", __func__);
 
-	if (mipi->prepared_once)
-		return 0;
+	mutex_lock(&tdev->dev_lock);
+
+	if (tdev->prepared)
+		goto out_unlock;
 
 	if (mipi->regulator) {
 		ret = regulator_enable(mipi->regulator);
 		if (ret) {
 			dev_err(dev, "Failed to enable regulator %d\n", ret);
-			return ret;
+			goto out_unlock;
 		}
 	}
 
@@ -157,7 +170,7 @@ static int adafruit_tft_358_prepare(struct tinydrm_device *tdev)
 	ret = mipi_dbi_write(reg, MIPI_DCS_SOFT_RESET);
 	if (ret) {
 		dev_err(dev, "Error writing command %d\n", ret);
-		return ret;
+		goto out_unlock;
 	}
 
 	msleep(150);
@@ -211,7 +224,12 @@ static int adafruit_tft_358_prepare(struct tinydrm_device *tdev)
 	mipi_dbi_write(reg, MIPI_DCS_SET_DISPLAY_ON);
 	msleep(100);
 
-	return 0;
+	tdev->prepared = true;
+	if (pipe->plane.state->fb)
+		schedule_work(&tdev->dirty_work);
+
+out_unlock:
+	mutex_unlock(&tdev->dev_lock);
 }
 
 static const struct adafruit_tft_display adafruit_tft_displays[] = {
@@ -220,11 +238,9 @@ static const struct adafruit_tft_display adafruit_tft_displays[] = {
 			TINYDRM_MODE(176, 220, 34, 43),
 		},
 		.funcs = {
-			.prepare = adafruit_tft_797_prepare,
-			.unprepare = mipi_dbi_unprepare,
-			.enable = mipi_dbi_enable_backlight,
-			.disable = mipi_dbi_disable_backlight,
-			.dirty = mipi_dbi_dirty,
+			.enable = adafruit_tft_797_enable,
+			.disable = mipi_dbi_pipe_disable,
+			.update = tinydrm_display_pipe_update,
 		},
 		.write_only = true,
 	},
@@ -233,11 +249,9 @@ static const struct adafruit_tft_display adafruit_tft_displays[] = {
 			TINYDRM_MODE(128, 160, 28, 35),
 		},
 		.funcs = {
-			.prepare = adafruit_tft_358_prepare,
-			.unprepare = mipi_dbi_unprepare,
-			.enable = mipi_dbi_enable_backlight,
-			.disable = mipi_dbi_disable_backlight,
-			.dirty = mipi_dbi_dirty,
+			.enable = adafruit_tft_358_enable,
+			.disable = mipi_dbi_pipe_disable,
+			.update = tinydrm_display_pipe_update,
 		},
 		.dc = true,
 		.write_only = true,
@@ -340,14 +354,14 @@ static int adafruit_tft_probe(struct spi_device *spi)
 	if (IS_ERR(mipi->reg))
 		return PTR_ERR(mipi->reg);
 
-	ret = mipi_dbi_init(dev, mipi, &adafruit_tft_driver, &display->mode,
-			    rotation);
+	ret = mipi_dbi_init(dev, mipi, &display->funcs, &adafruit_tft_driver,
+			    &display->mode, rotation);
 	if (ret)
 		return ret;
 
 	tdev = &mipi->tinydrm;
 
-	ret = devm_tinydrm_register(tdev, &display->funcs);
+	ret = devm_tinydrm_register(tdev);
 	if (ret)
 		return ret;
 

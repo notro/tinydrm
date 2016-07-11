@@ -16,52 +16,10 @@
 #include <linux/regmap.h>
 
 struct tinydrm_debugfs_dirty;
-struct tinydrm_device;
 struct spi_transfer;
 struct spi_message;
 struct spi_device;
 struct regulator;
-
-/**
- * struct tinydrm_funcs - tinydrm device operations
- * @prepare: power on display and perform set up (optional)
- * @unprepare: power off display (optional)
- * @enable: enable display (optional)
- * @disable: disable display (optional)
- * @dirty: flush the framebuffer (optional, but not very useful without it)
- *
- * The .prepare() function is called when the display pipeline is enabled.
- * This is typically used to power on and initialize the display controller
- * to a state where it can receive framebuffer updates.
- *
- * After the first time the framebuffer has been flushed and the display has
- * been updated, the .enable() function is called. This will typically enable
- * backlight or by other means switch on display output.
- *
- * The .disable() function will typically disable backlight and .unprepare()
- * will power off the display. They are called in that order when the display
- * pipeline is disabled.
- *
- * The .dirty() function is called when the &drm_framebuffer is flushed, either
- * by userspace or by the fbdev emulation layer.
- * It has a one-to-one mapping to the &drm_framebuffer_funcs ->dirty callback
- * except that it also provides the &drm_gem_cma_object buffer object that is
- * backing the framebuffer. The entire framebuffer should be flushed if clips
- * is NULL. See &drm_mode_fb_dirty_cmd for more information about the
- * arguments. When the pipeline detects that the current framebuffer has
- * changed, it schedules a worker to flush this new framebuffer ensuring that
- * the display is in sync.
- */
-struct tinydrm_funcs {
-	int (*prepare)(struct tinydrm_device *tdev);
-	void (*unprepare)(struct tinydrm_device *tdev);
-	int (*enable)(struct tinydrm_device *tdev);
-	void (*disable)(struct tinydrm_device *tdev);
-	int (*dirty)(struct drm_framebuffer *fb,
-		     struct drm_gem_cma_object *cma_obj,
-		     unsigned flags, unsigned color,
-		     struct drm_clip_rect *clips, unsigned num_clips);
-};
 
 /**
  * struct tinydrm_device - tinydrm device
@@ -77,7 +35,6 @@ struct tinydrm_funcs {
  * @fbdev_used: fbdev has actually been used
  * @suspend_state: atomic state when suspended
  * @debugfs_dirty: debugfs dirty file control structure
- * @funcs: tinydrm device operations (optional)
  */
 struct tinydrm_device {
 	struct drm_device drm;
@@ -91,13 +48,20 @@ struct tinydrm_device {
 	bool fbdev_used;
 	struct drm_atomic_state *suspend_state;
 	struct tinydrm_debugfs_dirty *debugfs_dirty;
-	const struct tinydrm_funcs *funcs;
+/* private: */
+	const struct drm_framebuffer_funcs *fb_funcs;
 };
 
 static inline struct tinydrm_device *
 drm_to_tinydrm(struct drm_device *drm)
 {
 	return container_of(drm, struct tinydrm_device, drm);
+}
+
+static inline struct tinydrm_device *
+pipe_to_tinydrm(struct drm_simple_display_pipe *pipe)
+{
+	return container_of(pipe, struct tinydrm_device, pipe);
 }
 
 /*
@@ -156,15 +120,26 @@ tinydrm_gem_cma_prime_import_sg_table(struct drm_device *drm,
 struct drm_framebuffer *
 tinydrm_fb_create(struct drm_device *drm, struct drm_file *file_priv,
 		  const struct drm_mode_fb_cmd2 *mode_cmd);
-int tinydrm_display_pipe_init(struct tinydrm_device *tdev,
-			      const uint32_t *formats,
-			      unsigned int format_count,
-			      const struct drm_display_mode *mode,
-			      uint64_t dirty_val);
+bool tinydrm_check_dirty(struct drm_framebuffer *fb,
+			 struct drm_clip_rect **clips, unsigned *num_clips);
+struct drm_connector *
+tinydrm_connector_create(struct drm_device *drm,
+			 const struct drm_display_mode *mode,
+			 int connector_type, bool dirty_prop);
+void tinydrm_display_pipe_update(struct drm_simple_display_pipe *pipe,
+				 struct drm_plane_state *old_state);
+int
+tinydrm_display_pipe_init(struct tinydrm_device *tdev,
+			  const struct drm_simple_display_pipe_funcs *funcs,
+			  int connector_type,
+			  const uint32_t *formats,
+			  unsigned int format_count,
+			  const struct drm_display_mode *mode,
+			  unsigned int rotation);
 int devm_tinydrm_init(struct device *parent, struct tinydrm_device *tdev,
+		      const struct drm_framebuffer_funcs *fb_funcs,
 		      struct drm_driver *driver);
-int devm_tinydrm_register(struct tinydrm_device *tdev,
-			  const struct tinydrm_funcs *funcs);
+int devm_tinydrm_register(struct tinydrm_device *tdev);
 void tinydrm_shutdown(struct tinydrm_device *tdev);
 int tinydrm_suspend(struct tinydrm_device *tdev);
 int tinydrm_resume(struct tinydrm_device *tdev);

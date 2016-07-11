@@ -18,25 +18,23 @@ struct drm_gem_cma_object;
 struct drm_framebuffer;
 struct drm_clip_rect;
 struct gpio_desc;
-	struct lcdreg2;
 
 /**
  * mipi_dbi - MIPI DBI controller
  * @tinydrm: tinydrm base
  * @reg: register map
  * @rotation: initial rotation in degress Counter Clock Wise
- * @prepared_once: only prepare once (no backlight nor power control)
  * @backlight: backlight device (optional)
+ * @enable_delay_ms: Optional delay in milliseconds before turning on backlight
  * @regulator: power regulator (optional)
  */
 struct mipi_dbi {
 	struct tinydrm_device tinydrm;
 	struct regmap *reg;
-struct lcdreg2 *lcdreg2;
 	struct gpio_desc *reset;
 	unsigned int rotation;
-	bool prepared_once;
 	struct backlight_device *backlight;
+	unsigned int enable_delay_ms;
 	struct regulator *regulator;
 };
 
@@ -49,15 +47,10 @@ mipi_dbi_from_tinydrm(struct tinydrm_device *tdev)
 struct regmap *mipi_dbi_spi_init(struct spi_device *spi, struct gpio_desc *dc,
 				 bool write_only);
 int mipi_dbi_init(struct device *dev, struct mipi_dbi *mipi,
+		  const struct drm_simple_display_pipe_funcs *pipe_funcs,
 		  struct drm_driver *driver,
 		  const struct drm_display_mode *mode, unsigned int rotation);
-int mipi_dbi_dirty(struct drm_framebuffer *fb,
-		   struct drm_gem_cma_object *cma_obj,
-		   unsigned flags, unsigned color,
-		   struct drm_clip_rect *clips, unsigned num_clips);
-int mipi_dbi_enable_backlight(struct tinydrm_device *tdev);
-void mipi_dbi_disable_backlight(struct tinydrm_device *tdev);
-void mipi_dbi_unprepare(struct tinydrm_device *tdev);
+void mipi_dbi_pipe_disable(struct drm_simple_display_pipe *pipe);
 void mipi_dbi_hw_reset(struct mipi_dbi *mipi);
 bool mipi_dbi_display_is_on(struct regmap *reg);
 

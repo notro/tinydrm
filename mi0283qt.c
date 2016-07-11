@@ -74,8 +74,10 @@ Example:
 #include <linux/spi/spi.h>
 #include <video/mipi_display.h>
 
-static int mi0283qt_prepare(struct tinydrm_device *tdev)
+static void mi0283qt_enable(struct drm_simple_display_pipe *pipe,
+			    struct drm_crtc_state *crtc_state)
 {
+	struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
 	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
 	struct device *dev = tdev->drm.dev;
 	struct regmap *reg = mipi->reg;
@@ -84,23 +86,30 @@ static int mi0283qt_prepare(struct tinydrm_device *tdev)
 
 	dev_dbg(dev, "%s\n", __func__);
 
+	mutex_lock(&tdev->dev_lock);
+
+	if (tdev->prepared)
+		goto out_unlock;
+
 	if (mipi->regulator) {
 		ret = regulator_enable(mipi->regulator);
 		if (ret) {
 			dev_err(dev, "Failed to enable regulator %d\n", ret);
-			return ret;
+			goto out_unlock;
 		}
 	}
 
 	/* Avoid flicker by skipping setup if the bootloader has done it */
-	if (mipi_dbi_display_is_on(reg))
-		return 0;
+	if (mipi_dbi_display_is_on(reg)) {
+		tdev->prepared = true;
+		goto out_unlock;
+	}
 
 	mipi_dbi_hw_reset(mipi);
 	ret = mipi_dbi_write(reg, MIPI_DCS_SOFT_RESET);
 	if (ret) {
 		dev_err(dev, "Error writing command %d\n", ret);
-		return ret;
+		goto out_unlock;
 	}
 
 	msleep(20);
@@ -166,31 +175,22 @@ static int mi0283qt_prepare(struct tinydrm_device *tdev)
 	mipi_dbi_write(reg, MIPI_DCS_SET_DISPLAY_ON);
 	msleep(100);
 
-	return 0;
+	tdev->prepared = true;
+	if (pipe->plane.state->fb)
+		schedule_work(&tdev->dirty_work);
+
+out_unlock:
+	mutex_unlock(&tdev->dev_lock);
 }
 
-/*
- * The delay was necessary on a MI0283QT-8 and -9 to avoid white flicker/tear
- * in the lower right corner following rotation.
- */
-static int mi0283qt_enable(struct tinydrm_device *tdev)
-{
-	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
-
-	msleep(50);
-	return tinydrm_enable_backlight(mipi->backlight);
-}
+static const struct drm_simple_display_pipe_funcs mi0283qt_pipe_funcs = {
+	.enable = mi0283qt_enable,
+	.disable = mipi_dbi_pipe_disable,
+	.update = tinydrm_display_pipe_update,
+};
 
 static const struct drm_display_mode mi0283qt_mode = {
 	TINYDRM_MODE(320, 240, 58, 43),
-};
-
-static const struct tinydrm_funcs mi0283qt_funcs = {
-	.prepare = mi0283qt_prepare,
-	.unprepare = mipi_dbi_unprepare,
-	.enable = mi0283qt_enable,
-	.disable = mipi_dbi_disable_backlight,
-	.dirty = mipi_dbi_dirty,
 };
 
 static const struct of_device_id mi0283qt_of_match[] = {
@@ -260,6 +260,7 @@ static int mi0283qt_probe(struct spi_device *spi)
 		mipi->regulator = NULL;
 	}
 
+	mipi->enable_delay_ms = 50;
 	mipi->backlight = tinydrm_of_find_backlight(dev);
 	if (IS_ERR(mipi->backlight))
 		return PTR_ERR(mipi->backlight);
@@ -271,14 +272,14 @@ static int mi0283qt_probe(struct spi_device *spi)
 	if (IS_ERR(mipi->reg))
 		return PTR_ERR(mipi->reg);
 
-	ret = mipi_dbi_init(dev, mipi, &mi0283qt_driver, &mi0283qt_mode,
-			    rotation);
+	ret = mipi_dbi_init(dev, mipi, &mi0283qt_pipe_funcs, &mi0283qt_driver,
+			    &mi0283qt_mode, rotation);
 	if (ret)
 		return ret;
 
 	tdev = &mipi->tinydrm;
 
-	ret = devm_tinydrm_register(tdev, &mi0283qt_funcs);
+	ret = devm_tinydrm_register(tdev);
 	if (ret)
 		return ret;
 

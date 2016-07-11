@@ -34,7 +34,7 @@
  *
  * This function ensures that fbdev is restored when drm_lastclose() is called
  * on the last drm_release(). tinydrm drivers should use this as their
- * &drm_driver ->lastclose callback.
+ * &drm_driver->lastclose callback.
  */
 void tinydrm_lastclose(struct drm_device *drm)
 {
@@ -57,7 +57,7 @@ EXPORT_SYMBOL(tinydrm_lastclose);
  * GEM object state and frees the memory used to store the object itself using
  * drm_gem_cma_free_object(). It also handles PRIME buffers which has the kernel
  * virtual address set by tinydrm_gem_cma_prime_import_sg_table(). tinydrm
- * drivers should set this as their &drm_driver ->gem_free_object callback.
+ * drivers should set this as their &drm_driver->gem_free_object callback.
  */
 void tinydrm_gem_cma_free_object(struct drm_gem_object *gem_obj)
 {
@@ -83,7 +83,7 @@ EXPORT_SYMBOL_GPL(tinydrm_gem_cma_free_object);
  * This function imports a scatter/gather table exported via DMA-BUF by
  * another driver using drm_gem_cma_prime_import_sg_table(). It also sets the
  * kernel virtual address on the CMA object. tinydrm drivers should use this
- * as their &drm_driver ->gem_prime_import_sg_table callback.
+ * as their &drm_driver->gem_prime_import_sg_table callback.
  *
  * Returns:
  * A pointer to a newly created GEM object or an ERR_PTR-encoded negative
@@ -138,11 +138,26 @@ static const struct drm_mode_config_funcs tinydrm_mode_config_funcs = {
 	.atomic_commit = drm_atomic_helper_commit,
 };
 
+static void tinydrm_dirty_work(struct work_struct *work)
+{
+	struct tinydrm_device *tdev = container_of(work, struct tinydrm_device,
+						   dirty_work);
+	struct drm_framebuffer *fb = tdev->pipe.plane.fb;
+
+	if (fb)
+		fb->funcs->dirty(fb, NULL, 0, 0, NULL, 0);
+}
+
 static int tinydrm_init(struct device *parent, struct tinydrm_device *tdev,
+			const struct drm_framebuffer_funcs *fb_funcs,
 			struct drm_driver *driver)
 {
 	struct drm_device *drm = &tdev->drm;
 	int ret;
+
+	INIT_WORK(&tdev->dirty_work, tinydrm_dirty_work);
+	mutex_init(&tdev->dev_lock);
+	tdev->fb_funcs = fb_funcs;
 
 	ret = drm_dev_init(drm, driver, parent);
 	if (ret)
@@ -150,8 +165,6 @@ static int tinydrm_init(struct device *parent, struct tinydrm_device *tdev,
 
 	drm_mode_config_init(drm);
 	drm->mode_config.funcs = &tinydrm_mode_config_funcs;
-
-	mutex_init(&tdev->dev_lock);
 
 	return 0;
 }
@@ -176,6 +189,7 @@ static void devm_tinydrm_release(struct device *dev, void *res)
  * devm_tinydrm_init - Initialize tinydrm device
  * @parent: Parent device object
  * @tdev: tinydrm device
+ * @fb_funcs: Framebuffer functions
  * @driver: DRM driver
  *
  * This function initializes @tdev and the underlying DRM device.
@@ -188,6 +202,7 @@ static void devm_tinydrm_release(struct device *dev, void *res)
  * Zero on success, negative error code on failure.
  */
 int devm_tinydrm_init(struct device *parent, struct tinydrm_device *tdev,
+		      const struct drm_framebuffer_funcs *fb_funcs,
 		      struct drm_driver *driver)
 {
 	struct tinydrm_device **ptr;
@@ -197,7 +212,7 @@ int devm_tinydrm_init(struct device *parent, struct tinydrm_device *tdev,
 	if (!ptr)
 		return -ENOMEM;
 
-	ret = tinydrm_init(parent, tdev, driver);
+	ret = tinydrm_init(parent, tdev, fb_funcs, driver);
 	if (ret) {
 		devres_free(ptr);
 		return ret;
@@ -210,13 +225,10 @@ int devm_tinydrm_init(struct device *parent, struct tinydrm_device *tdev,
 }
 EXPORT_SYMBOL(devm_tinydrm_init);
 
-static int tinydrm_register(struct tinydrm_device *tdev,
-			    const struct tinydrm_funcs *funcs)
+static int tinydrm_register(struct tinydrm_device *tdev)
 {
 	struct drm_device *drm = &tdev->drm;
 	int ret;
-
-	tdev->funcs = funcs;
 
 	ret = drm_dev_register(drm, 0);
 	if (ret)
@@ -236,6 +248,7 @@ static void tinydrm_unregister(struct tinydrm_device *tdev)
 	DRM_DEBUG_KMS("\n");
 
 	drm_crtc_force_disable_all(drm);
+	cancel_work_sync(&tdev->dirty_work);
 	tinydrm_fbdev_fini(tdev);
 	drm_dev_unregister(drm);
 }
@@ -251,14 +264,12 @@ static void devm_tinydrm_register_release(struct device *dev, void *res)
  *
  * This function registers the underlying DRM device, connectors and fbdev.
  * These resources will be automatically unregistered on driver detach (devres)
- * and in addition tinydrm_shutdown() will also be called to make sure the
- * display is disabled.
+ * and the display pipeline will be disabled.
  *
  * Returns:
  * Zero on success, negative error code on failure.
  */
-int devm_tinydrm_register(struct tinydrm_device *tdev,
-			  const struct tinydrm_funcs *funcs)
+int devm_tinydrm_register(struct tinydrm_device *tdev)
 {
 	struct device *dev = tdev->drm.dev;
 	struct tinydrm_device **ptr;
@@ -269,7 +280,7 @@ int devm_tinydrm_register(struct tinydrm_device *tdev,
 	if (!ptr)
 		return -ENOMEM;
 
-	ret = tinydrm_register(tdev, funcs);
+	ret = tinydrm_register(tdev);
 	if (ret) {
 		devres_free(ptr);
 		return ret;

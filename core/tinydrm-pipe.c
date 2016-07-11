@@ -96,10 +96,23 @@ static const struct drm_connector_funcs tinydrm_connector_funcs = {
 	.atomic_destroy_state = drm_atomic_helper_connector_destroy_state,
 };
 
-static struct drm_connector *
+/**
+ * tinydrm_connector_create - Create simple connector
+ * @drm: DRM device
+ * @mode: Supported display mode
+ * @connector_type: Connector type
+ * @dirty_prop: Whether or not to create a dirty property on the connector
+ *
+ * This function creates a simple &drm_connector with one fixed
+ * &drm_display_mode.
+ *
+ * Returns:
+ * DRM connector on success, error pointer on failure.
+ */
+struct drm_connector *
 tinydrm_connector_create(struct drm_device *drm,
 			 const struct drm_display_mode *mode,
-			 int connector_type)
+			 int connector_type, bool dirty_prop)
 {
 	struct tinydrm_connector *tconn;
 	struct drm_connector *connector;
@@ -122,62 +135,22 @@ tinydrm_connector_create(struct drm_device *drm,
 
 	connector->status = connector_status_connected;
 
-	return connector;
-}
+	if (dirty_prop) {
+		ret = drm_mode_create_dirty_info_property(drm);
+		if (ret)
+			return ERR_PTR(ret);
 
-static inline struct tinydrm_device *
-pipe_to_tinydrm(struct drm_simple_display_pipe *pipe)
-{
-	return container_of(pipe, struct tinydrm_device, pipe);
-}
-
-static void tinydrm_display_pipe_enable(struct drm_simple_display_pipe *pipe,
-					struct drm_crtc_state *crtc_state)
-{
-	struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
-	int ret = 0;
-
-	DRM_DEBUG_KMS("\n");
-
-	mutex_lock(&tdev->dev_lock);
-
-	if (tdev->funcs && tdev->funcs->prepare)
-		ret = tdev->funcs->prepare(tdev);
-
-	if (!ret) {
-		tdev->prepared = true;
-		if (pipe->plane.state->fb)
-			schedule_work(&tdev->dirty_work);
-	} else {
-		DRM_ERROR("Failed to enable pipeline: %d\n", ret);
+		drm_object_attach_property(&connector->base,
+					drm->mode_config.dirty_info_property,
+					DRM_MODE_DIRTY_ON);
 	}
 
-	mutex_unlock(&tdev->dev_lock);
+	return connector;
 }
+EXPORT_SYMBOL(tinydrm_connector_create);
 
-static void tinydrm_display_pipe_disable(struct drm_simple_display_pipe *pipe)
-{
-	struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
-
-	DRM_DEBUG_KMS("\n");
-
-	cancel_work_sync(&tdev->dirty_work);
-
-	mutex_lock(&tdev->dev_lock);
-
-	if (tdev->enabled && tdev->funcs && tdev->funcs->disable)
-		tdev->funcs->disable(tdev);
-	tdev->enabled = false;
-
-	if (tdev->prepared && tdev->funcs && tdev->funcs->unprepare)
-		tdev->funcs->unprepare(tdev);
-	tdev->prepared = false;
-
-	mutex_unlock(&tdev->dev_lock);
-}
-
-static void tinydrm_display_pipe_update(struct drm_simple_display_pipe *pipe,
-					struct drm_plane_state *old_state)
+void tinydrm_display_pipe_update(struct drm_simple_display_pipe *pipe,
+				 struct drm_plane_state *old_state)
 {
 	struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
 	struct drm_framebuffer *fb = pipe->plane.state->fb;
@@ -199,69 +172,80 @@ static void tinydrm_display_pipe_update(struct drm_simple_display_pipe *pipe,
 	if (tdev->fbdev_helper && fb == tdev->fbdev_helper->fb)
 		tdev->fbdev_used = true;
 }
+EXPORT_SYMBOL(tinydrm_display_pipe_update);
 
-static const struct drm_simple_display_pipe_funcs tinydrm_display_pipe_funcs = {
-	.enable = tinydrm_display_pipe_enable,
-	.disable = tinydrm_display_pipe_disable,
-	.update = tinydrm_display_pipe_update,
-};
-
-static void tinydrm_dirty_work(struct work_struct *work)
+static int tinydrm_rotate_mode(struct drm_display_mode *mode,
+			       unsigned int rotation)
 {
-	struct tinydrm_device *tdev = container_of(work, struct tinydrm_device,
-						   dirty_work);
-	struct drm_framebuffer *fb = tdev->pipe.plane.fb;
-
-	if (fb)
-		fb->funcs->dirty(fb, NULL, 0, 0, NULL, 0);
+	if (rotation == 0 || rotation == 180) {
+		return 0;
+	} else if (rotation == 90 || rotation == 270) {
+		swap(mode->hdisplay, mode->vdisplay);
+		swap(mode->hsync_start, mode->vsync_start);
+		swap(mode->hsync_end, mode->vsync_end);
+		swap(mode->htotal, mode->vtotal);
+		swap(mode->width_mm, mode->height_mm);
+		return 0;
+	} else {
+		return -EINVAL;
+	}
 }
 
 /**
- * tinydrm_display_pipe_init - initialize tinydrm display pipe
+ * tinydrm_display_pipe_init - Initialize display pipe
  * @tdev: tinydrm device
- * @formats: array of supported formats (%DRM_FORMAT_*)
- * @format_count: number of elements in @formats
- * @mode: supported mode (a copy is made so this can be freed afterwards)
- * @dirty_val: initial value of the dirty property
+ * @funcs: Display pipe functions
+ * @connector_type: Connector type
+ * @formats: Array of supported formats (%DRM_FORMAT_*)
+ * @format_count: Number of elements in @formats
+ * @mode: Supported mode
+ * @rotation: Initial @mode rotation in degrees Counter Clock Wise
  *
- * Sets up a display pipeline which consist of one &drm_plane, one &drm_crtc,
- * one &drm_encoder and one &drm_connector with one &drm_display_mode.
- * Also adds the 'dirty' property with initial value @dirty_val.
+ * This function sets up a &drm_simple_display_pipe with a &drm_connector that
+ * has one fixed &drm_display_mode which is rotated according to @rotation.
  *
  * Returns:
  * Zero on success, negative error code on failure.
  */
-int tinydrm_display_pipe_init(struct tinydrm_device *tdev,
-			      const uint32_t *formats,
-			      unsigned int format_count,
-			      const struct drm_display_mode *mode,
-			      uint64_t dirty_val)
+int
+tinydrm_display_pipe_init(struct tinydrm_device *tdev,
+			  const struct drm_simple_display_pipe_funcs *funcs,
+			  int connector_type,
+			  const uint32_t *formats,
+			  unsigned int format_count,
+			  const struct drm_display_mode *mode,
+			  unsigned int rotation)
 {
 	struct drm_device *drm = &tdev->drm;
+	struct drm_display_mode *mode_copy;
 	struct drm_connector *connector;
 	int ret;
 
-	INIT_WORK(&tdev->dirty_work, tinydrm_dirty_work);
+	mode_copy = devm_kmalloc(drm->dev, sizeof(*mode_copy), GFP_KERNEL);
+	if (!mode_copy)
+		return -ENOMEM;
 
-	connector = tinydrm_connector_create(drm, mode,
-					     DRM_MODE_CONNECTOR_VIRTUAL);
+	*mode_copy = *mode;
+	ret = tinydrm_rotate_mode(mode_copy, rotation);
+	if (ret) {
+		DRM_ERROR("Illegal rotation value %u\n", rotation);
+		return -EINVAL;
+	}
+
+	drm->mode_config.min_width = mode_copy->hdisplay;
+	drm->mode_config.max_width = mode_copy->hdisplay;
+	drm->mode_config.min_height = mode_copy->vdisplay;
+	drm->mode_config.max_height = mode_copy->vdisplay;
+
+	connector = tinydrm_connector_create(drm, mode_copy, connector_type,
+					     true);
 	if (IS_ERR(connector))
 		return PTR_ERR(connector);
 
-	ret = drm_simple_display_pipe_init(drm, &tdev->pipe,
-					   &tinydrm_display_pipe_funcs,
-					   formats, format_count,
-					   connector);
+	ret = drm_simple_display_pipe_init(drm, &tdev->pipe, funcs, formats,
+					   format_count, connector);
 	if (ret)
 		return ret;
-
-	ret = drm_mode_create_dirty_info_property(drm);
-	if (ret)
-		return ret;
-
-	drm_object_attach_property(&connector->base,
-				   drm->mode_config.dirty_info_property,
-				   dirty_val);
 
 	return 0;
 }
