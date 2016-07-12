@@ -26,12 +26,12 @@ struct regulator;
  * @drm: DRM device
  * @pipe: Display pipe structure
  * @dirty_work: framebuffer flusher
- * @dev_lock: serializes &tinydrm_funcs operations and protects
+ * @dev_lock: serializes device access and protects
  *            prepared/enabled state changes
- * @prepared: device prepared state
- * @enabled: device enabled state
+ * @prepared: device prepared state (prepared for framebuffer flushing)
+ * @enabled: device enabled state (display is on)
  * @fbdev_cma: fbdev CMA structure
- * @fbdev_helper: fbdev helper
+ * @fbdev_helper: fbdev helper (from the private fbdev CMA structure).
  * @fbdev_used: fbdev has actually been used
  * @suspend_state: atomic state when suspended
  * @debugfs_dirty: debugfs dirty file control structure

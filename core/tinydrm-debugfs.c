@@ -19,14 +19,14 @@
  * DOC: Performance reporting
  *
  * tinydrm can provide performance reporting when built with CONFIG_DEBUG_FS.
- * This is available through the file 'dirty'.
+ * This is available through the file ``dirty``.
  * Writing a positive number <n> to this file (re)starts the process of
  * collecting statistics for the last <n> framebuffer flushes.
  * Writing a zero stops it.
  * Reading this file will provide a list of the last <n> flushes.
  * Reading will not clear the list.
  *
- * Example use:
+ * Example use::
  *     # cd /sys/kernel/debug/dri/0
  *     # echo 4 > dirty
  *     # cat dirty
@@ -35,10 +35,11 @@
  *     [ 2140.301724] 2798 KiB/s, 151 KiB in 54 ms,    full(320x240+0+0), 140 ms since last,  7 fps
  *     [ 2140.361702] 3552 KiB/s,  10 KiB in  3 ms, partial(320x16+0+224),  59 ms since last
  *
- * To get this functionality the driver has to call tinydrm_debugfs_dirty_init()
- * to set it up and then bracket the framebuffer flushes with calls to
- * tinydrm_debugfs_dirty_begin() and tinydrm_debugfs_dirty_end().
- *
+ * To get this functionality the driver needs to use tinydrm_debugfs_init() and
+ * tinydrm_debugfs_cleanup() in their &drm_driver. Additionally it has to call
+ * tinydrm_debugfs_dirty_init() to set it up and then bracket the framebuffer
+ * flushes with calls to tinydrm_debugfs_dirty_begin() and
+ * tinydrm_debugfs_dirty_end().
  */
 
 #define MAX_DIRTY_ENTRIES 128
@@ -60,6 +61,9 @@ struct tinydrm_debugfs_dirty {
 /**
  * tinydrm_debugfs_dirty_init - Initialize performance reporting
  * @tdev: tinydrm device
+ *
+ * Returns:
+ * Zero on success, negative error code on failure.
  */
 int tinydrm_debugfs_dirty_init(struct tinydrm_device *tdev)
 {
@@ -340,6 +344,12 @@ static const struct file_operations tinydrm_debugfs_dirty_file_ops = {
 	.release = single_release,
 };
 
+/*
+ * TODO
+ * Maybe drm_debugfs_cleanup() can use debugfs_remove_recursive() instead of
+ * debugfs_remove(minor->debugfs_root). Then this hack wouldn't be needed.
+ * armada, i915, nouveau and sti do similar things.
+ */
 static int tinydrm_debugfs_create_file(const char *name, umode_t mode,
 				       struct dentry *root,
 				       struct drm_minor *minor,
@@ -381,6 +391,15 @@ static const struct drm_info_list tinydrm_debugfs_list[] = {
 	{ "fb",   drm_fb_cma_debugfs_show, 0 },
 };
 
+/**
+ * tinydrm_debugfs_init - Create debugfs entries
+ * @minor: DRM minor
+ *
+ * Drivers can use this as their &drm_driver->debugfs_init callback.
+ *
+ * Returns:
+ * Zero on success, negative error code on failure.
+ */
 int tinydrm_debugfs_init(struct drm_minor *minor)
 {
 	int ret;
@@ -399,6 +418,12 @@ int tinydrm_debugfs_init(struct drm_minor *minor)
 }
 EXPORT_SYMBOL(tinydrm_debugfs_init);
 
+/**
+ * tinydrm_debugfs_cleanup - Cleanup debugfs entries
+ * @minor: DRM minor
+ *
+ * Drivers can use this as their &drm_driver->debugfs_cleanup callback.
+ */
 void tinydrm_debugfs_cleanup(struct drm_minor *minor)
 {
 	struct tinydrm_device *tdev = drm_to_tinydrm(minor->dev);

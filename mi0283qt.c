@@ -11,7 +11,7 @@
  * (at your option) any later version.
  */
 
-/* TODO
+/* TODO: DT binding
 
 of: Add vendor prefix for Multi-Inno
 Multi-Inno Technology Co.,Ltd is a Hong Kong based company offering
@@ -33,23 +33,21 @@ Required properties:
 - compatible:	"multi-inno,mi0283qt".
 
 The node for this driver must be a child node of a SPI controller, hence
-all mandatory properties described in
-	Documentation/devicetree/bindings/spi/spi-bus.txt
-must be specified.
+all mandatory properties described in ../spi/spi-bus.txt must be specified.
 
 Optional properties:
-- power-supply:	A regulator node for the supply voltage.
-- reset-gpios:	Reset pin
 - dc-gpios:	D/C pin. The presence/absence of this GPIO determines
 		the panel interface mode (IM[3:0] pins):
-		- absent:  IM=x101 3-wire 9-bit data serial interface
 		- present: IM=x110 4-wire 8-bit data serial interface
+		- absent:  IM=x101 3-wire 9-bit data serial interface
+- reset-gpios:	Reset pin
+- power-supply:	A regulator node for the supply voltage.
+- backlight:	phandle of the backlight device attached to the panel
+- rotation:	panel rotation in degrees counter clockwise (0,90,180,270)
 - write-only:	LCD controller is write only. This depends on the interface
 		mode, SPI master driver and wiring:
-		- IM=11xx: MISO is not connected
-		- IM=01xx: SPI master driver doesn't support spi-3wire (SDA)
-- rotation:	panel rotation in degrees counter clockwise (0,90,180,270)
-- backlight:	phandle of the backlight device attached to the panel
+		- IM=11xx and MISO not connected
+		- IM=01xx and SPI master driver doesn't support spi-3wire (SDA)
 
 Example:
 	mi0283qt@0{

@@ -15,19 +15,6 @@
 #include <drm/drm_simple_kms_helper.h>
 #include <drm/tinydrm/tinydrm.h>
 
-/**
- * DOC: Display pipeline
- *
- * The display pipeline is very simple and consists of a simple
- * plane-crtc-encoder-connector pipe with only one mode.
- * When the pipeline is enabled, the &tinydrm_funcs ->prepare hook is called
- * if it is in the unprepared state. The ->enable hook is called after the
- * first ->dirty call.
- * When the framebuffer is changed, a worker is started to flush it making
- * sure that the display is in sync.
- * The pipeline is initialized using tinydrm_display_pipe_init().
- */
-
 struct tinydrm_connector {
 	struct drm_connector base;
 	const struct drm_display_mode *mode;
@@ -149,6 +136,16 @@ tinydrm_connector_create(struct drm_device *drm,
 }
 EXPORT_SYMBOL(tinydrm_connector_create);
 
+/**
+ * tinydrm_display_pipe_update - Display pipe update helper
+ * @pipe: Simple display pipe
+ * @old_state: Old plane state
+ *
+ * This function schedules a full framebuffer flush if the plane framebuffer
+ * has changed. It also detects if fbdev is being used.
+ * Drivers can use this as their &drm_simple_display_pipe_funcs->update
+ * callback.
+ */
 void tinydrm_display_pipe_update(struct drm_simple_display_pipe *pipe,
 				 struct drm_plane_state *old_state)
 {

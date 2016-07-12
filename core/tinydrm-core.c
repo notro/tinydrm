@@ -33,8 +33,9 @@
  * @drm: DRM device
  *
  * This function ensures that fbdev is restored when drm_lastclose() is called
- * on the last drm_release(). tinydrm drivers should use this as their
- * &drm_driver->lastclose callback.
+ * on the last drm_release(). If fbdev is disabled the pipeline is disabled
+ * instead. tinydrm drivers should use this as their &drm_driver->lastclose
+ * callback.
  */
 void tinydrm_lastclose(struct drm_device *drm)
 {
@@ -192,9 +193,9 @@ static void devm_tinydrm_release(struct device *dev, void *res)
  * @fb_funcs: Framebuffer functions
  * @driver: DRM driver
  *
- * This function initializes @tdev and the underlying DRM device.
- * The caller is responsible for setting &drm_mode_config ->
- * {min_width, min_height, max_width, max_height}.
+ * This function initializes @tdev, the underlying DRM device and it's
+ * mode_config. Additionally it sets &drm_mode_config_funcs using
+ * tinydrm_fb_create() for framebuffer creation.
  * Resources will be automatically freed on driver detach (devres) using
  * drm_mode_config_cleanup() and drm_dev_unref().
  *

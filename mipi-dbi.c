@@ -43,10 +43,39 @@ struct mipi_dbi_spi {
 };
 
 /**
+ * DOC: overview
+ *
+ * This library provides helpers for MIPI Display Bus Interface (DBI)
+ * compatible display controllers.
+ *
+ * Many controllers are MIPI compliant and can use this library.
+ * If a controller uses registers 0x2A and 0x2B to set the area to update
+ * and uses register 0x2C to write to frame memory, it is most likely MIPI
+ * compliant.
+ *
+ * Only MIPI Type 1 displays are supported since a full frame memory is needed.
+ *
+ * There are 3 MIPI DBI implementation types:
+ *
+ * A. Motorola 6800 type parallel bus
+ *
+ * B. Intel 8080 type parallel bus
+ *
+ * C. SPI type with 3 options:
+ *
+ *    1. 9-bit with the Data/Command signal as the ninth bit
+ *    2. Same as above except it's sent as 16 bits
+ *    3. 8-bit with the Data/Command signal as a separate D/CX pin
+ *
+ * Currently mipi_dbi only supports Type C options 1 and 3 with
+ * mipi_dbi_spi_init().
+ */
+
+/**
  * mipi_dbi_write_buf - Write command and parameter array
  * @reg: Controller register
  * @cmd: Command
- * @parameters: Array of parameters
+ * @parameters: Array of parameters (optional)
  * @num: Number of parameters
  */
 int mipi_dbi_write_buf(struct regmap *reg, unsigned cmd, const u8 *parameters,
@@ -419,7 +448,7 @@ static int mipi_dbi_spi3_read(void *context, const void *reg, size_t reg_len,
 
 	/*
 	 * Support non-standard 24-bit and 32-bit Nokia read commands which
-	 * starts with a dummy clock, so we need to read an extra byte.
+	 * start with a dummy clock, so we need to read an extra byte.
 	 */
 	if (cmd == MIPI_DCS_GET_DISPLAY_ID ||
 	    cmd == MIPI_DCS_GET_DISPLAY_STATUS) {
@@ -467,6 +496,25 @@ static const struct regmap_bus mipi_dbi_regmap_bus3 = {
 	.val_format_endian_default = REGMAP_ENDIAN_DEFAULT,
 };
 
+/**
+ * mipi_dbi_spi_init - Initialize MIPI DBI SPI interface
+ * @spi: SPI device
+ * @dc: D/C gpio (optional)
+ * @write_only: Controller is write-only
+ *
+ * This function initializes a &regmap that can be used to send commands to
+ * the controller. mipi_dbi_write() can be used to send commands.
+ * If @dc is set, a Type C Option 3 interface is assumed, if not
+ * Type C Option 1.
+ * If the SPI master driver doesn't support the necessary bits per word,
+ * the following transformation is used:
+ *
+ * - 9-bit: reorder buffer as 9x 8-bit words, padded with no-op command.
+ * - 16-bit: if big endian send as 8-bit, if little endian swap bytes
+ *
+ * Returns:
+ * regmap on success, error pointer on failure.
+ */
 struct regmap *mipi_dbi_spi_init(struct spi_device *spi, struct gpio_desc *dc,
 				 bool write_only)
 {
@@ -505,22 +553,6 @@ struct regmap *mipi_dbi_spi_init(struct spi_device *spi, struct gpio_desc *dc,
 	return mspi->map;
 }
 EXPORT_SYMBOL(mipi_dbi_spi_init);
-
-
-
-
-
-/**
- * DOC: overview
- *
- * This library provides helpers for MIPI display controllers with
- * Display Bus Interface (DBI).
- *
- * Many controllers are MIPI compliant and can use this library.
- * If a controller uses registers 0x2A and 0x2B to set the area to update
- * and uses register 0x2C to write to frame memory, it is most likely MIPI
- * compliant.
- */
 
 static int mipi_dbi_fb_dirty(struct drm_framebuffer *fb,
 			     struct drm_file *file_priv,
@@ -619,6 +651,8 @@ static void mipi_dbi_blank(struct mipi_dbi *mipi)
  *
  * This function disables the display pipeline by disabling backlight and
  * regulator if present.
+ * Drivers can use this as their &drm_simple_display_pipe_funcs->disable
+ * callback.
  */
 void mipi_dbi_pipe_disable(struct drm_simple_display_pipe *pipe)
 {
@@ -723,6 +757,12 @@ int mipi_dbi_init(struct device *dev, struct mipi_dbi *mipi,
 }
 EXPORT_SYMBOL(mipi_dbi_init);
 
+/**
+ * mipi_dbi_hw_reset - Hardware reset of controller
+ * @mipi: MIPI DBI structure
+ *
+ * Reset controller if the &mipi_dbi->reset gpio is set.
+ */
 void mipi_dbi_hw_reset(struct mipi_dbi *mipi)
 {
 	if (!mipi->reset)
@@ -745,8 +785,7 @@ EXPORT_SYMBOL(mipi_dbi_hw_reset);
  * enabled.
  *
  * Returns:
- * true if the display can be verified to be on
- * false otherwise.
+ * true if the display can be verified to be on, false otherwise.
  */
 bool mipi_dbi_display_is_on(struct regmap *reg)
 {
@@ -1002,6 +1041,15 @@ static const struct drm_info_list mipi_dbi_debugfs_list[] = {
 	{ "mipi",   mipi_dbi_debugfs_show, 0 },
 };
 
+/**
+ * mipi_dbi_debugfs_init - Create debugfs entries
+ * @minor: DRM minor
+ *
+ * Drivers can use this as their &drm_driver->debugfs_init callback.
+ *
+ * Returns:
+ * Zero on success, negative error code on failure.
+ */
 int mipi_dbi_debugfs_init(struct drm_minor *minor)
 {
 	int ret;
@@ -1016,6 +1064,12 @@ int mipi_dbi_debugfs_init(struct drm_minor *minor)
 }
 EXPORT_SYMBOL(mipi_dbi_debugfs_init);
 
+/**
+ * mipi_dbi_debugfs_cleanup - Cleanup debugfs entries
+ * @minor: DRM minor
+ *
+ * Drivers can use this as their &drm_driver->debugfs_cleanup callback.
+ */
 void mipi_dbi_debugfs_cleanup(struct drm_minor *minor)
 {
 	tinydrm_debugfs_cleanup(minor);
