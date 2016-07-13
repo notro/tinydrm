@@ -17,7 +17,9 @@
 struct drm_gem_cma_object;
 struct drm_framebuffer;
 struct drm_clip_rect;
+struct spi_device;
 struct gpio_desc;
+struct regulator;
 
 /**
  * mipi_dbi - MIPI DBI controller

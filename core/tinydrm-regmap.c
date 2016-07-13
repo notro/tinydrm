@@ -10,6 +10,8 @@
 
 #include <drm/drmP.h>
 #include <drm/tinydrm/tinydrm.h>
+#include <drm/tinydrm/tinydrm-helpers.h>
+#include <drm/tinydrm/tinydrm-regmap.h>
 #include <linux/module.h>
 #include <linux/regmap.h>
 #include <linux/spi/spi.h>

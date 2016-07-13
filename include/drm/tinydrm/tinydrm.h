@@ -13,13 +13,8 @@
 #include <drm/drm_crtc.h>
 #include <drm/drm_gem_cma_helper.h>
 #include <drm/drm_simple_kms_helper.h>
-#include <linux/regmap.h>
 
 struct tinydrm_debugfs_dirty;
-struct spi_transfer;
-struct spi_message;
-struct spi_device;
-struct regulator;
 
 /**
  * struct tinydrm_device - tinydrm device
@@ -147,87 +142,6 @@ int tinydrm_resume(struct tinydrm_device *tdev);
 int tinydrm_fbdev_init(struct tinydrm_device *tdev);
 void tinydrm_fbdev_fini(struct tinydrm_device *tdev);
 
-/* tinydrm-regmap.c */
-int tinydrm_regmap_flush_rgb565(struct regmap *reg, u32 regnr,
-				struct drm_framebuffer *fb, void *vmem,
-				struct drm_clip_rect *clip);
-size_t tinydrm_spi_max_transfer_size(struct spi_device *spi, size_t max_len);
-bool tinydrm_spi_bpw_supported(struct spi_device *spi, u8 bpw);
-int tinydrm_spi_transfer(struct spi_device *spi, u32 speed_hz,
-			 struct spi_transfer *header, u8 bpw, const void *buf,
-			 size_t len, u16 *swap_buf, size_t max_chunk);
-void tinydrm_debug_reg_write(const char *fname, const void *reg,
-			     size_t reg_len, const void *val,
-			     size_t val_len, size_t val_width);
-void _tinydrm_dbg_spi_message(struct spi_device *spi, struct spi_message *m);
-
-/**
- * tinydrm_get_machine_endian - Get machine endianess
- *
- * Returns:
- * REGMAP_ENDIAN_LITTLE or REGMAP_ENDIAN_BIG
- */
-static inline enum regmap_endian tinydrm_get_machine_endian(void)
-{
-#if defined(__LITTLE_ENDIAN)
-	return REGMAP_ENDIAN_LITTLE;
-#else
-	return REGMAP_ENDIAN_BIG;
-#endif
-}
-
-#if defined(DEBUG)
-/**
- * TINYDRM_DEBUG_REG_WRITE - Print info about register write
- * @reg: Register number buffer
- * @reg_len: Length of @reg buffer
- * @val: Value buffer
- * @val_len: Length of @val buffer
- * @val_width: Word width of @val buffer
- *
- * This macro prints info to the log about a register write. Can be used in
- * &regmap_bus ->gather_write functions. It's a wrapper around
- * tinydrm_debug_reg_write().
- * DEBUG has to be defined for this macro to be enabled alongside setting
- * the DRM_UT_CORE bit of drm_debug.
- */
-#define TINYDRM_DEBUG_REG_WRITE(reg, reg_len, val, val_len, val_width) \
-	do { \
-		if (unlikely(drm_debug & DRM_UT_CORE)) \
-			tinydrm_debug_reg_write(__func__, reg, reg_len, \
-						val, val_len, val_width); \
-	} while (0)
-
-/**
- * tinydrm_dbg_spi_message - Dump SPI message
- * @spi: SPI device
- * @m: SPI message
- *
- * Dumps info about the transfers in a SPI message including start of buffers.
- * DEBUG has to be defined for this function to be enabled alongside setting
- * the DRM_UT_CORE bit of drm_debug.
- */
-static inline void tinydrm_dbg_spi_message(struct spi_device *spi,
-					   struct spi_message *m)
-{
-	if (drm_debug & DRM_UT_CORE)
-		_tinydrm_dbg_spi_message(spi, m);
-}
-#else
-#define TINYDRM_DEBUG_REG_WRITE(reg, reg_len, val, val_len, val_width) \
-	do { \
-		if (0) \
-			tinydrm_debug_reg_write(__func__, reg, reg_len, \
-						val, val_len, val_width); \
-	} while (0)
-
-static inline void tinydrm_dbg_spi_message(struct spi_device *spi,
-					   struct spi_message *m)
-{
-}
-#endif
-
-/* tinydrm-debugfs.c */
 #ifdef CONFIG_DEBUG_FS
 int tinydrm_debugfs_init(struct drm_minor *minor);
 void tinydrm_debugfs_dirty_begin(struct tinydrm_device *tdev,
@@ -256,37 +170,6 @@ void tinydrm_debugfs_dirty_end(struct tinydrm_device *tdev, size_t len,
 
 #define tinydrm_debugfs_init	NULL
 #define tinydrm_debugfs_cleanup	NULL
-#endif
-
-/* tinydrm-helpers.c */
-void tinydrm_merge_clips(struct drm_clip_rect *dst,
-			 struct drm_clip_rect *src, unsigned num_clips,
-			 unsigned flags, u32 max_width, u32 max_height);
-void tinydrm_xrgb8888_to_rgb565(u32 *src, u16 *dst, unsigned num_pixels);
-
-#ifdef CONFIG_BACKLIGHT_CLASS_DEVICE
-struct backlight_device *tinydrm_of_find_backlight(struct device *dev);
-int tinydrm_enable_backlight(struct backlight_device *backlight);
-void tinydrm_disable_backlight(struct backlight_device *backlight);
-#else
-static inline struct backlight_device *
-tinydrm_of_find_backlight(struct device *dev)
-{
-	return NULL;
-}
-
-static inline int tinydrm_enable_backlight(struct tinydrm_device *tdev)
-{
-	return 0;
-}
-
-static inline int tinydrm_disable_backlight(struct tinydrm_device *tdev)
-{
-	return 0;
-}
-#endif
-
-extern const struct dev_pm_ops tinydrm_simple_pm_ops;
-void tinydrm_spi_shutdown(struct spi_device *spi);
+#endif /* CONFIG_DEBUG_FS */
 
 #endif /* __LINUX_TINYDRM_H */
