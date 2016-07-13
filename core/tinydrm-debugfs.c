@@ -410,7 +410,7 @@ int tinydrm_debugfs_init(struct drm_minor *minor)
 	if (ret)
 		return ret;
 
-	ret = tinydrm_debugfs_create_file("dirty", S_IFREG | S_IRUGO | S_IWUGO,
+	ret = tinydrm_debugfs_create_file("dirty", S_IRUGO | S_IWUSR,
 					  minor->debugfs_root, minor,
 					  &tinydrm_debugfs_dirty_file_ops);
 

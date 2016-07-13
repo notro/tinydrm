@@ -10,9 +10,6 @@
 #ifndef __LINUX_TINYDRM_REGMAP_H
 #define __LINUX_TINYDRM_REGMAP_H
 
-//#include <drm/drm_crtc.h>
-//#include <drm/drm_gem_cma_helper.h>
-//#include <drm/drm_simple_kms_helper.h>
 #include <linux/regmap.h>
 
 struct drm_framebuffer;
@@ -35,7 +32,7 @@ void tinydrm_debug_reg_write(const char *fname, const void *reg,
 void _tinydrm_dbg_spi_message(struct spi_device *spi, struct spi_message *m);
 
 /**
- * tinydrm_get_machine_endian - Get machine endianess
+ * tinydrm_get_machine_endian - Get machine endianness
  *
  * Returns:
  * REGMAP_ENDIAN_LITTLE or REGMAP_ENDIAN_BIG

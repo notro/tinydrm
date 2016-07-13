@@ -274,8 +274,8 @@ static const struct spi_device_id adafruit_tft_id[] = {
 MODULE_DEVICE_TABLE(spi, adafruit_tft_id);
 
 static struct drm_driver adafruit_tft_driver = {
-	.driver_features	= DRIVER_GEM | DRIVER_MODESET | DRIVER_PRIME \
-				| DRIVER_ATOMIC,
+	.driver_features	= DRIVER_GEM | DRIVER_MODESET | DRIVER_PRIME |
+				  DRIVER_ATOMIC,
 	TINYDRM_GEM_DRIVER_OPS,
 	.lastclose		= tinydrm_lastclose,
 	.debugfs_init		= mipi_dbi_debugfs_init,

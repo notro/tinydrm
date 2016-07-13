@@ -818,12 +818,12 @@ static bool mipi_dbi_debugfs_readreg(struct seq_file *m, struct regmap *reg,
 
 	ret = regmap_raw_read(reg, regnr, buf, len);
 	if (ret) {
-		seq_printf(m, "\n%s: command %02Xh failed: %d \n", desc, regnr,
+		seq_printf(m, "\n%s: command %02Xh failed: %d\n", desc, regnr,
 			   ret);
 		return false;
-	} else {
-		seq_printf(m, "\n%s (%02Xh=%*phN):\n", desc, regnr, len, buf);
 	}
+
+	seq_printf(m, "\n%s (%02Xh=%*phN):\n", desc, regnr, len, buf);
 
 	return true;
 }
@@ -859,11 +859,13 @@ seq_bit_array(struct seq_file *m, const char *desc, u32 val, u8 end, u8 start)
 }
 
 static void
-seq_bit_text(struct seq_file *m, const char *desc, u32 val, u8 bit, const char *on, const char *off)
+seq_bit_text(struct seq_file *m, const char *desc, u32 val, u8 bit,
+	     const char *on, const char *off)
 {
 	bool bit_val = val & BIT(bit);
 
-	seq_printf(m, "    D%u=%u: %s %s\n", bit, bit_val, desc, bit_val ? on : off);
+	seq_printf(m, "    D%u=%u: %s %s\n", bit, bit_val, desc,
+		   bit_val ? on : off);
 }
 
 static inline void
@@ -909,7 +911,7 @@ static int mipi_dbi_debugfs_show(struct seq_file *m, void *arg)
 
 	ret = regmap_raw_read(reg, MIPI_DCS_GET_POWER_MODE, buf, 1);
 	if (ret == -EACCES || ret == -ENOTSUPP) {
-		seq_printf(m, "Controller is write-only\n");
+		seq_puts(m, "Controller is write-only\n");
 		return 0;
 	}
 

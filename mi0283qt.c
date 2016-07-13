@@ -205,8 +205,8 @@ static const struct spi_device_id mi0283qt_id[] = {
 MODULE_DEVICE_TABLE(spi, mi0283qt_id);
 
 static struct drm_driver mi0283qt_driver = {
-	.driver_features	= DRIVER_GEM | DRIVER_MODESET | DRIVER_PRIME \
-				| DRIVER_ATOMIC,
+	.driver_features	= DRIVER_GEM | DRIVER_MODESET | DRIVER_PRIME |
+				  DRIVER_ATOMIC,
 	TINYDRM_GEM_DRIVER_OPS,
 	.lastclose		= tinydrm_lastclose,
 	.debugfs_init		= mipi_dbi_debugfs_init,

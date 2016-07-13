@@ -63,7 +63,7 @@ int tinydrm_regmap_flush_rgb565(struct regmap *reg, u32 regnr,
 		break;
 	case DRM_FORMAT_XRGB8888:
 		vmem += clip->y1 * width * 4;
-		buf = kmalloc(num_pixels * sizeof(u16), GFP_KERNEL);
+		buf = kmalloc_array(num_pixels, sizeof(u16), GFP_KERNEL);
 		if (!buf)
 			return -ENOMEM;
 
@@ -151,7 +151,6 @@ EXPORT_SYMBOL(tinydrm_spi_bpw_supported);
 static void tinydrm_hexdump(char *linebuf, size_t linebuflen, const void *buf,
 			    size_t len, size_t bpw, size_t max)
 {
-
 	if (bpw > 16) {
 		snprintf(linebuf, linebuflen, "bpw not supported");
 	} else if (bpw > 8) {
@@ -170,7 +169,8 @@ static void tinydrm_hexdump(char *linebuf, size_t linebuflen, const void *buf,
 			lx += ret;
 		}
 	} else {
-		hex_dump_to_buffer(buf, len, max, 1, linebuf, linebuflen, false);
+		hex_dump_to_buffer(buf, len, max, 1, linebuf, linebuflen,
+				   false);
 	}
 }
 
@@ -184,7 +184,7 @@ void tinydrm_debug_reg_write(const char *fname, const void *reg,
 	if (reg_len != 1 && reg_len != 2)
 		return;
 
-	regnr = (reg_len == 1) ? *(u8 *) reg : *(u16 *) reg;
+	regnr = (reg_len == 1) ? *(u8 *)reg : *(u16 *)reg;
 
 	if (val && val_len) {
 		char linebuf[3 * 32];

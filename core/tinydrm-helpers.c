@@ -101,7 +101,8 @@ EXPORT_SYMBOL(tinydrm_xrgb8888_to_rgb565);
  *
  * Returns:
  * NULL if there's no backlight property.
- * Error pointer -EPROBE_DEFER if the DT node is found, but no backlight device is found.
+ * Error pointer -EPROBE_DEFER if the DT node is found, but no backlight device
+ * is found.
  * If the backlight device is found, a pointer to the structure is returned.
  */
 struct backlight_device *tinydrm_of_find_backlight(struct device *dev)
