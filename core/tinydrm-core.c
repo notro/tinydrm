@@ -316,13 +316,6 @@ static void tinydrm_fbdev_set_suspend(struct tinydrm_device *tdev, int state)
 		return;
 
 	console_lock();
-	/*
-	 * TODO
-	 * Use: drm_fbdev_cma_set_suspend(tdev->fbdev_cma, state);
-	 * Or maybe do a
-	 * drm_fbdev_cma_set_suspend_with_lock()
-	 * that doesn't take the lock if it's disabled.
-	 */
 	drm_fb_helper_set_suspend(tdev->fbdev_helper, state);
 	console_unlock();
 }

@@ -16,8 +16,8 @@
 #include <linux/regmap.h>
 #include <linux/spi/spi.h>
 
-static unsigned int spi_max = 4097;
-module_param(spi_max, uint, 0);
+static unsigned int spi_max;
+module_param(spi_max, uint, 0400);
 MODULE_PARM_DESC(spi_max, "Set a lower SPI max transfer size");
 
 /**
