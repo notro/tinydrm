@@ -196,7 +196,8 @@ static int __maybe_unused tinydrm_pm_resume(struct device *dev)
  * tinydrm_simple_pm_ops - tinydrm simple power management operations
  *
  * This provides simple suspend/resume power management and can be assigned
- * to the drivers &device_driver ->pm property.
+ * to the drivers &device_driver->pm property. &tinydrm_device must be set
+ * on the device using dev_set_drvdata() or equivalent.
  */
 const struct dev_pm_ops tinydrm_simple_pm_ops = {
 	SET_SYSTEM_SLEEP_PM_OPS(tinydrm_pm_suspend, tinydrm_pm_resume)
@@ -209,6 +210,7 @@ EXPORT_SYMBOL(tinydrm_simple_pm_ops);
  *
  * This is a helper function for the &spi_driver ->shutdown callback which
  * makes sure that the tinydrm device is disabled and unprepared on shutdown.
+ * &tinydrm_device must be set on the device using spi_set_drvdata().
  */
 void tinydrm_spi_shutdown(struct spi_device *spi)
 {

@@ -25,6 +25,7 @@ struct regulator;
  * mipi_dbi - MIPI DBI controller
  * @tinydrm: tinydrm base
  * @reg: register map
+ * @reset: Optional reset gpio
  * @rotation: initial rotation in degress Counter Clock Wise
  * @backlight: backlight device (optional)
  * @enable_delay_ms: Optional delay in milliseconds before turning on backlight

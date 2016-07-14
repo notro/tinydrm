@@ -145,7 +145,7 @@ static void tinydrm_dirty_work(struct work_struct *work)
 						   dirty_work);
 	struct drm_framebuffer *fb = tdev->pipe.plane.fb;
 
-	if (fb)
+	if (fb && fb->funcs->dirty)
 		fb->funcs->dirty(fb, NULL, 0, 0, NULL, 0);
 }
 
