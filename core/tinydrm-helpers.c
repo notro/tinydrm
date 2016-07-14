@@ -26,8 +26,8 @@
  * @max_width and @min_width is used to set a full @dst clip rectangle.
  */
 void tinydrm_merge_clips(struct drm_clip_rect *dst,
-			 struct drm_clip_rect *src, unsigned num_clips,
-			 unsigned flags, u32 max_width, u32 max_height)
+			 struct drm_clip_rect *src, unsigned int num_clips,
+			 unsigned int flags, u32 max_width, u32 max_height)
 {
 	unsigned int i;
 
@@ -70,12 +70,11 @@ EXPORT_SYMBOL(tinydrm_merge_clips);
  * @src: xrgb8888 source buffer
  * @dst: rgb565 destination buffer
  * @num_pixels: number of pixels to copy
- * @swap_bytes: swap bytes in rgb565 value dues to endian issues
  *
  * Drivers can use this function for rgb565 devices that don't natively
  * support xrgb8888.
  */
-void tinydrm_xrgb8888_to_rgb565(u32 *src, u16 *dst, unsigned num_pixels)
+void tinydrm_xrgb8888_to_rgb565(u32 *src, u16 *dst, unsigned int num_pixels)
 {
 	int i;
 

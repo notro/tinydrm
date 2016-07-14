@@ -18,9 +18,9 @@ struct spi_device;
 struct device;
 
 void tinydrm_merge_clips(struct drm_clip_rect *dst,
-			 struct drm_clip_rect *src, unsigned num_clips,
-			 unsigned flags, u32 max_width, u32 max_height);
-void tinydrm_xrgb8888_to_rgb565(u32 *src, u16 *dst, unsigned num_pixels);
+			 struct drm_clip_rect *src, unsigned int num_clips,
+			 unsigned int flags, u32 max_width, u32 max_height);
+void tinydrm_xrgb8888_to_rgb565(u32 *src, u16 *dst, unsigned int num_pixels);
 
 #ifdef CONFIG_BACKLIGHT_CLASS_DEVICE
 struct backlight_device *tinydrm_of_find_backlight(struct device *dev);
@@ -33,14 +33,14 @@ tinydrm_of_find_backlight(struct device *dev)
 	return NULL;
 }
 
-static inline int tinydrm_enable_backlight(struct tinydrm_device *tdev)
+static inline int tinydrm_enable_backlight(struct backlight_device *backlight)
 {
 	return 0;
 }
 
-static inline int tinydrm_disable_backlight(struct tinydrm_device *tdev)
+static inline void
+tinydrm_disable_backlight(struct backlight_device *backlight)
 {
-	return 0;
 }
 #endif
 

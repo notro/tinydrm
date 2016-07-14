@@ -151,7 +151,7 @@ EXPORT_SYMBOL(tinydrm_debugfs_dirty_begin);
  *                  multiplying with number of pixels in clip.
  */
 void tinydrm_debugfs_dirty_end(struct tinydrm_device *tdev, size_t len,
-			       unsigned bits_per_pixel)
+			       unsigned int bits_per_pixel)
 {
 	struct tinydrm_debugfs_dirty *dirty = tdev->debugfs_dirty;
 	struct tinydrm_dirty_entry *entry;

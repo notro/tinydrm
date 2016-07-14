@@ -44,7 +44,7 @@ MODULE_PARM_DESC(fbdefio_delay, "fbdev deferred io delay in milliseconds");
  * True if the dirty call can proceed, false otherwise.
  */
 bool tinydrm_check_dirty(struct drm_framebuffer *fb,
-			 struct drm_clip_rect **clips, unsigned *num_clips)
+			 struct drm_clip_rect **clips, unsigned int *num_clips)
 {
 	struct tinydrm_device *tdev = drm_to_tinydrm(fb->dev);
 

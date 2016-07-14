@@ -80,8 +80,8 @@ struct mipi_dbi_spi {
  * @parameters: Array of parameters (optional)
  * @num: Number of parameters
  */
-int mipi_dbi_write_buf(struct regmap *reg, unsigned cmd, const u8 *parameters,
-		       size_t num)
+int mipi_dbi_write_buf(struct regmap *reg, unsigned int cmd,
+		       const u8 *parameters, size_t num)
 {
 	u8 *buf;
 	int ret;
@@ -558,9 +558,9 @@ EXPORT_SYMBOL(mipi_dbi_spi_init);
 
 static int mipi_dbi_fb_dirty(struct drm_framebuffer *fb,
 			     struct drm_file *file_priv,
-			     unsigned flags, unsigned color,
+			     unsigned int flags, unsigned int color,
 			     struct drm_clip_rect *clips,
-			     unsigned num_clips)
+			     unsigned int num_clips)
 {
 	struct drm_gem_cma_object *cma_obj = drm_fb_cma_get_gem_obj(fb, 0);
 	struct tinydrm_device *tdev = drm_to_tinydrm(fb->dev);
@@ -630,7 +630,7 @@ static void mipi_dbi_blank(struct mipi_dbi *mipi)
 	struct drm_device *drm = &mipi->tinydrm.drm;
 	int height = drm->mode_config.min_height;
 	int width = drm->mode_config.min_width;
-	unsigned num_pixels = width * height;
+	unsigned int num_pixels = width * height;
 	struct regmap *reg = mipi->reg;
 	u16 *buf;
 
@@ -811,7 +811,7 @@ EXPORT_SYMBOL(mipi_dbi_display_is_on);
 #ifdef CONFIG_DEBUG_FS
 
 static bool mipi_dbi_debugfs_readreg(struct seq_file *m, struct regmap *reg,
-				     unsigned regnr, const char *desc,
+				     unsigned int regnr, const char *desc,
 				     u8 *buf, size_t len)
 {
 	int ret;

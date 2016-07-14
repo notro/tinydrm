@@ -116,7 +116,8 @@ struct drm_framebuffer *
 tinydrm_fb_create(struct drm_device *drm, struct drm_file *file_priv,
 		  const struct drm_mode_fb_cmd2 *mode_cmd);
 bool tinydrm_check_dirty(struct drm_framebuffer *fb,
-			 struct drm_clip_rect **clips, unsigned *num_clips);
+			 struct drm_clip_rect **clips,
+			 unsigned int *num_clips);
 struct drm_connector *
 tinydrm_connector_create(struct drm_device *drm,
 			 const struct drm_display_mode *mode,
@@ -148,7 +149,7 @@ void tinydrm_debugfs_dirty_begin(struct tinydrm_device *tdev,
 				 struct drm_framebuffer *fb,
 				 const struct drm_clip_rect *clip);
 void tinydrm_debugfs_dirty_end(struct tinydrm_device *tdev, size_t len,
-			       unsigned bits_per_pixel);
+			       unsigned int bits_per_pixel);
 void tinydrm_debugfs_cleanup(struct drm_minor *minor);
 int tinydrm_debugfs_dirty_init(struct tinydrm_device *tdev);
 #else
@@ -164,7 +165,7 @@ void tinydrm_debugfs_dirty_begin(struct tinydrm_device *tdev,
 }
 
 void tinydrm_debugfs_dirty_end(struct tinydrm_device *tdev, size_t len,
-			       unsigned bits_per_pixel)
+			       unsigned int bits_per_pixel)
 {
 }
 

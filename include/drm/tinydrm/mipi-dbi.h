@@ -67,8 +67,8 @@ bool mipi_dbi_display_is_on(struct regmap *reg);
 	mipi_dbi_write_buf(reg, cmd, d, ARRAY_SIZE(d)); \
 })
 
-int mipi_dbi_write_buf(struct regmap *reg, unsigned cmd, const u8 *parameters,
-		       size_t num);
+int mipi_dbi_write_buf(struct regmap *reg, unsigned int cmd,
+		       const u8 *parameters, size_t num);
 
 #ifdef CONFIG_DEBUG_FS
 int mipi_dbi_debugfs_init(struct drm_minor *minor);

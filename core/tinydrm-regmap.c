@@ -35,9 +35,9 @@ int tinydrm_regmap_flush_rgb565(struct regmap *reg, u32 regnr,
 				struct drm_framebuffer *fb, void *vmem,
 				struct drm_clip_rect *clip)
 {
-	unsigned width = clip->x2 - clip->x1;
-	unsigned height = clip->y2 - clip->y1;
-	unsigned num_pixels = width * height;
+	unsigned int width = clip->x2 - clip->x1;
+	unsigned int height = clip->y2 - clip->y1;
+	unsigned int num_pixels = width * height;
 	u16 *tr, *buf = NULL;
 	int ret;
 
