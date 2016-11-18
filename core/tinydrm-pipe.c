@@ -99,7 +99,7 @@ static const struct drm_connector_funcs tinydrm_connector_funcs = {
 struct drm_connector *
 tinydrm_connector_create(struct drm_device *drm,
 			 const struct drm_display_mode *mode,
-			 int connector_type, bool dirty_prop)
+			 int connector_type)
 {
 	struct tinydrm_connector *tconn;
 	struct drm_connector *connector;
@@ -122,16 +122,6 @@ tinydrm_connector_create(struct drm_device *drm,
 
 	connector->status = connector_status_connected;
 
-	if (dirty_prop) {
-		ret = drm_mode_create_dirty_info_property(drm);
-		if (ret)
-			return ERR_PTR(ret);
-
-		drm_object_attach_property(&connector->base,
-					drm->mode_config.dirty_info_property,
-					DRM_MODE_DIRTY_ON);
-	}
-
 	return connector;
 }
 EXPORT_SYMBOL(tinydrm_connector_create);
@@ -151,6 +141,7 @@ void tinydrm_display_pipe_update(struct drm_simple_display_pipe *pipe,
 {
 	struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
 	struct drm_framebuffer *fb = pipe->plane.state->fb;
+	struct drm_crtc *crtc = &tdev->pipe.crtc;
 
 	if (!fb)
 		DRM_DEBUG_KMS("fb unset\n");
@@ -164,6 +155,14 @@ void tinydrm_display_pipe_update(struct drm_simple_display_pipe *pipe,
 
 		pipe->plane.fb = fb;
 		schedule_work(&tdev->dirty_work);
+	}
+
+	if (crtc->state->event) {
+		DRM_DEBUG_KMS("crtc event\n");
+		spin_lock_irq(&crtc->dev->event_lock);
+		drm_crtc_send_vblank_event(crtc, crtc->state->event);
+		spin_unlock_irq(&crtc->dev->event_lock);
+		crtc->state->event = NULL;
 	}
 
 	if (tdev->fbdev_helper && fb == tdev->fbdev_helper->fb)
@@ -234,8 +233,7 @@ tinydrm_display_pipe_init(struct tinydrm_device *tdev,
 	drm->mode_config.min_height = mode_copy->vdisplay;
 	drm->mode_config.max_height = mode_copy->vdisplay;
 
-	connector = tinydrm_connector_create(drm, mode_copy, connector_type,
-					     true);
+	connector = tinydrm_connector_create(drm, mode_copy, connector_type);
 	if (IS_ERR(connector))
 		return PTR_ERR(connector);
 

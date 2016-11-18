@@ -121,7 +121,7 @@ bool tinydrm_check_dirty(struct drm_framebuffer *fb,
 struct drm_connector *
 tinydrm_connector_create(struct drm_device *drm,
 			 const struct drm_display_mode *mode,
-			 int connector_type, bool dirty_prop);
+			 int connector_type);
 void tinydrm_display_pipe_update(struct drm_simple_display_pipe *pipe,
 				 struct drm_plane_state *old_state);
 int

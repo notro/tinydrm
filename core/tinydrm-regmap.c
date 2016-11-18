@@ -175,8 +175,7 @@ static void tinydrm_hexdump(char *linebuf, size_t linebuflen, const void *buf,
 }
 
 /* called through TINYDRM_DEBUG_REG_WRITE() */
-void tinydrm_debug_reg_write(const char *fname, const void *reg,
-			     size_t reg_len, const void *val,
+void tinydrm_debug_reg_write(const void *reg, size_t reg_len, const void *val,
 			     size_t val_len, size_t val_width)
 {
 	unsigned int regnr;
@@ -191,12 +190,14 @@ void tinydrm_debug_reg_write(const char *fname, const void *reg,
 
 		tinydrm_hexdump(linebuf, ARRAY_SIZE(linebuf), val, val_len,
 				val_width, 16);
-		drm_ut_debug_printk(fname, "regnr=0x%0*x, data(%zu)= %s%s\n",
-				    reg_len == 1 ? 2 : 4, regnr, val_len,
-				    linebuf, val_len > 32 ? " ..." : "");
+		drm_printk(KERN_DEBUG, DRM_UT_CORE,
+			   "regnr=0x%0*x, data(%zu)= %s%s\n",
+			   reg_len == 1 ? 2 : 4, regnr,
+			   val_len, linebuf, val_len > 32 ? " ..." : "");
 	} else {
-		drm_ut_debug_printk(fname, "regnr=0x%0*x\n",
-				    reg_len == 1 ? 2 : 4, regnr);
+		drm_printk(KERN_DEBUG, DRM_UT_CORE,
+			   "regnr=0x%0*x\n",
+			   reg_len == 1 ? 2 : 4, regnr);
 	}
 }
 EXPORT_SYMBOL(tinydrm_debug_reg_write);

@@ -26,8 +26,7 @@ bool tinydrm_spi_bpw_supported(struct spi_device *spi, u8 bpw);
 int tinydrm_spi_transfer(struct spi_device *spi, u32 speed_hz,
 			 struct spi_transfer *header, u8 bpw, const void *buf,
 			 size_t len, u16 *swap_buf, size_t max_chunk);
-void tinydrm_debug_reg_write(const char *fname, const void *reg,
-			     size_t reg_len, const void *val,
+void tinydrm_debug_reg_write(const void *reg, size_t reg_len, const void *val,
 			     size_t val_len, size_t val_width);
 void _tinydrm_dbg_spi_message(struct spi_device *spi, struct spi_message *m);
 
@@ -64,7 +63,7 @@ static inline enum regmap_endian tinydrm_get_machine_endian(void)
 #define TINYDRM_DEBUG_REG_WRITE(reg, reg_len, val, val_len, val_width) \
 	do { \
 		if (unlikely(drm_debug & DRM_UT_CORE)) \
-			tinydrm_debug_reg_write(__func__, reg, reg_len, \
+			tinydrm_debug_reg_write(reg, reg_len, \
 						val, val_len, val_width); \
 	} while (0)
 
@@ -87,7 +86,7 @@ static inline void tinydrm_dbg_spi_message(struct spi_device *spi,
 #define TINYDRM_DEBUG_REG_WRITE(reg, reg_len, val, val_len, val_width) \
 	do { \
 		if (0) \
-			tinydrm_debug_reg_write(__func__, reg, reg_len, \
+			tinydrm_debug_reg_write(reg, reg_len, \
 						val, val_len, val_width); \
 	} while (0)
 
