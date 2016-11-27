@@ -294,6 +294,24 @@ int devm_tinydrm_register(struct tinydrm_device *tdev)
 }
 EXPORT_SYMBOL(devm_tinydrm_register);
 
+static int devm_tinydrm_register_match(struct device *dev, void *res, void *data)
+{
+	struct tinydrm_device **ptr = res, *tdev = data;
+
+        return *ptr == tdev;
+}
+
+void devm_tinydrm_unregister(struct tinydrm_device *tdev)
+{
+	struct device *dev = tdev->drm.dev;
+
+	if (WARN_ON(!dev))
+		return;
+
+	WARN_ON(devres_release(dev, devm_tinydrm_register_release, devm_tinydrm_register_match, tdev));
+}
+EXPORT_SYMBOL(devm_tinydrm_unregister);
+
 /**
  * tinydrm_shutdown - Shutdown tinydrm
  * @tdev: tinydrm device
