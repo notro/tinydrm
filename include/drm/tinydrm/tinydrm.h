@@ -136,7 +136,6 @@ int devm_tinydrm_init(struct device *parent, struct tinydrm_device *tdev,
 		      const struct drm_framebuffer_funcs *fb_funcs,
 		      struct drm_driver *driver);
 int devm_tinydrm_register(struct tinydrm_device *tdev);
-void devm_tinydrm_unregister(struct tinydrm_device *tdev);
 void tinydrm_shutdown(struct tinydrm_device *tdev);
 int tinydrm_suspend(struct tinydrm_device *tdev);
 int tinydrm_resume(struct tinydrm_device *tdev);

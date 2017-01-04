@@ -48,6 +48,8 @@ bool tinydrm_check_dirty(struct drm_framebuffer *fb,
 {
 	struct tinydrm_device *tdev = drm_to_tinydrm(fb->dev);
 
+	WARN_ON_ONCE(!mutex_is_locked(&tdev->dev_lock));
+
 	if (!tdev->prepared)
 		return false;
 
