@@ -86,11 +86,15 @@ int mipi_dbi_write_buf(struct regmap *reg, unsigned int cmd,
 	u8 *buf;
 	int ret;
 
-	buf = kmalloc(num, GFP_KERNEL);
+	if (parameters && num) {
+		buf = kmemdup(parameters, num, GFP_KERNEL);
+	} else {
+		buf = kmalloc(1, GFP_KERNEL);
+		num = 0;
+	}
+
 	if (!buf)
 		return -ENOMEM;
-
-	memcpy(buf, parameters, num);
 
 	ret = regmap_raw_write(reg, cmd, buf, num);
 	kfree(buf);
