@@ -25,7 +25,7 @@
 #include <linux/swab.h>
 #include <video/mipi_display.h>
 
-#define MIPI_DBI_DEFAULT_SPI_READ_SPEED 2000000 /* 2MHz */
+#define MIPI_DBI_MAX_SPI_READ_SPEED 2000000 /* 2MHz */
 
 #define DCS_POWER_MODE_DISPLAY			BIT(2)
 #define DCS_POWER_MODE_DISPLAY_NORMAL_MODE	BIT(3)
@@ -424,7 +424,7 @@ static int mipi_dbi_spi3_read(void *context, const void *reg, size_t reg_len,
 {
 	struct mipi_dbi_spi *mspi = context;
 	struct spi_device *spi = mspi->spi;
-	u32 speed_hz = min_t(u32, MIPI_DBI_DEFAULT_SPI_READ_SPEED,
+	u32 speed_hz = min_t(u32, MIPI_DBI_MAX_SPI_READ_SPEED,
 			     spi->max_speed_hz / 2);
 	struct spi_transfer tr[2] = {
 		{
