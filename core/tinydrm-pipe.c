@@ -88,7 +88,6 @@ static const struct drm_connector_funcs tinydrm_connector_funcs = {
  * @drm: DRM device
  * @mode: Supported display mode
  * @connector_type: Connector type
- * @dirty_prop: Whether or not to create a dirty property on the connector
  *
  * This function creates a simple &drm_connector with one fixed
  * &drm_display_mode.

@@ -708,7 +708,7 @@ static const uint32_t mipi_dbi_formats[] = {
  * @pipe_funcs: Display pipe functions
  * @driver: DRM driver
  * @mode: Display mode
- * @rotation: Initial rotation in degress Counter Clock Wise
+ * @rotation: Initial rotation in degrees Counter Clock Wise
  *
  * This function initializes a &mipi_dbi structure and it's underlying
  * @tinydrm_device and &drm_device. It also sets up the display pipeline.
