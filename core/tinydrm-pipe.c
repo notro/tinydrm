@@ -153,6 +153,11 @@ void tinydrm_display_pipe_update(struct drm_simple_display_pipe *pipe,
 	if (fb && (fb != old_state->fb)) {
 		struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
 
+		if (crtc->state->event) {
+			tdev->event = crtc->state->event;
+			crtc->state->event = NULL;
+		}
+
 		pipe->plane.fb = fb;
 		schedule_work(&tdev->dirty_work);
 	}

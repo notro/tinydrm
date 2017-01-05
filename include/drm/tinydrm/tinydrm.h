@@ -34,6 +34,7 @@ struct tinydrm_debugfs_dirty;
 struct tinydrm_device {
 	struct drm_device drm;
 	struct drm_simple_display_pipe pipe;
+	struct drm_pending_vblank_event *event;
 	struct work_struct dirty_work;
 	struct mutex dev_lock;
 	bool prepared;

@@ -144,9 +144,18 @@ static void tinydrm_dirty_work(struct work_struct *work)
 	struct tinydrm_device *tdev = container_of(work, struct tinydrm_device,
 						   dirty_work);
 	struct drm_framebuffer *fb = tdev->pipe.plane.fb;
+	struct drm_crtc *crtc = &tdev->pipe.crtc;
 
 	if (fb && fb->funcs->dirty)
 		fb->funcs->dirty(fb, NULL, 0, 0, NULL, 0);
+
+	if (tdev->event) {
+		DRM_DEBUG_KMS("crtc event\n");
+		spin_lock_irq(&crtc->dev->event_lock);
+		drm_crtc_send_vblank_event(crtc, tdev->event);
+		spin_unlock_irq(&crtc->dev->event_lock);
+		tdev->event = NULL;
+	}
 }
 
 static int tinydrm_init(struct device *parent, struct tinydrm_device *tdev,
