@@ -582,8 +582,6 @@ static int mipi_dbi_fb_dirty(struct drm_framebuffer *fb,
 	DRM_DEBUG("Flushing [FB:%d] x1=%u, x2=%u, y1=%u, y2=%u\n", fb->base.id,
 		  clip.x1, clip.x2, clip.y1, clip.y2);
 
-	tinydrm_debugfs_dirty_begin(tdev, fb, &clip);
-
 	mipi_dbi_write(reg, MIPI_DCS_SET_COLUMN_ADDRESS,
 		       (clip.x1 >> 8) & 0xFF, clip.x1 & 0xFF,
 		       (clip.x2 >> 8) & 0xFF, (clip.x2 - 1) & 0xFF);
@@ -593,8 +591,6 @@ static int mipi_dbi_fb_dirty(struct drm_framebuffer *fb,
 
 	ret = tinydrm_regmap_flush_rgb565(reg, MIPI_DCS_WRITE_MEMORY_START,
 					  fb, cma_obj->vaddr, &clip);
-
-	tinydrm_debugfs_dirty_end(tdev, 0, 16);
 
 	if (ret) {
 		dev_err_once(fb->dev->dev, "Failed to update display %d\n",
@@ -749,8 +745,6 @@ int mipi_dbi_init(struct device *dev, struct mipi_dbi *mipi,
 	mipi->rotation = rotation;
 
 	drm_mode_config_reset(drm);
-
-	tinydrm_debugfs_dirty_init(tdev);
 
 	DRM_DEBUG_KMS("preferred_depth=%u, rotation = %u\n",
 		      drm->mode_config.preferred_depth, rotation);
@@ -1042,6 +1036,7 @@ static int mipi_dbi_debugfs_show(struct seq_file *m, void *arg)
 }
 
 static const struct drm_info_list mipi_dbi_debugfs_list[] = {
+	{ "fb",   drm_fb_cma_debugfs_show, 0 },
 	{ "mipi",   mipi_dbi_debugfs_show, 0 },
 };
 
@@ -1056,12 +1051,6 @@ static const struct drm_info_list mipi_dbi_debugfs_list[] = {
  */
 int mipi_dbi_debugfs_init(struct drm_minor *minor)
 {
-	int ret;
-
-	ret = tinydrm_debugfs_init(minor);
-	if (ret)
-		return ret;
-
 	return drm_debugfs_create_files(mipi_dbi_debugfs_list,
 					ARRAY_SIZE(mipi_dbi_debugfs_list),
 					minor->debugfs_root, minor);
@@ -1076,7 +1065,6 @@ EXPORT_SYMBOL(mipi_dbi_debugfs_init);
  */
 void mipi_dbi_debugfs_cleanup(struct drm_minor *minor)
 {
-	tinydrm_debugfs_cleanup(minor);
 	drm_debugfs_remove_files(mipi_dbi_debugfs_list,
 				 ARRAY_SIZE(mipi_dbi_debugfs_list), minor);
 }

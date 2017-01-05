@@ -144,34 +144,4 @@ int tinydrm_resume(struct tinydrm_device *tdev);
 int tinydrm_fbdev_init(struct tinydrm_device *tdev);
 void tinydrm_fbdev_fini(struct tinydrm_device *tdev);
 
-#ifdef CONFIG_DEBUG_FS
-int tinydrm_debugfs_init(struct drm_minor *minor);
-void tinydrm_debugfs_dirty_begin(struct tinydrm_device *tdev,
-				 struct drm_framebuffer *fb,
-				 const struct drm_clip_rect *clip);
-void tinydrm_debugfs_dirty_end(struct tinydrm_device *tdev, size_t len,
-			       unsigned int bits_per_pixel);
-void tinydrm_debugfs_cleanup(struct drm_minor *minor);
-int tinydrm_debugfs_dirty_init(struct tinydrm_device *tdev);
-#else
-int tinydrm_debugfs_dirty_init(struct tinydrm_device *tdev)
-{
-	return 0;
-}
-
-void tinydrm_debugfs_dirty_begin(struct tinydrm_device *tdev,
-				 struct drm_framebuffer *fb,
-				 const struct drm_clip_rect *clip)
-{
-}
-
-void tinydrm_debugfs_dirty_end(struct tinydrm_device *tdev, size_t len,
-			       unsigned int bits_per_pixel)
-{
-}
-
-#define tinydrm_debugfs_init	NULL
-#define tinydrm_debugfs_cleanup	NULL
-#endif /* CONFIG_DEBUG_FS */
-
 #endif /* __LINUX_TINYDRM_H */
