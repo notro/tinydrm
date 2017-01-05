@@ -38,6 +38,7 @@ int tinydrm_regmap_flush_rgb565(struct regmap *reg, u32 regnr,
 	unsigned int width = clip->x2 - clip->x1;
 	unsigned int height = clip->y2 - clip->y1;
 	unsigned int num_pixels = width * height;
+	struct drm_format_name_buf format_name;
 	u16 *tr, *buf = NULL;
 	int ret;
 
@@ -72,7 +73,8 @@ int tinydrm_regmap_flush_rgb565(struct regmap *reg, u32 regnr,
 		break;
 	default:
 		dev_err_once(fb->dev->dev, "Format is not supported: %s\n",
-			     drm_get_format_name(fb->pixel_format));
+			     drm_get_format_name(fb->pixel_format,
+						 &format_name));
 		return -EINVAL;
 	}
 

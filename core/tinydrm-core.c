@@ -380,7 +380,6 @@ int tinydrm_resume(struct tinydrm_device *tdev)
 	ret = drm_atomic_helper_resume(drm, state);
 	if (ret) {
 		DRM_ERROR("Error resuming state: %d\n", ret);
-		drm_atomic_state_free(state);
 		return ret;
 	}
 

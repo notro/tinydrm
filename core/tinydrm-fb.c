@@ -82,15 +82,9 @@ tinydrm_fb_create(struct drm_device *drm, struct drm_file *file_priv,
 		  const struct drm_mode_fb_cmd2 *mode_cmd)
 {
 	struct tinydrm_device *tdev = drm_to_tinydrm(drm);
-	struct drm_framebuffer *fb;
 
-	fb = drm_fb_cma_create_with_funcs(drm, file_priv, mode_cmd,
-					  tdev->fb_funcs);
-	if (!IS_ERR(fb))
-		DRM_DEBUG_KMS("[FB:%d] pixel_format: %s\n", fb->base.id,
-			      drm_get_format_name(fb->pixel_format));
-
-	return fb;
+	return drm_fb_cma_create_with_funcs(drm, file_priv, mode_cmd,
+					    tdev->fb_funcs);
 }
 EXPORT_SYMBOL(tinydrm_fb_create);
 
@@ -127,11 +121,6 @@ static int tinydrm_fbdev_create(struct drm_fb_helper *helper,
 		delay = msecs_to_jiffies(fbdefio_delay);
 		helper->fbdev->fbdefio->delay = delay ? delay : 1;
 	}
-
-	DRM_DEBUG_KMS("fbdev: [FB:%d] pixel_format=%s, fbdefio->delay=%ums\n",
-		      helper->fb->base.id,
-		      drm_get_format_name(helper->fb->pixel_format),
-		      jiffies_to_msecs(helper->fbdev->fbdefio->delay));
 
 	return 0;
 }
