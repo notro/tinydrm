@@ -40,8 +40,10 @@ static inline enum regmap_endian tinydrm_get_machine_endian(void)
 {
 #if defined(__LITTLE_ENDIAN)
 	return REGMAP_ENDIAN_LITTLE;
-#else
+#elif defined(__BIG_ENDIAN)
 	return REGMAP_ENDIAN_BIG;
+#else
+#  error "could not determine byte order"
 #endif
 }
 
