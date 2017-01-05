@@ -25,10 +25,6 @@
  * &drm_mode_config_funcs->fb_create callback which devm_tinydrm_init() does.
  */
 
-static unsigned int fbdefio_delay;
-module_param(fbdefio_delay, uint, 0);
-MODULE_PARM_DESC(fbdefio_delay, "fbdev deferred io delay in milliseconds");
-
 /**
  * tinydrm_check_dirty - check before flushing framebuffer
  * @fb: framebuffer
@@ -114,13 +110,6 @@ static int tinydrm_fbdev_create(struct drm_fb_helper *helper,
 
 	strncpy(helper->fbdev->fix.id, helper->dev->driver->name, 16);
 	tdev->fbdev_helper = helper;
-
-	if (fbdefio_delay) {
-		unsigned long delay;
-
-		delay = msecs_to_jiffies(fbdefio_delay);
-		helper->fbdev->fbdefio->delay = delay ? delay : 1;
-	}
 
 	return 0;
 }
