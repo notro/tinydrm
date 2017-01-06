@@ -24,8 +24,11 @@
  *
  * This function merges @src clip rectangle(s) into @dst. If @src is NULL,
  * @max_width and @min_width is used to set a full @dst clip rectangle.
+ *
+ * Returns:
+ * true if it's a full clip, false otherwise
  */
-void tinydrm_merge_clips(struct drm_clip_rect *dst,
+bool tinydrm_merge_clips(struct drm_clip_rect *dst,
 			 struct drm_clip_rect *src, unsigned int num_clips,
 			 unsigned int flags, u32 max_width, u32 max_height)
 {
@@ -36,7 +39,7 @@ void tinydrm_merge_clips(struct drm_clip_rect *dst,
 		dst->x2 = max_width;
 		dst->y1 = 0;
 		dst->y2 = max_height;
-		return;
+		return true;
 	}
 
 	dst->x1 = ~0;
@@ -62,28 +65,92 @@ void tinydrm_merge_clips(struct drm_clip_rect *dst,
 		dst->x2 = max_width;
 		dst->y2 = max_height;
 	}
+
+	return (dst->x2 - dst->x1) == max_width &&
+	       (dst->y2 - dst->y1) == max_height;
 }
 EXPORT_SYMBOL(tinydrm_merge_clips);
 
 /**
- * tinydrm_xrgb8888_to_rgb565 - convert xrgb8888 to rgb565
- * @src: xrgb8888 source buffer
+ * tinydrm_memcpy - Copy clip buffer
+ * @dst: Destination buffer
+ * @vaddr: Source buffer
+ * @fb: DRM framebuffer
+ * @clip: Clip rectangle area to copy
+ */
+void tinydrm_memcpy(void *dst, void *vaddr, struct drm_framebuffer *fb,
+		    struct drm_clip_rect *clip)
+{
+	unsigned int cpp = drm_format_plane_cpp(fb->pixel_format, 0);
+	unsigned int pitch = fb->pitches[0];
+	void *src = vaddr + (clip->y1 * pitch) + (clip->x1 * cpp);
+	size_t len = (clip->x2 - clip->x1) * cpp;
+	unsigned int y;
+
+	for (y = clip->y1; y < clip->y2; y++) {
+		memcpy(dst, src, len);
+		src += pitch;
+		dst += len;
+	}
+}
+EXPORT_SYMBOL(tinydrm_memcpy);
+
+/**
+ * tinydrm_swab16 - Swap bytes into clip buffer
  * @dst: rgb565 destination buffer
- * @num_pixels: number of pixels to copy
+ * @vaddr: rgb565 source buffer
+ * @fb: DRM framebuffer
+ * @clip: Clip rectangle area to copy
+ */
+void tinydrm_swab16(u16 *dst, void *vaddr, struct drm_framebuffer *fb,
+		    struct drm_clip_rect *clip)
+{
+	unsigned int pitch = fb->pitches[0];
+	unsigned int x, y;
+	u16 *src;
+
+	for (y = clip->y1; y < clip->y2; y++) {
+		src = vaddr + (y * pitch);
+		src += clip->x1;
+		for (x = clip->x1; x < clip->x2; x++)
+			*dst++ = swab16(*src++);
+	}
+}
+EXPORT_SYMBOL(tinydrm_swab16);
+
+/**
+ * tinydrm_xrgb8888_to_rgb565 - convert xrgb8888 to rgb565 clip buffer
+ * @dst: rgb565 destination buffer
+ * @vaddr: xrgb8888 source buffer
+ * @fb: DRM framebuffer
+ * @clip: Clip rectangle area to copy
+ * @swap: Swap bytes
  *
  * Drivers can use this function for rgb565 devices that don't natively
  * support xrgb8888.
  */
-void tinydrm_xrgb8888_to_rgb565(u32 *src, u16 *dst, unsigned int num_pixels)
+void tinydrm_xrgb8888_to_rgb565(u16 *dst, void *vaddr,
+				struct drm_framebuffer *fb,
+				struct drm_clip_rect *clip, bool swap)
 {
-	int i;
+	unsigned int pitch = fb->pitches[0];
+	unsigned int x, y;
+	u16 val16;
+	u32 *src;
 
-	for (i = 0; i < num_pixels; i++) {
-		*dst = ((*src & 0x00F80000) >> 8) |
-		       ((*src & 0x0000FC00) >> 5) |
-		       ((*src & 0x000000F8) >> 3);
-		src++;
-		dst++;
+	for (y = clip->y1; y < clip->y2; y++) {
+		src = vaddr + (y * pitch);
+		src += clip->x1;
+		for (x = clip->x1; x < clip->x2; x++) {
+			val16 = ((*src & 0x00F80000) >> 8) |
+				((*src & 0x0000FC00) >> 5) |
+				((*src & 0x000000F8) >> 3);
+			src++;
+			if (swap)
+				*dst++ = swab16(val16);
+			else
+				*dst++ = val16;
+		}
 	}
 }
 EXPORT_SYMBOL(tinydrm_xrgb8888_to_rgb565);

@@ -17,6 +17,7 @@
 #include <drm/tinydrm/tinydrm.h>
 #include <drm/tinydrm/tinydrm-helpers.h>
 #include <drm/tinydrm/tinydrm-regmap.h>
+#include <linux/dma-buf.h>
 #include <linux/gpio/consumer.h>
 #include <linux/module.h>
 #include <linux/regmap.h>
@@ -37,11 +38,8 @@
 struct mipi_dbi_spi {
 	struct spi_device *spi;
 	struct regmap *map;
-	unsigned int ram_reg;
 	struct gpio_desc *dc;
 	bool write_only;
-	u16 *tx_buf;
-	size_t chunk_size;
 };
 
 /**
@@ -130,8 +128,8 @@ static size_t mipi_dbi_spi_clamp_size(struct spi_device *spi, size_t size)
 	(_dst) |= (u64)(_src) << (63 - 8 - ((_pos) * 9)); \
 }
 
-static int mipi_dbi_spi1e_transfer(struct mipi_dbi_spi *mspi, u8 bits_per_word,
-				   int dc, const void *buf, size_t len,
+static int mipi_dbi_spi1e_transfer(struct mipi_dbi_spi *mspi, int dc,
+				   const void *buf, size_t len,
 				   size_t max_chunk)
 {
 	struct spi_device *spi = mspi->spi;
@@ -150,14 +148,14 @@ static int mipi_dbi_spi1e_transfer(struct mipi_dbi_spi *mspi, u8 bits_per_word,
 		return -EINVAL;
 
 	if (drm_debug & DRM_UT_CORE)
-		pr_debug("[drm:%s] bpw=%u, dc=%d, max_chunk=%zu, transfers:\n",
-			 __func__, bits_per_word, dc, max_chunk);
+		pr_debug("[drm:%s] dc=%d, max_chunk=%zu, transfers:\n",
+			 __func__, dc, max_chunk);
 
 	spi_message_init_with_transfers(&m, &tr, 1);
 
 	if (!dc) {
 		/* pad at beginning of block */
-		if (WARN_ON_ONCE(len != 1 || bits_per_word != 8))
+		if (WARN_ON_ONCE(len != 1))
 			return -EINVAL;
 
 		dst = kzalloc(9, GFP_KERNEL);
@@ -199,15 +197,8 @@ static int mipi_dbi_spi1e_transfer(struct mipi_dbi_spi *mspi, u8 bits_per_word,
 			u64 tmp = 0;
 			int j;
 
-			if (bits_per_word == 8) {
-				for (j = 0; j < chunk; j++)
-					SHIFT_U9_INTO_U64(tmp, *src++, j);
-			} else {
-				for (j = 0; j < (chunk / 2); j += 2) {
-					SHIFT_U9_INTO_U64(tmp, *src++, j + 1);
-					SHIFT_U9_INTO_U64(tmp, *src++, j);
-				}
-			}
+			for (j = 0; j < chunk; j++)
+				SHIFT_U9_INTO_U64(tmp, *src++, j);
 
 			*(u64 *)dst = cpu_to_be64(tmp);
 			dst[8] = 0x00;
@@ -217,38 +208,19 @@ static int mipi_dbi_spi1e_transfer(struct mipi_dbi_spi *mspi, u8 bits_per_word,
 			for (i = 0; i < chunk; i += 8) {
 				u64 tmp = 0;
 
-				if (bits_per_word == 8) {
-					SHIFT_U9_INTO_U64(tmp, *src++, 0);
-					SHIFT_U9_INTO_U64(tmp, *src++, 1);
-					SHIFT_U9_INTO_U64(tmp, *src++, 2);
-					SHIFT_U9_INTO_U64(tmp, *src++, 3);
-					SHIFT_U9_INTO_U64(tmp, *src++, 4);
-					SHIFT_U9_INTO_U64(tmp, *src++, 5);
-					SHIFT_U9_INTO_U64(tmp, *src++, 6);
+				SHIFT_U9_INTO_U64(tmp, *src++, 0);
+				SHIFT_U9_INTO_U64(tmp, *src++, 1);
+				SHIFT_U9_INTO_U64(tmp, *src++, 2);
+				SHIFT_U9_INTO_U64(tmp, *src++, 3);
+				SHIFT_U9_INTO_U64(tmp, *src++, 4);
+				SHIFT_U9_INTO_U64(tmp, *src++, 5);
+				SHIFT_U9_INTO_U64(tmp, *src++, 6);
 
-					tmp |= 0x1;
-					/* TODO: unaligned access here? */
-					*(u64 *)dst = cpu_to_be64(tmp);
-					dst += 8;
-					*dst++ = *src++;
-				} else {
-					u8 src7;
-
-					SHIFT_U9_INTO_U64(tmp, *src++, 1);
-					SHIFT_U9_INTO_U64(tmp, *src++, 0);
-					SHIFT_U9_INTO_U64(tmp, *src++, 3);
-					SHIFT_U9_INTO_U64(tmp, *src++, 2);
-					SHIFT_U9_INTO_U64(tmp, *src++, 5);
-					SHIFT_U9_INTO_U64(tmp, *src++, 4);
-					src7 = *src++;
-					SHIFT_U9_INTO_U64(tmp, *src++, 6);
-
-					tmp |= 0x1;
-					/* TODO: unaligned access here? */
-					*(u64 *)dst = cpu_to_be64(tmp);
-					dst += 8;
-					*dst++ = src7;
-				}
+				tmp |= 0x1;
+				/* TODO: unaligned access here? */
+				*(u64 *)dst = cpu_to_be64(tmp);
+				dst += 8;
+				*dst++ = *src++;
 				added++;
 			}
 		}
@@ -267,15 +239,14 @@ err_free:
 	return ret;
 }
 
-static int mipi_dbi_spi1_transfer(struct mipi_dbi_spi *mspi, u8 bits_per_word,
-				  int dc, const void *buf, size_t len,
+static int mipi_dbi_spi1_transfer(struct mipi_dbi_spi *mspi, int dc,
+				  const void *buf, size_t len,
 				  size_t max_chunk)
 {
 	struct spi_device *spi = mspi->spi;
 	struct spi_transfer tr = {
 		.bits_per_word = 9,
 	};
-	const u16 *src16 = buf;
 	const u8 *src8 = buf;
 	struct spi_message m;
 	size_t max_src_chunk;
@@ -283,17 +254,13 @@ static int mipi_dbi_spi1_transfer(struct mipi_dbi_spi *mspi, u8 bits_per_word,
 	u16 *dst16;
 
 	if (!tinydrm_spi_bpw_supported(spi, 9))
-		return mipi_dbi_spi1e_transfer(mspi, bits_per_word, dc, buf,
-					       len, max_chunk);
-
-	if (WARN_ON_ONCE(bits_per_word == 16 && len % 2))
-		return -EINVAL;
+		return mipi_dbi_spi1e_transfer(mspi, dc, buf, len, max_chunk);
 
 	max_chunk = mipi_dbi_spi_clamp_size(spi, max_chunk);
 
 	if (drm_debug & DRM_UT_CORE)
-		pr_debug("[drm:%s] bpw=%u, dc=%d, max_chunk=%zu, transfers:\n",
-			 __func__, bits_per_word, dc, max_chunk);
+		pr_debug("[drm:%s] dc=%d, max_chunk=%zu, transfers:\n",
+			 __func__, dc, max_chunk);
 
 	max_src_chunk = min(max_chunk / 2, len);
 
@@ -308,22 +275,12 @@ static int mipi_dbi_spi1_transfer(struct mipi_dbi_spi *mspi, u8 bits_per_word,
 		size_t chunk = min(len, max_src_chunk);
 		unsigned int i;
 
-		if (bits_per_word == 8) {
-			for (i = 0; i < chunk; i++) {
-				dst16[i] = *src8++;
-				if (dc)
-					dst16[i] |= 0x0100;
-			}
-		} else {
-			for (i = 0; i < (chunk * 2); i += 2) {
-				dst16[i]     = *src16 >> 8;
-				dst16[i + 1] = *src16++ & 0xFF;
-				if (dc) {
-					dst16[i]     |= 0x0100;
-					dst16[i + 1] |= 0x0100;
-				}
-			}
+		for (i = 0; i < chunk; i++) {
+			dst16[i] = *src8++;
+			if (dc)
+				dst16[i] |= 0x0100;
 		}
+
 		tr.len = chunk;
 		len -= chunk;
 
@@ -344,22 +301,19 @@ static int mipi_dbi_spi1_gather_write(void *context, const void *reg,
 				      size_t val_len)
 {
 	struct mipi_dbi_spi *mspi = context;
-	size_t val_width;
 	int ret;
 
 	if (reg_len != 1)
 		return -EINVAL;
 
-	val_width = (*(u8 *)reg == mspi->ram_reg) ? 16 : 8;
-	TINYDRM_DEBUG_REG_WRITE(reg, reg_len, val, val_len, val_width);
+	TINYDRM_DEBUG_REG_WRITE(reg, reg_len, val, val_len, 8);
 
-	ret = mipi_dbi_spi1_transfer(mspi, 8, 0, reg, reg_len, 4096);
+	ret = mipi_dbi_spi1_transfer(mspi, 0, reg, reg_len, 4096);
 	if (ret)
 		return ret;
 
 	if (val && val_len)
-		ret = mipi_dbi_spi1_transfer(mspi, val_width, 1, val,
-					     val_len, 4096);
+		ret = mipi_dbi_spi1_transfer(mspi, 1, val, val_len, 4096);
 
 	return ret;
 }
@@ -367,7 +321,7 @@ static int mipi_dbi_spi1_gather_write(void *context, const void *reg,
 static int mipi_dbi_spi1_write(void *context, const void *data, size_t count)
 {
 	return mipi_dbi_spi1_gather_write(context, data, 1,
-					 data + 1, count - 1);
+					  data + 1, count - 1);
 }
 
 static int mipi_dbi_spi1_read(void *context, const void *reg, size_t reg_size,
@@ -392,26 +346,22 @@ static int mipi_dbi_spi3_gather_write(void *context, const void *reg,
 {
 	struct mipi_dbi_spi *mspi = context;
 	struct spi_device *spi = mspi->spi;
-	size_t val_width;
 	int ret;
 
 	if (reg_len != 1)
 		return -EINVAL;
 
-	val_width = (*(u8 *)reg == mspi->ram_reg) ? 16 : 8;
-	TINYDRM_DEBUG_REG_WRITE(reg, reg_len, val, val_len, val_width);
+	TINYDRM_DEBUG_REG_WRITE(reg, reg_len, val, val_len, 8);
 
 	gpiod_set_value_cansleep(mspi->dc, 0);
-	ret = tinydrm_spi_transfer(spi, 0, NULL, 8, reg, 1, mspi->tx_buf,
-				   mspi->chunk_size);
+	ret = tinydrm_spi_transfer(spi, 0, NULL, 8, reg, 1, NULL, 0);
 	if (ret)
 		return ret;
 
 	if (val && val_len) {
 		gpiod_set_value_cansleep(mspi->dc, 1);
-		ret = tinydrm_spi_transfer(spi, 0, NULL, val_width, val,
-					   val_len, mspi->tx_buf,
-					   mspi->chunk_size);
+		ret = tinydrm_spi_transfer(spi, 0, NULL, 8, val,
+					   val_len, NULL, 0);
 	}
 
 	return ret;
@@ -503,15 +453,22 @@ static const struct regmap_bus mipi_dbi_regmap_bus3 = {
 };
 
 /**
- * mipi_dbi_spi_init - Initialize MIPI DBI SPI interface
+ * mipi_dbi_spi_init - Initialize MIPI DBI SPI interfaced controller
  * @spi: SPI device
  * @dc: D/C gpio (optional)
  * @write_only: Controller is write-only
+ * @mipi: &mipi_dbi structure to initialize
+ * @pipe_funcs: Display pipe functions
+ * @driver: DRM driver
+ * @mode: Display mode
+ * @rotation: Initial rotation in degrees Counter Clock Wise
  *
- * This function initializes a &regmap that can be used to send commands to
+ * This function initializes a &mipi_dbi structure using mipi_dbi_init()
+ * and intitalizes a &regmap that can be used to send commands to
  * the controller. mipi_dbi_write() can be used to send commands.
  * If @dc is set, a Type C Option 3 interface is assumed, if not
  * Type C Option 1.
+ *
  * If the SPI master driver doesn't support the necessary bits per word,
  * the following transformation is used:
  *
@@ -519,10 +476,14 @@ static const struct regmap_bus mipi_dbi_regmap_bus3 = {
  * - 16-bit: if big endian send as 8-bit, if little endian swap bytes
  *
  * Returns:
- * regmap on success, error pointer on failure.
+ * Zero on success, negative error code on failure.
  */
-struct regmap *mipi_dbi_spi_init(struct spi_device *spi, struct gpio_desc *dc,
-				 bool write_only)
+int mipi_dbi_spi_init(struct spi_device *spi, struct mipi_dbi *mipi,
+		      struct gpio_desc *dc, bool write_only,
+		      const struct drm_simple_display_pipe_funcs *pipe_funcs,
+		      struct drm_driver *driver,
+		      const struct drm_display_mode *mode,
+		      unsigned int rotation)
 {
 	struct regmap_config config = {
 		.reg_bits = 8,
@@ -534,20 +495,11 @@ struct regmap *mipi_dbi_spi_init(struct spi_device *spi, struct gpio_desc *dc,
 
 	mspi = devm_kzalloc(dev, sizeof(*mspi), GFP_KERNEL);
 	if (!mspi)
-		return ERR_PTR(-ENOMEM);
+		return -ENOMEM;
 
-	mspi->chunk_size = tinydrm_spi_max_transfer_size(spi, 0);
-	mspi->ram_reg = MIPI_DCS_WRITE_MEMORY_START;
 	mspi->write_only = write_only;
 	mspi->spi = spi;
 	mspi->dc = dc;
-
-	if (tinydrm_get_machine_endian() == REGMAP_ENDIAN_LITTLE &&
-	    dc && !tinydrm_spi_bpw_supported(spi, 16)) {
-		mspi->tx_buf = devm_kmalloc(dev, mspi->chunk_size, GFP_KERNEL);
-		if (!mspi->tx_buf)
-			return ERR_PTR(-ENOMEM);
-	}
 
 	if (dc)
 		mspi->map = devm_regmap_init(dev, &mipi_dbi_regmap_bus3, mspi,
@@ -555,10 +507,54 @@ struct regmap *mipi_dbi_spi_init(struct spi_device *spi, struct gpio_desc *dc,
 	else
 		mspi->map = devm_regmap_init(dev, &mipi_dbi_regmap_bus1, mspi,
 					     &config);
+	mipi->reg = mspi->map;
 
-	return mspi->map;
+	if (tinydrm_get_machine_endian() == REGMAP_ENDIAN_LITTLE &&
+	    !tinydrm_spi_bpw_supported(spi, 16))
+		mipi->swap_bytes = true;
+
+	return mipi_dbi_init(dev, mipi, pipe_funcs, driver, mode, rotation);
 }
 EXPORT_SYMBOL(mipi_dbi_spi_init);
+
+static int mipi_dbi_buf_copy(void *dst, struct drm_framebuffer *fb,
+				struct drm_clip_rect *clip, bool swap)
+{
+	struct drm_gem_cma_object *cma_obj = drm_fb_cma_get_gem_obj(fb, 0);
+	struct dma_buf_attachment *import_attach = cma_obj->base.import_attach;
+	struct drm_format_name_buf format_name;
+	void *src = cma_obj->vaddr;
+	int ret = 0;
+
+	if (import_attach) {
+		ret = dma_buf_begin_cpu_access(import_attach->dmabuf,
+					       DMA_FROM_DEVICE);
+		if (ret)
+			return ret;
+	}
+
+	switch (fb->pixel_format) {
+	case DRM_FORMAT_RGB565:
+		if (swap)
+			tinydrm_swab16(dst, src, fb, clip);
+		else
+			tinydrm_memcpy(dst, src, fb, clip);
+		break;
+	case DRM_FORMAT_XRGB8888:
+		tinydrm_xrgb8888_to_rgb565(dst, src, fb, clip, swap);
+		break;
+	default:
+		dev_err_once(fb->dev->dev, "Format is not supported: %s\n",
+			     drm_get_format_name(fb->pixel_format,
+						 &format_name));
+		return -EINVAL;
+	}
+
+	if (import_attach)
+		ret = dma_buf_end_cpu_access(import_attach->dmabuf,
+					     DMA_FROM_DEVICE);
+	return ret;
+}
 
 static int mipi_dbi_fb_dirty(struct drm_framebuffer *fb,
 			     struct drm_file *file_priv,
@@ -570,21 +566,31 @@ static int mipi_dbi_fb_dirty(struct drm_framebuffer *fb,
 	struct tinydrm_device *tdev = drm_to_tinydrm(fb->dev);
 	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
 	struct regmap *reg = mipi->reg;
+	bool swap = mipi->swap_bytes;
 	struct drm_clip_rect clip;
 	int ret = 0;
+	bool full;
+	void *tr;
 
 	mutex_lock(&tdev->dev_lock);
 
 	if (!tinydrm_check_dirty(fb, &clips, &num_clips))
 		goto out_unlock;
 
-	tinydrm_merge_clips(&clip, clips, num_clips, flags,
-			    fb->width, fb->height);
-	clip.x1 = 0;
-	clip.x2 = fb->width;
+	full = tinydrm_merge_clips(&clip, clips, num_clips, flags,
+				   fb->width, fb->height);
 
 	DRM_DEBUG("Flushing [FB:%d] x1=%u, x2=%u, y1=%u, y2=%u\n", fb->base.id,
 		  clip.x1, clip.x2, clip.y1, clip.y2);
+
+	if (!full || swap || fb->pixel_format == DRM_FORMAT_XRGB8888) {
+		tr = mipi->tx_buf;
+		ret = mipi_dbi_buf_copy(mipi->tx_buf, fb, &clip, swap);
+		if (ret)
+			goto out_unlock;
+	} else {
+		tr = cma_obj->vaddr;
+	}
 
 	mipi_dbi_write(reg, MIPI_DCS_SET_COLUMN_ADDRESS,
 		       (clip.x1 >> 8) & 0xFF, clip.x1 & 0xFF,
@@ -593,14 +599,10 @@ static int mipi_dbi_fb_dirty(struct drm_framebuffer *fb,
 		       (clip.y1 >> 8) & 0xFF, clip.y1 & 0xFF,
 		       (clip.y2 >> 8) & 0xFF, (clip.y2 - 1) & 0xFF);
 
-	ret = tinydrm_regmap_flush_rgb565(reg, MIPI_DCS_WRITE_MEMORY_START,
-					  fb, cma_obj->vaddr, &clip);
-
-	if (ret) {
-		dev_err_once(fb->dev->dev, "Failed to update display %d\n",
-			     ret);
+	ret = regmap_raw_write(reg, MIPI_DCS_WRITE_MEMORY_START, tr,
+			       (clip.x2 - clip.x1) * (clip.y2 - clip.y1) * 2);
+	if (ret)
 		goto out_unlock;
-	}
 
 	if (!tdev->enabled) {
 		if (mipi->enable_delay_ms)
@@ -615,6 +617,10 @@ static int mipi_dbi_fb_dirty(struct drm_framebuffer *fb,
 
 out_unlock:
 	mutex_unlock(&tdev->dev_lock);
+
+	if (ret)
+		dev_err_once(fb->dev->dev, "Failed to update display %d\n",
+			     ret);
 
 	return ret;
 }
@@ -728,9 +734,14 @@ int mipi_dbi_init(struct device *dev, struct mipi_dbi *mipi,
 		  struct drm_driver *driver,
 		  const struct drm_display_mode *mode, unsigned int rotation)
 {
+	size_t bufsize = mode->vdisplay * mode->hdisplay * sizeof(u16);
 	struct tinydrm_device *tdev = &mipi->tinydrm;
 	struct drm_device *drm = &tdev->drm;
 	int ret;
+
+	mipi->tx_buf = devm_kmalloc(dev, bufsize, GFP_KERNEL);
+	if (!mipi->tx_buf)
+		return -ENOMEM;
 
 	ret = devm_tinydrm_init(dev, tdev, &mipi_dbi_fb_funcs, driver);
 	if (ret)

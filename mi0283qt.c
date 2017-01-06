@@ -267,12 +267,9 @@ static int mi0283qt_probe(struct spi_device *spi)
 	writeonly = device_property_read_bool(dev, "write-only");
 	device_property_read_u32(dev, "rotation", &rotation);
 
-	mipi->reg = mipi_dbi_spi_init(spi, dc, writeonly);
-	if (IS_ERR(mipi->reg))
-		return PTR_ERR(mipi->reg);
-
-	ret = mipi_dbi_init(dev, mipi, &mi0283qt_pipe_funcs, &mi0283qt_driver,
-			    &mi0283qt_mode, rotation);
+	ret = mipi_dbi_spi_init(spi, mipi, dc, writeonly,
+				&mi0283qt_pipe_funcs, &mi0283qt_driver,
+				&mi0283qt_mode, rotation);
 	if (ret)
 		return ret;
 

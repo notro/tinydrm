@@ -17,10 +17,16 @@ struct dev_pm_ops;
 struct spi_device;
 struct device;
 
-void tinydrm_merge_clips(struct drm_clip_rect *dst,
+bool tinydrm_merge_clips(struct drm_clip_rect *dst,
 			 struct drm_clip_rect *src, unsigned int num_clips,
 			 unsigned int flags, u32 max_width, u32 max_height);
-void tinydrm_xrgb8888_to_rgb565(u32 *src, u16 *dst, unsigned int num_pixels);
+void tinydrm_memcpy(void *dst, void *vaddr, struct drm_framebuffer *fb,
+		    struct drm_clip_rect *clip);
+void tinydrm_swab16(u16 *dst, void *vaddr, struct drm_framebuffer *fb,
+		    struct drm_clip_rect *clip);
+void tinydrm_xrgb8888_to_rgb565(u16 *dst, void *vaddr,
+				struct drm_framebuffer *fb,
+				struct drm_clip_rect *clip, bool swap);
 
 #ifdef CONFIG_BACKLIGHT_CLASS_DEVICE
 struct backlight_device *tinydrm_of_find_backlight(struct device *dev);

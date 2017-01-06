@@ -18,9 +18,6 @@ struct spi_transfer;
 struct spi_message;
 struct spi_device;
 
-int tinydrm_regmap_flush_rgb565(struct regmap *reg, u32 regnr,
-				struct drm_framebuffer *fb, void *vmem,
-				struct drm_clip_rect *clip);
 size_t tinydrm_spi_max_transfer_size(struct spi_device *spi, size_t max_len);
 bool tinydrm_spi_bpw_supported(struct spi_device *spi, u8 bpw);
 int tinydrm_spi_transfer(struct spi_device *spi, u32 speed_hz,

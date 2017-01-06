@@ -25,6 +25,8 @@ struct regulator;
  * mipi_dbi - MIPI DBI controller
  * @tinydrm: tinydrm base
  * @reg: register map
+ * @tx_buf: Buffer used for transfer (copy clip rect area)
+ * @swap_bytes: Swap bytes in buffer before transfer
  * @reset: Optional reset gpio
  * @rotation: initial rotation in degress Counter Clock Wise
  * @backlight: backlight device (optional)
@@ -34,6 +36,8 @@ struct regulator;
 struct mipi_dbi {
 	struct tinydrm_device tinydrm;
 	struct regmap *reg;
+	u16 *tx_buf;
+	bool swap_bytes;
 	struct gpio_desc *reset;
 	unsigned int rotation;
 	struct backlight_device *backlight;
@@ -47,8 +51,12 @@ mipi_dbi_from_tinydrm(struct tinydrm_device *tdev)
 	return container_of(tdev, struct mipi_dbi, tinydrm);
 }
 
-struct regmap *mipi_dbi_spi_init(struct spi_device *spi, struct gpio_desc *dc,
-				 bool write_only);
+int mipi_dbi_spi_init(struct spi_device *spi, struct mipi_dbi *mipi,
+		      struct gpio_desc *dc, bool write_only,
+		      const struct drm_simple_display_pipe_funcs *pipe_funcs,
+		      struct drm_driver *driver,
+		      const struct drm_display_mode *mode,
+		      unsigned int rotation);
 int mipi_dbi_init(struct device *dev, struct mipi_dbi *mipi,
 		  const struct drm_simple_display_pipe_funcs *pipe_funcs,
 		  struct drm_driver *driver,

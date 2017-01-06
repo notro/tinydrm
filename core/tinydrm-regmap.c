@@ -20,71 +20,6 @@ static unsigned int spi_max;
 module_param(spi_max, uint, 0400);
 MODULE_PARM_DESC(spi_max, "Set a lower SPI max transfer size");
 
-/**
- * tinydrm_regmap_flush_rgb565 - flush framebuffer to LCD register
- * @reg: LCD register map
- * @regnr: register number
- * @fb: framebuffer
- * @vmem: buffer backing the framebuffer
- * @clip: part of buffer to write
- *
- * Flush framebuffer changes to LCD register supporting RGB565. XRGB8888 is
- * converted to RGB565.
- */
-int tinydrm_regmap_flush_rgb565(struct regmap *reg, u32 regnr,
-				struct drm_framebuffer *fb, void *vmem,
-				struct drm_clip_rect *clip)
-{
-	unsigned int width = clip->x2 - clip->x1;
-	unsigned int height = clip->y2 - clip->y1;
-	unsigned int num_pixels = width * height;
-	struct drm_format_name_buf format_name;
-	u16 *tr, *buf = NULL;
-	int ret;
-
-	/*
-	 * TODO: Add support for all widths (requires a buffer copy)
-	 *
-	 * Crude X windows usage numbers for a 320x240 (76.8k pixel) display,
-	 * possible improvements:
-	 * - 80-90% cut for <2k pixel transfers
-	 * - 40-50% cut for <50k pixel tranfers
-	 */
-	if (width != fb->width) {
-		dev_err(fb->dev->dev,
-			"Only full width clip are supported: x1=%u, x2=%u\n",
-			clip->x1, clip->x2);
-		return -EINVAL;
-	}
-
-	switch (fb->pixel_format) {
-	case DRM_FORMAT_RGB565:
-		vmem += clip->y1 * width * 2;
-		tr = vmem;
-		break;
-	case DRM_FORMAT_XRGB8888:
-		vmem += clip->y1 * width * 4;
-		buf = kmalloc_array(num_pixels, sizeof(u16), GFP_KERNEL);
-		if (!buf)
-			return -ENOMEM;
-
-		tinydrm_xrgb8888_to_rgb565(vmem, buf, num_pixels);
-		tr = buf;
-		break;
-	default:
-		dev_err_once(fb->dev->dev, "Format is not supported: %s\n",
-			     drm_get_format_name(fb->pixel_format,
-						 &format_name));
-		return -EINVAL;
-	}
-
-	ret = regmap_raw_write(reg, regnr, tr, num_pixels * 2);
-	kfree(buf);
-
-	return ret;
-}
-EXPORT_SYMBOL(tinydrm_regmap_flush_rgb565);
-
 #if IS_ENABLED(CONFIG_SPI)
 
 /**
@@ -104,7 +39,6 @@ size_t tinydrm_spi_max_transfer_size(struct spi_device *spi, size_t max_len)
 	size_t ret;
 
 	ret = min(spi_max_transfer_size(spi), spi->master->max_dma_len);
-	DRM_INFO("Max SPI transfer size: %zu\n", ret);
 	if (max_len)
 		ret = min(ret, max_len);
 	if (spi_max)
@@ -112,8 +46,6 @@ size_t tinydrm_spi_max_transfer_size(struct spi_device *spi, size_t max_len)
 	ret &= ~0x3;
 	if (ret < 4)
 		ret = 4;
-
-	DRM_DEBUG_DRIVER("Max SPI transfer size: %zu\n", ret);
 
 	return ret;
 }
@@ -252,7 +184,7 @@ EXPORT_SYMBOL(_tinydrm_dbg_spi_message);
  * @buf: Buffer to transfer
  * @len: Buffer length
  * @swap_buf: Swap buffer used on Little Endian when 16 bpw is not supported
- * @max_chunk: Break up buffer into chunks of this size
+ * @max_chunk: Break up buffer into chunks of this size (optional)
  *
  * This SPI transfer helper breaks up the transfer of @buf into @max_chunk
  * chunks. If the machine is Little Endian and the SPI master driver doesn't
@@ -277,6 +209,8 @@ int tinydrm_spi_transfer(struct spi_device *spi, u32 speed_hz,
 
 	if (WARN_ON_ONCE(bpw != 8 && bpw != 16))
 		return -EINVAL;
+
+	max_chunk = tinydrm_spi_max_transfer_size(spi, max_chunk);
 
 	if (drm_debug & DRM_UT_CORE)
 		pr_debug("[drm:%s] bpw=%u, max_chunk=%zu, transfers:\n",
