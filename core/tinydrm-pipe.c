@@ -168,9 +168,6 @@ void tinydrm_display_pipe_update(struct drm_simple_display_pipe *pipe,
 		spin_unlock_irq(&crtc->dev->event_lock);
 		crtc->state->event = NULL;
 	}
-
-	if (tdev->fbdev_helper && fb == tdev->fbdev_helper->fb)
-		tdev->fbdev_used = true;
 }
 EXPORT_SYMBOL(tinydrm_display_pipe_update);
 

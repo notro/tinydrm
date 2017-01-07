@@ -98,26 +98,6 @@ EXPORT_SYMBOL(tinydrm_fb_create);
  * when userspace closes the drm device.
  */
 
-static int tinydrm_fbdev_create(struct drm_fb_helper *helper,
-				struct drm_fb_helper_surface_size *sizes)
-{
-	struct tinydrm_device *tdev = drm_to_tinydrm(helper->dev);
-	int ret;
-
-	ret = drm_fbdev_cma_create_with_funcs(helper, sizes, tdev->fb_funcs);
-	if (ret)
-		return ret;
-
-	strncpy(helper->fbdev->fix.id, helper->dev->driver->name, 16);
-	tdev->fbdev_helper = helper;
-
-	return 0;
-}
-
-static const struct drm_fb_helper_funcs tinydrm_fb_helper_funcs = {
-	.fb_probe = tinydrm_fbdev_create,
-};
-
 /**
  * tinydrm_fbdev_init - initialize tinydrm fbdev emulation
  * @tdev: tinydrm device
@@ -137,7 +117,7 @@ int tinydrm_fbdev_init(struct tinydrm_device *tdev)
 	fbdev = drm_fbdev_cma_init_with_funcs(drm, bpp ? bpp : 32,
 					      drm->mode_config.num_crtc,
 					      drm->mode_config.num_connector,
-					      &tinydrm_fb_helper_funcs);
+					      tdev->fb_funcs);
 	if (IS_ERR(fbdev))
 		return PTR_ERR(fbdev);
 
@@ -157,6 +137,5 @@ void tinydrm_fbdev_fini(struct tinydrm_device *tdev)
 {
 	drm_fbdev_cma_fini(tdev->fbdev_cma);
 	tdev->fbdev_cma = NULL;
-	tdev->fbdev_helper = NULL;
 }
 EXPORT_SYMBOL(tinydrm_fbdev_fini);

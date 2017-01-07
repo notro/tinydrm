@@ -42,10 +42,7 @@ void tinydrm_lastclose(struct drm_device *drm)
 	struct tinydrm_device *tdev = drm_to_tinydrm(drm);
 
 	DRM_DEBUG_KMS("\n");
-	if (tdev->fbdev_used)
-		drm_fbdev_cma_restore_mode(tdev->fbdev_cma);
-	else
-		drm_crtc_force_disable_all(drm);
+	drm_fbdev_cma_restore_mode(tdev->fbdev_cma);
 }
 EXPORT_SYMBOL(tinydrm_lastclose);
 
@@ -340,10 +337,10 @@ int tinydrm_suspend(struct tinydrm_device *tdev)
 		return -EINVAL;
 	}
 
-	drm_fb_helper_set_suspend_unlocked(tdev->fbdev_helper, 1);
+	drm_fbdev_cma_set_suspend_unlocked(tdev->fbdev_cma, 1);
 	state = drm_atomic_helper_suspend(drm);
 	if (IS_ERR(state)) {
-		drm_fb_helper_set_suspend_unlocked(tdev->fbdev_helper, 0);
+		drm_fbdev_cma_set_suspend_unlocked(tdev->fbdev_cma, 0);
 		return PTR_ERR(state);
 	}
 
@@ -382,7 +379,7 @@ int tinydrm_resume(struct tinydrm_device *tdev)
 		return ret;
 	}
 
-	drm_fb_helper_set_suspend_unlocked(tdev->fbdev_helper, 0);
+	drm_fbdev_cma_set_suspend_unlocked(tdev->fbdev_cma, 0);
 
 	return 0;
 }

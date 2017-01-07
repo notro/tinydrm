@@ -40,8 +40,6 @@ struct tinydrm_device {
 	bool prepared;
 	bool enabled;
 	struct drm_fbdev_cma *fbdev_cma;
-	struct drm_fb_helper *fbdev_helper;
-	bool fbdev_used;
 	struct drm_atomic_state *suspend_state;
 	struct tinydrm_debugfs_dirty *debugfs_dirty;
 /* private: */
