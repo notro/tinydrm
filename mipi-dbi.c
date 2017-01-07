@@ -533,7 +533,7 @@ static int mipi_dbi_buf_copy(void *dst, struct drm_framebuffer *fb,
 			return ret;
 	}
 
-	switch (fb->pixel_format) {
+	switch (fb->format->format) {
 	case DRM_FORMAT_RGB565:
 		if (swap)
 			tinydrm_swab16(dst, src, fb, clip);
@@ -545,7 +545,7 @@ static int mipi_dbi_buf_copy(void *dst, struct drm_framebuffer *fb,
 		break;
 	default:
 		dev_err_once(fb->dev->dev, "Format is not supported: %s\n",
-			     drm_get_format_name(fb->pixel_format,
+			     drm_get_format_name(fb->format->format,
 						 &format_name));
 		return -EINVAL;
 	}
@@ -583,7 +583,7 @@ static int mipi_dbi_fb_dirty(struct drm_framebuffer *fb,
 	DRM_DEBUG("Flushing [FB:%d] x1=%u, x2=%u, y1=%u, y2=%u\n", fb->base.id,
 		  clip.x1, clip.x2, clip.y1, clip.y2);
 
-	if (!full || swap || fb->pixel_format == DRM_FORMAT_XRGB8888) {
+	if (!full || swap || fb->format->format == DRM_FORMAT_XRGB8888) {
 		tr = mipi->tx_buf;
 		ret = mipi_dbi_buf_copy(mipi->tx_buf, fb, &clip, swap);
 		if (ret)

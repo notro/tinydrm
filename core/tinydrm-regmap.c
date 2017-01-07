@@ -70,7 +70,7 @@ bool tinydrm_spi_bpw_supported(struct spi_device *spi, u8 bpw)
 
 	if (!bpw_mask) {
 		dev_warn_once(&spi->dev,
-			      "bits_per_word_mask not set, assume only 8\n");
+			      "bits_per_word_mask not set, assume 8-bit only\n");
 		return false;
 	}
 

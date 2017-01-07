@@ -81,7 +81,7 @@ EXPORT_SYMBOL(tinydrm_merge_clips);
 void tinydrm_memcpy(void *dst, void *vaddr, struct drm_framebuffer *fb,
 		    struct drm_clip_rect *clip)
 {
-	unsigned int cpp = drm_format_plane_cpp(fb->pixel_format, 0);
+	unsigned int cpp = drm_format_plane_cpp(fb->format->format, 0);
 	unsigned int pitch = fb->pitches[0];
 	void *src = vaddr + (clip->y1 * pitch) + (clip->x1 * cpp);
 	size_t len = (clip->x2 - clip->x1) * cpp;
