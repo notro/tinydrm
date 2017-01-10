@@ -79,7 +79,6 @@ static void mi0283qt_enable(struct drm_simple_display_pipe *pipe,
 	struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
 	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
 	struct device *dev = tdev->drm.dev;
-	struct regmap *reg = mipi->reg;
 	u8 addr_mode;
 	int ret;
 
@@ -99,13 +98,13 @@ static void mi0283qt_enable(struct drm_simple_display_pipe *pipe,
 	}
 
 	/* Avoid flicker by skipping setup if the bootloader has done it */
-	if (mipi_dbi_display_is_on(reg)) {
+	if (mipi_dbi_display_is_on(mipi)) {
 		tdev->prepared = true;
 		goto out_unlock;
 	}
 
 	mipi_dbi_hw_reset(mipi);
-	ret = mipi_dbi_write(reg, MIPI_DCS_SOFT_RESET);
+	ret = mipi_dbi_command(mipi, MIPI_DCS_SOFT_RESET);
 	if (ret) {
 		dev_err(dev, "Error writing command %d\n", ret);
 		goto out_unlock;
@@ -113,24 +112,24 @@ static void mi0283qt_enable(struct drm_simple_display_pipe *pipe,
 
 	msleep(20);
 
-	mipi_dbi_write(reg, MIPI_DCS_SET_DISPLAY_OFF);
+	mipi_dbi_command(mipi, MIPI_DCS_SET_DISPLAY_OFF);
 
-	mipi_dbi_write(reg, ILI9341_PWCTRLB, 0x00, 0x83, 0x30);
-	mipi_dbi_write(reg, ILI9341_PWRSEQ, 0x64, 0x03, 0x12, 0x81);
-	mipi_dbi_write(reg, ILI9341_DTCTRLA, 0x85, 0x01, 0x79);
-	mipi_dbi_write(reg, ILI9341_PWCTRLA, 0x39, 0x2c, 0x00, 0x34, 0x02);
-	mipi_dbi_write(reg, ILI9341_PUMPCTRL, 0x20);
-	mipi_dbi_write(reg, ILI9341_DTCTRLB, 0x00, 0x00);
+	mipi_dbi_command(mipi, ILI9341_PWCTRLB, 0x00, 0x83, 0x30);
+	mipi_dbi_command(mipi, ILI9341_PWRSEQ, 0x64, 0x03, 0x12, 0x81);
+	mipi_dbi_command(mipi, ILI9341_DTCTRLA, 0x85, 0x01, 0x79);
+	mipi_dbi_command(mipi, ILI9341_PWCTRLA, 0x39, 0x2c, 0x00, 0x34, 0x02);
+	mipi_dbi_command(mipi, ILI9341_PUMPCTRL, 0x20);
+	mipi_dbi_command(mipi, ILI9341_DTCTRLB, 0x00, 0x00);
 
 	/* Power Control */
-	mipi_dbi_write(reg, ILI9341_PWCTRL1, 0x26);
-	mipi_dbi_write(reg, ILI9341_PWCTRL2, 0x11);
+	mipi_dbi_command(mipi, ILI9341_PWCTRL1, 0x26);
+	mipi_dbi_command(mipi, ILI9341_PWCTRL2, 0x11);
 	/* VCOM */
-	mipi_dbi_write(reg, ILI9341_VMCTRL1, 0x35, 0x3e);
-	mipi_dbi_write(reg, ILI9341_VMCTRL2, 0xbe);
+	mipi_dbi_command(mipi, ILI9341_VMCTRL1, 0x35, 0x3e);
+	mipi_dbi_command(mipi, ILI9341_VMCTRL2, 0xbe);
 
 	/* Memory Access Control */
-	mipi_dbi_write(reg, MIPI_DCS_SET_PIXEL_FORMAT, 0x55);
+	mipi_dbi_command(mipi, MIPI_DCS_SET_PIXEL_FORMAT, 0x55);
 
 	switch (mipi->rotation) {
 	default:
@@ -148,30 +147,30 @@ static void mi0283qt_enable(struct drm_simple_display_pipe *pipe,
 		break;
 	}
 	addr_mode |= ILI9341_MADCTL_BGR;
-	mipi_dbi_write(reg, MIPI_DCS_SET_ADDRESS_MODE, addr_mode);
+	mipi_dbi_command(mipi, MIPI_DCS_SET_ADDRESS_MODE, addr_mode);
 
 	/* Frame Rate */
-	mipi_dbi_write(reg, ILI9341_FRMCTR1, 0x00, 0x1b);
+	mipi_dbi_command(mipi, ILI9341_FRMCTR1, 0x00, 0x1b);
 
 	/* Gamma */
-	mipi_dbi_write(reg, ILI9341_EN3GAM, 0x08);
-	mipi_dbi_write(reg, MIPI_DCS_SET_GAMMA_CURVE, 0x01);
-	mipi_dbi_write(reg, ILI9341_PGAMCTRL,
+	mipi_dbi_command(mipi, ILI9341_EN3GAM, 0x08);
+	mipi_dbi_command(mipi, MIPI_DCS_SET_GAMMA_CURVE, 0x01);
+	mipi_dbi_command(mipi, ILI9341_PGAMCTRL,
 		       0x1f, 0x1a, 0x18, 0x0a, 0x0f, 0x06, 0x45, 0x87,
 		       0x32, 0x0a, 0x07, 0x02, 0x07, 0x05, 0x00);
-	mipi_dbi_write(reg, ILI9341_NGAMCTRL,
+	mipi_dbi_command(mipi, ILI9341_NGAMCTRL,
 		       0x00, 0x25, 0x27, 0x05, 0x10, 0x09, 0x3a, 0x78,
 		       0x4d, 0x05, 0x18, 0x0d, 0x38, 0x3a, 0x1f);
 
 	/* DDRAM */
-	mipi_dbi_write(reg, ILI9341_ETMOD, 0x07);
+	mipi_dbi_command(mipi, ILI9341_ETMOD, 0x07);
 
 	/* Display */
-	mipi_dbi_write(reg, ILI9341_DISCTRL, 0x0a, 0x82, 0x27, 0x00);
-	mipi_dbi_write(reg, MIPI_DCS_EXIT_SLEEP_MODE);
+	mipi_dbi_command(mipi, ILI9341_DISCTRL, 0x0a, 0x82, 0x27, 0x00);
+	mipi_dbi_command(mipi, MIPI_DCS_EXIT_SLEEP_MODE);
 	msleep(100);
 
-	mipi_dbi_write(reg, MIPI_DCS_SET_DISPLAY_ON);
+	mipi_dbi_command(mipi, MIPI_DCS_SET_DISPLAY_ON);
 	msleep(100);
 
 	tdev->prepared = true;

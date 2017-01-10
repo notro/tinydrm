@@ -35,13 +35,6 @@
 #define DCS_POWER_MODE_IDLE_MODE		BIT(6)
 #define DCS_POWER_MODE_RESERVED_MASK		(BIT(0) | BIT(1) | BIT(7))
 
-struct mipi_dbi_spi {
-	struct spi_device *spi;
-	struct regmap *map;
-	struct gpio_desc *dc;
-	bool write_only;
-};
-
 /**
  * DOC: overview
  *
@@ -71,35 +64,56 @@ struct mipi_dbi_spi {
  * mipi_dbi_spi_init().
  */
 
-/**
- * mipi_dbi_write_buf - Write command and parameter array
- * @reg: Controller register
- * @cmd: Command
- * @parameters: Array of parameters (optional)
- * @num: Number of parameters
- */
-int mipi_dbi_write_buf(struct regmap *reg, unsigned int cmd,
-		       const u8 *parameters, size_t num)
-{
-	u8 *buf;
-	int ret;
+#define MIPI_DBI_DEBUG_COMMAND(cmd, data, len) \
+({ \
+	if (!len) \
+		DRM_DEBUG_DRIVER("cmd=0x%02x\n", cmd); \
+	else if (len <= 32) \
+		DRM_DEBUG_DRIVER("cmd=0x%02x, par=%*ph\n", cmd, len, data); \
+	else \
+		DRM_DEBUG_DRIVER("cmd=0x%02x, len=%zu\n", cmd, len); \
+})
 
-	if (parameters && num) {
-		buf = kmemdup(parameters, num, GFP_KERNEL);
-	} else {
-		buf = kmalloc(1, GFP_KERNEL);
-		num = 0;
+static const u8 mipi_dbi_dcs_read_commands[] = {
+	MIPI_DCS_GET_DISPLAY_ID,
+	MIPI_DCS_GET_RED_CHANNEL,
+	MIPI_DCS_GET_GREEN_CHANNEL,
+	MIPI_DCS_GET_BLUE_CHANNEL,
+	MIPI_DCS_GET_DISPLAY_STATUS,
+	MIPI_DCS_GET_POWER_MODE,
+	MIPI_DCS_GET_ADDRESS_MODE,
+	MIPI_DCS_GET_PIXEL_FORMAT,
+	MIPI_DCS_GET_DISPLAY_MODE,
+	MIPI_DCS_GET_SIGNAL_MODE,
+	MIPI_DCS_GET_DIAGNOSTIC_RESULT,
+	MIPI_DCS_READ_MEMORY_START,
+	MIPI_DCS_READ_MEMORY_CONTINUE,
+	MIPI_DCS_GET_SCANLINE,
+	MIPI_DCS_GET_DISPLAY_BRIGHTNESS,	/* MIPI DCS 1.3 */
+	MIPI_DCS_GET_CONTROL_DISPLAY,		/* MIPI DCS 1.3 */
+	MIPI_DCS_GET_POWER_SAVE,		/* MIPI DCS 1.3 */
+	MIPI_DCS_GET_CABC_MIN_BRIGHTNESS,	/* MIPI DCS 1.3 */
+	MIPI_DCS_READ_DDB_START,
+	MIPI_DCS_READ_DDB_CONTINUE,
+	0, /* sentinel */
+};
+
+static bool mipi_dbi_command_is_read(struct mipi_dbi *mipi, u8 cmd)
+{
+	unsigned int i;
+
+	if (!mipi->read_commands)
+		return false;
+
+	for (i = 0; i < 0xff; i++) {
+		if (!mipi->read_commands[i])
+			return false;
+		if (cmd == mipi->read_commands[i])
+			return true;
 	}
 
-	if (!buf)
-		return -ENOMEM;
-
-	ret = regmap_raw_write(reg, cmd, buf, num);
-	kfree(buf);
-
-	return ret;
+	return false;
 }
-EXPORT_SYMBOL(mipi_dbi_write_buf);
 
 static size_t mipi_dbi_spi_clamp_size(struct spi_device *spi, size_t size)
 {
@@ -128,11 +142,11 @@ static size_t mipi_dbi_spi_clamp_size(struct spi_device *spi, size_t size)
 	(_dst) |= (u64)(_src) << (63 - 8 - ((_pos) * 9)); \
 }
 
-static int mipi_dbi_spi1e_transfer(struct mipi_dbi_spi *mspi, int dc,
+static int mipi_dbi_spi1e_transfer(struct mipi_dbi *mipi, int dc,
 				   const void *buf, size_t len,
 				   size_t max_chunk)
 {
-	struct spi_device *spi = mspi->spi;
+	struct spi_device *spi = mipi->spi;
 	struct spi_transfer tr = {
 		.bits_per_word = 8,
 	};
@@ -239,11 +253,11 @@ err_free:
 	return ret;
 }
 
-static int mipi_dbi_spi1_transfer(struct mipi_dbi_spi *mspi, int dc,
+static int mipi_dbi_spi1_transfer(struct mipi_dbi *mipi, int dc,
 				  const void *buf, size_t len,
 				  size_t max_chunk)
 {
-	struct spi_device *spi = mspi->spi;
+	struct spi_device *spi = mipi->spi;
 	struct spi_transfer tr = {
 		.bits_per_word = 9,
 	};
@@ -254,7 +268,7 @@ static int mipi_dbi_spi1_transfer(struct mipi_dbi_spi *mspi, int dc,
 	u16 *dst16;
 
 	if (!tinydrm_spi_bpw_supported(spi, 9))
-		return mipi_dbi_spi1e_transfer(mspi, dc, buf, len, max_chunk);
+		return mipi_dbi_spi1e_transfer(mipi, dc, buf, len, max_chunk);
 
 	max_chunk = mipi_dbi_spi_clamp_size(spi, max_chunk);
 
@@ -296,111 +310,53 @@ err_free:
 	return ret;
 }
 
-static int mipi_dbi_spi1_gather_write(void *context, const void *reg,
-				      size_t reg_len, const void *val,
-				      size_t val_len)
+static int mipi_dbi_typec1_command(struct mipi_dbi *mipi, u8 cmd,
+				   u8 *parameters, size_t num)
 {
-	struct mipi_dbi_spi *mspi = context;
 	int ret;
 
-	if (reg_len != 1)
-		return -EINVAL;
+	if (mipi_dbi_command_is_read(mipi, cmd))
+		return -ENOTSUPP;
 
-	TINYDRM_DEBUG_REG_WRITE(reg, reg_len, val, val_len, 8);
+	MIPI_DBI_DEBUG_COMMAND(cmd, parameters, num);
 
-	ret = mipi_dbi_spi1_transfer(mspi, 0, reg, reg_len, 4096);
+	ret = mipi_dbi_spi1_transfer(mipi, 0, &cmd, 1, 4096);
 	if (ret)
 		return ret;
 
-	if (val && val_len)
-		ret = mipi_dbi_spi1_transfer(mspi, 1, val, val_len, 4096);
+	if (num)
+		ret = mipi_dbi_spi1_transfer(mipi, 1, parameters, num, 4096);
 
 	return ret;
 }
-
-static int mipi_dbi_spi1_write(void *context, const void *data, size_t count)
-{
-	return mipi_dbi_spi1_gather_write(context, data, 1,
-					  data + 1, count - 1);
-}
-
-static int mipi_dbi_spi1_read(void *context, const void *reg, size_t reg_size,
-			      void *val, size_t val_size)
-{
-	return -ENOTSUPP;
-}
-
-static const struct regmap_bus mipi_dbi_regmap_bus1 = {
-	.write = mipi_dbi_spi1_write,
-	.gather_write = mipi_dbi_spi1_gather_write,
-	.read = mipi_dbi_spi1_read,
-	.reg_format_endian_default = REGMAP_ENDIAN_DEFAULT,
-	.val_format_endian_default = REGMAP_ENDIAN_DEFAULT,
-};
 
 /* MIPI DBI Type C Option 3 */
 
-static int mipi_dbi_spi3_gather_write(void *context, const void *reg,
-				      size_t reg_len, const void *val,
-				      size_t val_len)
+static int mipi_dbi_typec3_command_read(struct mipi_dbi *mipi, u8 cmd,
+					u8 *data, size_t len)
 {
-	struct mipi_dbi_spi *mspi = context;
-	struct spi_device *spi = mspi->spi;
-	int ret;
-
-	if (reg_len != 1)
-		return -EINVAL;
-
-	TINYDRM_DEBUG_REG_WRITE(reg, reg_len, val, val_len, 8);
-
-	gpiod_set_value_cansleep(mspi->dc, 0);
-	ret = tinydrm_spi_transfer(spi, 0, NULL, 8, reg, 1, NULL, 0);
-	if (ret)
-		return ret;
-
-	if (val && val_len) {
-		gpiod_set_value_cansleep(mspi->dc, 1);
-		ret = tinydrm_spi_transfer(spi, 0, NULL, 8, val,
-					   val_len, NULL, 0);
-	}
-
-	return ret;
-}
-
-static int mipi_dbi_spi3_write(void *context, const void *data, size_t count)
-{
-	return mipi_dbi_spi3_gather_write(context, data, 1,
-					  data + 1, count - 1);
-}
-
-static int mipi_dbi_spi3_read(void *context, const void *reg, size_t reg_len,
-			      void *val, size_t val_len)
-{
-	struct mipi_dbi_spi *mspi = context;
-	struct spi_device *spi = mspi->spi;
+	struct spi_device *spi = mipi->spi;
 	u32 speed_hz = min_t(u32, MIPI_DBI_MAX_SPI_READ_SPEED,
 			     spi->max_speed_hz / 2);
 	struct spi_transfer tr[2] = {
 		{
 			.speed_hz = speed_hz,
-			.tx_buf = reg,
+			.tx_buf = &cmd,
 			.len = 1,
 		}, {
 			.speed_hz = speed_hz,
-			.len = val_len,
+			.len = len,
 		},
 	};
 	struct spi_message m;
-	u8 cmd = *(u8 *)reg;
 	u8 *buf;
 	int ret;
 
-	if (mspi->write_only)
-		return -EACCES;
+	if (!len)
+		return -EINVAL;
 
-	if (drm_debug & DRM_UT_CORE)
-		pr_debug("[drm:%s] regnr=0x%02x, len=%zu, transfers:\n",
-			 __func__, cmd, val_len);
+	if (mipi->write_only)
+		return -EACCES;
 
 	/*
 	 * Support non-standard 24-bit and 32-bit Nokia read commands which
@@ -408,10 +364,10 @@ static int mipi_dbi_spi3_read(void *context, const void *reg, size_t reg_len,
 	 */
 	if (cmd == MIPI_DCS_GET_DISPLAY_ID ||
 	    cmd == MIPI_DCS_GET_DISPLAY_STATUS) {
-		if (!(val_len == 3 || val_len == 4))
+		if (!(len == 3 || len == 4))
 			return -EINVAL;
 
-		tr[1].len = val_len + 1;
+		tr[1].len = len + 1;
 	}
 
 	buf = kmalloc(tr[1].len, GFP_KERNEL);
@@ -419,38 +375,56 @@ static int mipi_dbi_spi3_read(void *context, const void *reg, size_t reg_len,
 		return -ENOMEM;
 
 	tr[1].rx_buf = buf;
-	gpiod_set_value_cansleep(mspi->dc, 0);
+	gpiod_set_value_cansleep(mipi->dc, 0);
 
-	/*
-	 * Can't use spi_write_then_read() because reading speed is slower
-	 * than writing speed and that is set on the transfer.
-	 */
 	spi_message_init_with_transfers(&m, tr, ARRAY_SIZE(tr));
 	ret = spi_sync(spi, &m);
+	if (ret)
+		goto err_free;
+
 	tinydrm_dbg_spi_message(spi, &m);
 
-	if (tr[1].len == val_len) {
-		memcpy(val, buf, val_len);
+	if (tr[1].len == len) {
+		memcpy(data, buf, len);
 	} else {
-		u8 *data = val;
 		unsigned int i;
 
-		for (i = 0; i < val_len; i++)
+		for (i = 0; i < len; i++)
 			data[i] = (buf[i] << 1) | !!(buf[i + 1] & BIT(7));
 	}
+
+	MIPI_DBI_DEBUG_COMMAND(cmd, data, len);
+
+err_free:
 	kfree(buf);
 
 	return ret;
 }
 
-/* MIPI DBI Type C Option 3 */
-static const struct regmap_bus mipi_dbi_regmap_bus3 = {
-	.write = mipi_dbi_spi3_write,
-	.gather_write = mipi_dbi_spi3_gather_write,
-	.read = mipi_dbi_spi3_read,
-	.reg_format_endian_default = REGMAP_ENDIAN_DEFAULT,
-	.val_format_endian_default = REGMAP_ENDIAN_DEFAULT,
-};
+static int mipi_dbi_typec3_command(struct mipi_dbi *mipi, u8 cmd,
+				   u8 *par, size_t num)
+{
+	struct spi_device *spi = mipi->spi;
+	unsigned int bpw = 8;
+	int ret;
+
+	if (mipi_dbi_command_is_read(mipi, cmd))
+		return mipi_dbi_typec3_command_read(mipi, cmd, par, num);
+
+	MIPI_DBI_DEBUG_COMMAND(cmd, par, num);
+
+	gpiod_set_value_cansleep(mipi->dc, 0);
+	ret = tinydrm_spi_transfer(spi, 0, NULL, 8, &cmd, 1, NULL, 0);
+	if (ret || !num)
+		return ret;
+
+	if (cmd == MIPI_DCS_WRITE_MEMORY_START && !mipi->swap_bytes)
+		bpw = 16;
+
+	gpiod_set_value_cansleep(mipi->dc, 1);
+
+	return tinydrm_spi_transfer(spi, 0, NULL, bpw, par, num, NULL, 0);
+}
 
 /**
  * mipi_dbi_spi_init - Initialize MIPI DBI SPI interfaced controller
@@ -485,29 +459,18 @@ int mipi_dbi_spi_init(struct spi_device *spi, struct mipi_dbi *mipi,
 		      const struct drm_display_mode *mode,
 		      unsigned int rotation)
 {
-	struct regmap_config config = {
-		.reg_bits = 8,
-		.val_bits = 8,
-		.cache_type = REGCACHE_NONE,
-	};
 	struct device *dev = &spi->dev;
-	struct mipi_dbi_spi *mspi;
 
-	mspi = devm_kzalloc(dev, sizeof(*mspi), GFP_KERNEL);
-	if (!mspi)
-		return -ENOMEM;
+	mipi->spi = spi;
+	mipi->write_only = write_only;
+	mipi->read_commands = mipi_dbi_dcs_read_commands;
 
-	mspi->write_only = write_only;
-	mspi->spi = spi;
-	mspi->dc = dc;
-
-	if (dc)
-		mspi->map = devm_regmap_init(dev, &mipi_dbi_regmap_bus3, mspi,
-					     &config);
-	else
-		mspi->map = devm_regmap_init(dev, &mipi_dbi_regmap_bus1, mspi,
-					     &config);
-	mipi->reg = mspi->map;
+	if (dc) {
+		mipi->command = mipi_dbi_typec3_command;
+		mipi->dc = dc;
+	} else {
+		mipi->command = mipi_dbi_typec1_command;
+	}
 
 	if (tinydrm_get_machine_endian() == REGMAP_ENDIAN_LITTLE &&
 	    !tinydrm_spi_bpw_supported(spi, 16))
@@ -565,7 +528,6 @@ static int mipi_dbi_fb_dirty(struct drm_framebuffer *fb,
 	struct drm_gem_cma_object *cma_obj = drm_fb_cma_get_gem_obj(fb, 0);
 	struct tinydrm_device *tdev = drm_to_tinydrm(fb->dev);
 	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
-	struct regmap *reg = mipi->reg;
 	bool swap = mipi->swap_bytes;
 	struct drm_clip_rect clip;
 	int ret = 0;
@@ -592,15 +554,15 @@ static int mipi_dbi_fb_dirty(struct drm_framebuffer *fb,
 		tr = cma_obj->vaddr;
 	}
 
-	mipi_dbi_write(reg, MIPI_DCS_SET_COLUMN_ADDRESS,
-		       (clip.x1 >> 8) & 0xFF, clip.x1 & 0xFF,
-		       (clip.x2 >> 8) & 0xFF, (clip.x2 - 1) & 0xFF);
-	mipi_dbi_write(reg, MIPI_DCS_SET_PAGE_ADDRESS,
-		       (clip.y1 >> 8) & 0xFF, clip.y1 & 0xFF,
-		       (clip.y2 >> 8) & 0xFF, (clip.y2 - 1) & 0xFF);
+	mipi_dbi_command(mipi, MIPI_DCS_SET_COLUMN_ADDRESS,
+			 (clip.x1 >> 8) & 0xFF, clip.x1 & 0xFF,
+			 (clip.x2 >> 8) & 0xFF, (clip.x2 - 1) & 0xFF);
+	mipi_dbi_command(mipi, MIPI_DCS_SET_PAGE_ADDRESS,
+			 (clip.y1 >> 8) & 0xFF, clip.y1 & 0xFF,
+			 (clip.y2 >> 8) & 0xFF, (clip.y2 - 1) & 0xFF);
 
-	ret = regmap_raw_write(reg, MIPI_DCS_WRITE_MEMORY_START, tr,
-			       (clip.x2 - clip.x1) * (clip.y2 - clip.y1) * 2);
+	ret = mipi_dbi_command_buf(mipi, MIPI_DCS_WRITE_MEMORY_START, tr,
+				(clip.x2 - clip.x1) * (clip.y2 - clip.y1) * 2);
 	if (ret)
 		goto out_unlock;
 
@@ -637,19 +599,18 @@ static void mipi_dbi_blank(struct mipi_dbi *mipi)
 	int height = drm->mode_config.min_height;
 	int width = drm->mode_config.min_width;
 	unsigned int num_pixels = width * height;
-	struct regmap *reg = mipi->reg;
-	u16 *buf;
+	void *buf;
 
 	buf = kzalloc(num_pixels * 2, GFP_KERNEL);
 	if (!buf)
 		return;
 
-	mipi_dbi_write(reg, MIPI_DCS_SET_COLUMN_ADDRESS, 0, 0,
-		       (width >> 8) & 0xFF, (width - 1) & 0xFF);
-	mipi_dbi_write(reg, MIPI_DCS_SET_PAGE_ADDRESS, 0, 0,
-		       (height >> 8) & 0xFF, (height - 1) & 0xFF);
-	regmap_raw_write(reg, MIPI_DCS_WRITE_MEMORY_START, buf,
-			 num_pixels * 2);
+	mipi_dbi_command(mipi, MIPI_DCS_SET_COLUMN_ADDRESS, 0, 0,
+			 (width >> 8) & 0xFF, (width - 1) & 0xFF);
+	mipi_dbi_command(mipi, MIPI_DCS_SET_PAGE_ADDRESS, 0, 0,
+			 (height >> 8) & 0xFF, (height - 1) & 0xFF);
+	mipi_dbi_command_buf(mipi, MIPI_DCS_WRITE_MEMORY_START, buf,
+			     num_pixels * 2);
 	kfree(buf);
 }
 
@@ -666,7 +627,6 @@ void mipi_dbi_pipe_disable(struct drm_simple_display_pipe *pipe)
 {
 	struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
 	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
-	struct regmap *reg = mipi->reg;
 
 	DRM_DEBUG_KMS("\n");
 
@@ -691,8 +651,8 @@ void mipi_dbi_pipe_disable(struct drm_simple_display_pipe *pipe)
 			 * power savings in doing this. And it would speed up
 			 * re-enabling the pipeline (100-500ms).
 			 */
-			mipi_dbi_write(reg, MIPI_DCS_SET_DISPLAY_OFF);
-			mipi_dbi_write(reg, MIPI_DCS_ENTER_SLEEP_MODE);
+			mipi_dbi_command(mipi, MIPI_DCS_SET_DISPLAY_OFF);
+			mipi_dbi_command(mipi, MIPI_DCS_ENTER_SLEEP_MODE);
 			tdev->prepared = false;
 		}
 
@@ -798,11 +758,11 @@ EXPORT_SYMBOL(mipi_dbi_hw_reset);
  * Returns:
  * true if the display can be verified to be on, false otherwise.
  */
-bool mipi_dbi_display_is_on(struct regmap *reg)
+bool mipi_dbi_display_is_on(struct mipi_dbi *mipi)
 {
 	u8 val;
 
-	if (regmap_raw_read(reg, MIPI_DCS_GET_POWER_MODE, &val, 1))
+	if (mipi_dbi_command_buf(mipi, MIPI_DCS_GET_POWER_MODE, &val, 1))
 		return false;
 
 	val &= ~DCS_POWER_MODE_RESERVED_MASK;
@@ -819,20 +779,20 @@ EXPORT_SYMBOL(mipi_dbi_display_is_on);
 
 #ifdef CONFIG_DEBUG_FS
 
-static bool mipi_dbi_debugfs_readreg(struct seq_file *m, struct regmap *reg,
-				     unsigned int regnr, const char *desc,
+static bool mipi_dbi_debugfs_readreg(struct seq_file *m, struct mipi_dbi *mipi,
+				     u8 cmd, const char *desc,
 				     u8 *buf, size_t len)
 {
 	int ret;
 
-	ret = regmap_raw_read(reg, regnr, buf, len);
+	ret = mipi_dbi_command_buf(mipi, cmd, buf, len);
 	if (ret) {
-		seq_printf(m, "\n%s: command %02Xh failed: %d\n", desc, regnr,
+		seq_printf(m, "\n%s: command %02Xh failed: %d\n", desc, cmd,
 			   ret);
 		return false;
 	}
 
-	seq_printf(m, "\n%s (%02Xh=%*phN):\n", desc, regnr, len, buf);
+	seq_printf(m, "\n%s (%02Xh=%*phN):\n", desc, cmd, len, buf);
 
 	return true;
 }
@@ -913,12 +873,11 @@ static int mipi_dbi_debugfs_show(struct seq_file *m, void *arg)
 	struct drm_device *drm = node->minor->dev;
 	struct tinydrm_device *tdev = drm_to_tinydrm(drm);
 	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
-	struct regmap *reg = mipi->reg;
 	u8 buf[4];
 	u8 val8;
 	int ret;
 
-	ret = regmap_raw_read(reg, MIPI_DCS_GET_POWER_MODE, buf, 1);
+	ret = mipi_dbi_command_buf(mipi, MIPI_DCS_GET_POWER_MODE, buf, 1);
 	if (ret == -EACCES || ret == -ENOTSUPP) {
 		seq_puts(m, "Controller is write-only\n");
 		return 0;
@@ -929,14 +888,14 @@ static int mipi_dbi_debugfs_show(struct seq_file *m, void *arg)
 	 * non-standard commands that Nokia wanted back in the day,
 	 * so most vendors implemented them.
 	 */
-	if (mipi_dbi_debugfs_readreg(m, reg, MIPI_DCS_GET_DISPLAY_ID,
+	if (mipi_dbi_debugfs_readreg(m, mipi, MIPI_DCS_GET_DISPLAY_ID,
 				     "Display ID", buf, 3)) {
 		seq_printf(m, "    ID1 = 0x%02x\n", buf[0]);
 		seq_printf(m, "    ID2 = 0x%02x\n", buf[1]);
 		seq_printf(m, "    ID3 = 0x%02x\n", buf[2]);
 	}
 
-	if (mipi_dbi_debugfs_readreg(m, reg, MIPI_DCS_GET_DISPLAY_STATUS,
+	if (mipi_dbi_debugfs_readreg(m, mipi, MIPI_DCS_GET_DISPLAY_STATUS,
 				     "Display status", buf, 4)) {
 		u32 stat;
 
@@ -971,7 +930,7 @@ static int mipi_dbi_debugfs_show(struct seq_file *m, void *arg)
 		seq_bit_reserved(m, stat, 4, 0);
 	}
 
-	if (mipi_dbi_debugfs_readreg(m, reg, MIPI_DCS_GET_POWER_MODE,
+	if (mipi_dbi_debugfs_readreg(m, mipi, MIPI_DCS_GET_POWER_MODE,
 				     "Power mode", &val8, 1)) {
 		seq_bit_text(m, "Booster", val8, 7, "On", "Off or faulty");
 		seq_bit_on_off(m, "Idle Mode", val8, 6);
@@ -982,7 +941,7 @@ static int mipi_dbi_debugfs_show(struct seq_file *m, void *arg)
 		seq_bit_reserved(m, val8, 1, 0);
 	}
 
-	if (mipi_dbi_debugfs_readreg(m, reg, MIPI_DCS_GET_ADDRESS_MODE,
+	if (mipi_dbi_debugfs_readreg(m, mipi, MIPI_DCS_GET_ADDRESS_MODE,
 				     "Address mode", &val8, 1)) {
 		seq_bit_text(m, "Page Address Order:", val8, 7,
 			     "Bottom to Top", "Top to Bottom");
@@ -998,7 +957,7 @@ static int mipi_dbi_debugfs_show(struct seq_file *m, void *arg)
 		seq_bit_reserved(m, val8, 1, 0);
 	}
 
-	if (mipi_dbi_debugfs_readreg(m, reg, MIPI_DCS_GET_PIXEL_FORMAT,
+	if (mipi_dbi_debugfs_readreg(m, mipi, MIPI_DCS_GET_PIXEL_FORMAT,
 				     "Pixel format", &val8, 1)) {
 		u8 dpi = (val8 >> 4) & 0x7;
 		u8 dbi = val8 & 0x7;
@@ -1011,7 +970,7 @@ static int mipi_dbi_debugfs_show(struct seq_file *m, void *arg)
 			   mipi_pixel_format_str(dbi));
 	}
 
-	if (mipi_dbi_debugfs_readreg(m, reg, MIPI_DCS_GET_DISPLAY_MODE,
+	if (mipi_dbi_debugfs_readreg(m, mipi, MIPI_DCS_GET_DISPLAY_MODE,
 				     "Image Mode", &val8, 1)) {
 		u8 gc = val8 & 0x7;
 
@@ -1026,7 +985,7 @@ static int mipi_dbi_debugfs_show(struct seq_file *m, void *arg)
 			seq_puts(m, "Reserved\n");
 	}
 
-	if (mipi_dbi_debugfs_readreg(m, reg, MIPI_DCS_GET_SIGNAL_MODE,
+	if (mipi_dbi_debugfs_readreg(m, mipi, MIPI_DCS_GET_SIGNAL_MODE,
 				     "Signal Mode", &val8, 1)) {
 		seq_bit_on_off(m, "Tearing Effect Line:", val8, 7);
 		seq_bit_text(m, "Tearing Effect Line Output Mode: Mode",
@@ -1034,7 +993,7 @@ static int mipi_dbi_debugfs_show(struct seq_file *m, void *arg)
 		seq_bit_reserved(m, val8, 5, 0);
 	}
 
-	if (mipi_dbi_debugfs_readreg(m, reg, MIPI_DCS_GET_DIAGNOSTIC_RESULT,
+	if (mipi_dbi_debugfs_readreg(m, mipi, MIPI_DCS_GET_DIAGNOSTIC_RESULT,
 				     "Diagnostic result", &val8, 1)) {
 		seq_bit_text(m, "Register Loading Detection:", val8, 7,
 			     "OK", "Fault or reset");

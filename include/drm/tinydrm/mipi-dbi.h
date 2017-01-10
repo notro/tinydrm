@@ -24,7 +24,11 @@ struct regulator;
 /**
  * mipi_dbi - MIPI DBI controller
  * @tinydrm: tinydrm base
- * @reg: register map
+ * @spi: SPI device
+ * @command: Bus specific callback executing commands.
+ * @read_commands: Array of read commands terminated by a zero entry.
+ * @dc: Optional D/C gpio.
+ * @write_only: Controller is write only.
  * @tx_buf: Buffer used for transfer (copy clip rect area)
  * @swap_bytes: Swap bytes in buffer before transfer
  * @reset: Optional reset gpio
@@ -35,7 +39,11 @@ struct regulator;
  */
 struct mipi_dbi {
 	struct tinydrm_device tinydrm;
-	struct regmap *reg;
+	struct spi_device *spi;
+	int (*command)(struct mipi_dbi *mipi, u8 cmd, u8 *parameters, size_t num);
+	const u8 *read_commands;
+	struct gpio_desc *dc;
+	bool write_only;
 	u16 *tx_buf;
 	bool swap_bytes;
 	struct gpio_desc *reset;
@@ -63,21 +71,42 @@ int mipi_dbi_init(struct device *dev, struct mipi_dbi *mipi,
 		  const struct drm_display_mode *mode, unsigned int rotation);
 void mipi_dbi_pipe_disable(struct drm_simple_display_pipe *pipe);
 void mipi_dbi_hw_reset(struct mipi_dbi *mipi);
-bool mipi_dbi_display_is_on(struct regmap *reg);
+bool mipi_dbi_display_is_on(struct mipi_dbi *mipi);
 
 /**
- * mipi_dbi_write - Write command and optional parameter(s)
+ * mipi_dbi_command - MIPI DCS command with optional parameter(s)
+ * @mipi: MIPI structure
  * @cmd: Command
  * @...: Parameters
+ *
+ * Send MIPI DCS command to the controller. Use mipi_dbi_command_buf() for get/read.
+ *
+ * Returns:
+ * Zero on success, negative error code on failure.
  */
-#define mipi_dbi_write(reg, cmd, seq...) \
+#define mipi_dbi_command(mipi, cmd, seq...) \
 ({ \
 	u8 d[] = { seq }; \
-	mipi_dbi_write_buf(reg, cmd, d, ARRAY_SIZE(d)); \
+	mipi->command(mipi, cmd, d, ARRAY_SIZE(d)); \
 })
 
-int mipi_dbi_write_buf(struct regmap *reg, unsigned int cmd,
-		       const u8 *parameters, size_t num);
+/**
+ * mipi_dbi_command_buf - MIPI DCS command with parameter(s) in an array
+ * @mipi: MIPI structure
+ * @cmd: Command
+ * @data: Parameter buffer
+ * @len: Buffer length
+ *
+ * This function should be used for read commands.
+ *
+ * Returns:
+ * Zero on success, negative error code on failure.
+ */
+static inline int mipi_dbi_command_buf(struct mipi_dbi *mipi, u8 cmd,
+				       u8 *data, size_t len)
+{
+	return mipi->command(mipi, cmd, data, len);
+}
 
 #ifdef CONFIG_DEBUG_FS
 int mipi_dbi_debugfs_init(struct drm_minor *minor);

@@ -157,7 +157,7 @@ void _tinydrm_dbg_spi_message(struct spi_device *spi, struct spi_message *m)
 			tinydrm_hexdump(linebuf, ARRAY_SIZE(linebuf),
 					tmp->tx_buf, tmp->len,
 					tmp->bits_per_word, 16);
-			printk(KERN_DEBUG "    tr[%i]: bpw=%i, dma=%u, len=%u, tx_buf(%p)=[%s%s]\n",
+			printk(KERN_DEBUG "    tr(%i): bpw=%i, dma=%u, len=%u, tx_buf(%p)=[%s%s]\n",
 			       i, tmp->bits_per_word, dma, tmp->len,
 			       tmp->tx_buf, linebuf,
 			       tmp->len > 16 ? " ..." : "");
@@ -166,7 +166,7 @@ void _tinydrm_dbg_spi_message(struct spi_device *spi, struct spi_message *m)
 			tinydrm_hexdump(linebuf, ARRAY_SIZE(linebuf),
 					tmp->rx_buf, tmp->len,
 					tmp->bits_per_word, 16);
-			printk(KERN_DEBUG "    tr[%i]: bpw=%i,        len=%u, rx_buf(%p)=[%s%s]\n",
+			printk(KERN_DEBUG "    tr(%i): bpw=%i,        len=%u, rx_buf(%p)=[%s%s]\n",
 			       i, tmp->bits_per_word, tmp->len, tmp->rx_buf,
 			       linebuf, tmp->len > 16 ? " ..." : "");
 		}
