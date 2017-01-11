@@ -16,11 +16,9 @@
 #include <drm/tinydrm/mipi-dbi.h>
 #include <drm/tinydrm/tinydrm.h>
 #include <drm/tinydrm/tinydrm-helpers.h>
-#include <drm/tinydrm/tinydrm-regmap.h>
 #include <linux/dma-buf.h>
 #include <linux/gpio/consumer.h>
 #include <linux/module.h>
-#include <linux/regmap.h>
 #include <linux/regulator/consumer.h>
 #include <linux/spi/spi.h>
 #include <linux/swab.h>
@@ -67,11 +65,11 @@
 #define MIPI_DBI_DEBUG_COMMAND(cmd, data, len) \
 ({ \
 	if (!len) \
-		DRM_DEBUG_DRIVER("cmd=0x%02x\n", cmd); \
+		DRM_DEBUG_DRIVER("cmd=%02x\n", cmd); \
 	else if (len <= 32) \
-		DRM_DEBUG_DRIVER("cmd=0x%02x, par=%*ph\n", cmd, len, data); \
+		DRM_DEBUG_DRIVER("cmd=%02x, par=%*ph\n", cmd, len, data); \
 	else \
-		DRM_DEBUG_DRIVER("cmd=0x%02x, len=%zu\n", cmd, len); \
+		DRM_DEBUG_DRIVER("cmd=%02x, len=%zu\n", cmd, len); \
 })
 
 static const u8 mipi_dbi_dcs_read_commands[] = {
@@ -115,19 +113,6 @@ static bool mipi_dbi_command_is_read(struct mipi_dbi *mipi, u8 cmd)
 	return false;
 }
 
-static size_t mipi_dbi_spi_clamp_size(struct spi_device *spi, size_t size)
-{
-	size_t max_spi, clamped;
-
-	max_spi = min(spi_max_transfer_size(spi), spi->master->max_dma_len);
-	if (!size)
-		size = max_spi;
-	clamped = clamp_val(size, 4, max_spi);
-	clamped &= ~0x3;
-
-	return clamped;
-}
-
 /*
  * MIPI DBI Type C Option 1
  *
@@ -157,7 +142,7 @@ static int mipi_dbi_spi1e_transfer(struct mipi_dbi *mipi, int dc,
 	void *buf_dc;
 	const u8 *src = buf;
 
-	max_chunk = mipi_dbi_spi_clamp_size(spi, max_chunk);
+	max_chunk = tinydrm_spi_max_transfer_size(spi, max_chunk);
 	if (max_chunk < 9)
 		return -EINVAL;
 
@@ -270,7 +255,7 @@ static int mipi_dbi_spi1_transfer(struct mipi_dbi *mipi, int dc,
 	if (!tinydrm_spi_bpw_supported(spi, 9))
 		return mipi_dbi_spi1e_transfer(mipi, dc, buf, len, max_chunk);
 
-	max_chunk = mipi_dbi_spi_clamp_size(spi, max_chunk);
+	max_chunk = tinydrm_spi_max_transfer_size(spi, max_chunk);
 
 	if (drm_debug & DRM_UT_CORE)
 		pr_debug("[drm:%s] dc=%d, max_chunk=%zu, transfers:\n",
@@ -438,8 +423,10 @@ static int mipi_dbi_typec3_command(struct mipi_dbi *mipi, u8 cmd,
  * @rotation: Initial rotation in degrees Counter Clock Wise
  *
  * This function initializes a &mipi_dbi structure using mipi_dbi_init()
+
  * and intitalizes a &regmap that can be used to send commands to
  * the controller. mipi_dbi_write() can be used to send commands.
+
  * If @dc is set, a Type C Option 3 interface is assumed, if not
  * Type C Option 1.
  *
@@ -472,7 +459,7 @@ int mipi_dbi_spi_init(struct spi_device *spi, struct mipi_dbi *mipi,
 		mipi->command = mipi_dbi_typec1_command;
 	}
 
-	if (tinydrm_get_machine_endian() == REGMAP_ENDIAN_LITTLE &&
+	if (tinydrm_machine_little_endian() &&
 	    !tinydrm_spi_bpw_supported(spi, 16))
 		mipi->swap_bytes = true;
 
