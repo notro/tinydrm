@@ -397,34 +397,33 @@ EXPORT_SYMBOL(_tinydrm_dbg_spi_message);
  * @bpw: Bits per word
  * @buf: Buffer to transfer
  * @len: Buffer length
- * @swap_buf: Swap buffer used on Little Endian when 16 bpw is not supported
- * @max_chunk: Break up buffer into chunks of this size (optional)
  *
- * This SPI transfer helper breaks up the transfer of @buf into @max_chunk
- * chunks. If the machine is Little Endian and the SPI master driver doesn't
- * support @bpw=16, it swaps the bytes using @swap_buf and does a 8-bit
- * transfer. If @header is set, it is prepended to each SPI message.
+ * This SPI transfer helper breaks up the transfer of @buf into chunks which
+ * the SPI master driver can handle. If the machine is Little Endian and the
+ * SPI master driver doesn't support @bpw=16, it swaps the bytes and does a
+ * 8-bit transfer. If @header is set, it is prepended to each SPI message.
  *
  * Returns:
  * Zero on success, negative error code on failure.
  */
 int tinydrm_spi_transfer(struct spi_device *spi, u32 speed_hz,
 			 struct spi_transfer *header, u8 bpw, const void *buf,
-			 size_t len, u16 *swap_buf, size_t max_chunk)
+			 size_t len)
 {
 	struct spi_transfer tr = {
 		.bits_per_word = bpw,
 		.speed_hz = speed_hz,
 	};
 	struct spi_message m;
-	bool swap = false;
+	u16 *swap_buf = NULL;
+	size_t max_chunk;
 	size_t chunk;
 	int ret = 0;
 
 	if (WARN_ON_ONCE(bpw != 8 && bpw != 16))
 		return -EINVAL;
 
-	max_chunk = tinydrm_spi_max_transfer_size(spi, max_chunk);
+	max_chunk = tinydrm_spi_max_transfer_size(spi, 0);
 
 	if (drm_debug & DRM_UT_DRIVER)
 		pr_debug("[drm:%s] bpw=%u, max_chunk=%zu, transfers:\n",
@@ -433,10 +432,9 @@ int tinydrm_spi_transfer(struct spi_device *spi, u32 speed_hz,
 	if (bpw == 16 && !tinydrm_spi_bpw_supported(spi, 16)) {
 		tr.bits_per_word = 8;
 		if (tinydrm_machine_little_endian()) {
+			swap_buf = kmalloc(min(len, max_chunk), GFP_KERNEL);
 			if (!swap_buf)
-				return -EINVAL;
-
-			swap = true;
+				return -ENOMEM;
 		}
 	}
 
@@ -451,7 +449,7 @@ int tinydrm_spi_transfer(struct spi_device *spi, u32 speed_hz,
 		tr.tx_buf = buf;
 		tr.len = chunk;
 
-		if (swap) {
+		if (swap_buf) {
 			const u16 *buf16 = buf;
 			unsigned int i;
 

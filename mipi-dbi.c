@@ -146,7 +146,7 @@ static int mipi_dbi_spi1e_transfer(struct mipi_dbi *mipi, int dc,
 	if (max_chunk < 9)
 		return -EINVAL;
 
-	if (drm_debug & DRM_UT_CORE)
+	if (drm_debug & DRM_UT_DRIVER)
 		pr_debug("[drm:%s] dc=%d, max_chunk=%zu, transfers:\n",
 			 __func__, dc, max_chunk);
 
@@ -257,7 +257,7 @@ static int mipi_dbi_spi1_transfer(struct mipi_dbi *mipi, int dc,
 
 	max_chunk = tinydrm_spi_max_transfer_size(spi, max_chunk);
 
-	if (drm_debug & DRM_UT_CORE)
+	if (drm_debug & DRM_UT_DRIVER)
 		pr_debug("[drm:%s] dc=%d, max_chunk=%zu, transfers:\n",
 			 __func__, dc, max_chunk);
 
@@ -399,7 +399,7 @@ static int mipi_dbi_typec3_command(struct mipi_dbi *mipi, u8 cmd,
 	MIPI_DBI_DEBUG_COMMAND(cmd, par, num);
 
 	gpiod_set_value_cansleep(mipi->dc, 0);
-	ret = tinydrm_spi_transfer(spi, 0, NULL, 8, &cmd, 1, NULL, 0);
+	ret = tinydrm_spi_transfer(spi, 0, NULL, 8, &cmd, 1);
 	if (ret || !num)
 		return ret;
 
@@ -408,7 +408,7 @@ static int mipi_dbi_typec3_command(struct mipi_dbi *mipi, u8 cmd,
 
 	gpiod_set_value_cansleep(mipi->dc, 1);
 
-	return tinydrm_spi_transfer(spi, 0, NULL, bpw, par, num, NULL, 0);
+	return tinydrm_spi_transfer(spi, 0, NULL, bpw, par, num);
 }
 
 /**
@@ -422,6 +422,7 @@ static int mipi_dbi_typec3_command(struct mipi_dbi *mipi, u8 cmd,
  * @mode: Display mode
  * @rotation: Initial rotation in degrees Counter Clock Wise
  *
+FIXME XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
  * This function initializes a &mipi_dbi structure using mipi_dbi_init()
 
  * and intitalizes a &regmap that can be used to send commands to
