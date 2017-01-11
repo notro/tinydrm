@@ -584,22 +584,18 @@ static const struct drm_framebuffer_funcs mipi_dbi_fb_funcs = {
 static void mipi_dbi_blank(struct mipi_dbi *mipi)
 {
 	struct drm_device *drm = &mipi->tinydrm.drm;
-	int height = drm->mode_config.min_height;
-	int width = drm->mode_config.min_width;
-	unsigned int num_pixels = width * height;
-	void *buf;
+	u16 height = drm->mode_config.min_height;
+	u16 width = drm->mode_config.min_width;
+	size_t len = width * height * 2;
 
-	buf = kzalloc(num_pixels * 2, GFP_KERNEL);
-	if (!buf)
-		return;
+	memset(mipi->tx_buf, 0, len);
 
 	mipi_dbi_command(mipi, MIPI_DCS_SET_COLUMN_ADDRESS, 0, 0,
 			 (width >> 8) & 0xFF, (width - 1) & 0xFF);
 	mipi_dbi_command(mipi, MIPI_DCS_SET_PAGE_ADDRESS, 0, 0,
 			 (height >> 8) & 0xFF, (height - 1) & 0xFF);
-	mipi_dbi_command_buf(mipi, MIPI_DCS_WRITE_MEMORY_START, buf,
-			     num_pixels * 2);
-	kfree(buf);
+	mipi_dbi_command_buf(mipi, MIPI_DCS_WRITE_MEMORY_START,
+			     (u8 *)mipi->tx_buf, len);
 }
 
 /**
