@@ -624,26 +624,9 @@ void mipi_dbi_pipe_disable(struct drm_simple_display_pipe *pipe)
 	}
 	tdev->enabled = false;
 
-	if (tdev->prepared) {
-		if (mipi->backlight) {
-			/*
-			 * This usually turns the pixels off letting backlight
-			 * shine through, so only do it if we control backlight
-			 *
-			 * TODO
-			 * Maybe just leave the display prepared. Very little
-			 * power savings in doing this. And it would speed up
-			 * re-enabling the pipeline (100-500ms).
-			 */
-			mipi_dbi_command(mipi, MIPI_DCS_SET_DISPLAY_OFF);
-			mipi_dbi_command(mipi, MIPI_DCS_ENTER_SLEEP_MODE);
-			tdev->prepared = false;
-		}
-
-		if (mipi->regulator) {
-			regulator_disable(mipi->regulator);
-			tdev->prepared = false;
-		}
+	if (tdev->prepared && mipi->regulator) {
+		regulator_disable(mipi->regulator);
+		tdev->prepared = false;
 	}
 
 	mutex_unlock(&tdev->dev_lock);
