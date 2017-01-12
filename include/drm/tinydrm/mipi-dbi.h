@@ -30,6 +30,8 @@ struct regulator;
  * @dc: Optional D/C gpio.
  * @write_only: Controller is write only.
  * @tx_buf: Buffer used for transfer (copy clip rect area)
+ * @tx_buf9: Buffer used for Option 1 9-bit conversion
+ * @tx_buf9_len: Size of tx_buf9.
  * @swap_bytes: Swap bytes in buffer before transfer
  * @reset: Optional reset gpio
  * @rotation: initial rotation in degress Counter Clock Wise
@@ -45,6 +47,8 @@ struct mipi_dbi {
 	struct gpio_desc *dc;
 	bool write_only;
 	u16 *tx_buf;
+	void *tx_buf9;
+	size_t tx_buf9_len;
 	bool swap_bytes;
 	struct gpio_desc *reset;
 	unsigned int rotation;
