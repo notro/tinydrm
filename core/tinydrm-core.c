@@ -183,8 +183,8 @@ static void tinydrm_fini(struct tinydrm_device *tdev)
 	DRM_DEBUG_KMS("\n");
 
 	drm_mode_config_cleanup(drm);
-	drm_dev_unref(drm);
 	mutex_destroy(&tdev->dev_lock);
+	drm_dev_unref(drm);
 }
 
 static void devm_tinydrm_release(struct device *dev, void *res)

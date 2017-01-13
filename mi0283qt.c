@@ -209,7 +209,6 @@ static struct drm_driver mi0283qt_driver = {
 	TINYDRM_GEM_DRIVER_OPS,
 	.lastclose		= tinydrm_lastclose,
 	.debugfs_init		= mipi_dbi_debugfs_init,
-	.debugfs_cleanup	= mipi_dbi_debugfs_cleanup,
 	.name			= "mi0283qt",
 	.desc			= "Multi-Inno MI0283QT",
 	.date			= "20160614",
