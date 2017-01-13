@@ -114,6 +114,19 @@ static bool mipi_dbi_command_is_read(struct mipi_dbi *mipi, u8 cmd)
 }
 
 /*
+ * Many controllers have a max speed of 10MHz, but can be pushed way beyond
+ * that. Increase reliability by running pixel data at max speed and the rest
+ * at 10MHz, preventing transfer glitches from messsing up the init settings.
+ */
+static u32 mipi_dbi_spi_cmd_max_speed(struct spi_device *spi, size_t len)
+{
+	if (len > 64)
+		return 0; /* use default */
+
+	return min_t(u32, 10000000, spi->max_speed_hz);
+}
+
+/*
  * MIPI DBI Type C Option 1
  *
  * If the SPI controller doesn't have 9 bits per word support,
@@ -151,6 +164,7 @@ static int mipi_dbi_spi1e_transfer(struct mipi_dbi *mipi, int dc,
 		pr_debug("[drm:%s] dc=%d, max_chunk=%zu, transfers:\n",
 			 __func__, dc, max_chunk);
 
+	tr.speed_hz = mipi_dbi_spi_cmd_max_speed(spi, len);
 	spi_message_init_with_transfers(&m, &tr, 1);
 
 	if (!dc) {
@@ -269,6 +283,7 @@ static int mipi_dbi_spi1_transfer(struct mipi_dbi *mipi, int dc,
 	if (!tinydrm_spi_bpw_supported(spi, 9))
 		return mipi_dbi_spi1e_transfer(mipi, dc, buf, len, bpw);
 
+	tr.speed_hz = mipi_dbi_spi_cmd_max_speed(spi, len);
 	max_chunk = mipi->tx_buf9_len;
 	dst16 = mipi->tx_buf9;
 
@@ -408,6 +423,7 @@ static int mipi_dbi_typec3_command(struct mipi_dbi *mipi, u8 cmd,
 {
 	struct spi_device *spi = mipi->spi;
 	unsigned int bpw = 8;
+	u32 speed_hz;
 	int ret;
 
 	if (mipi_dbi_command_is_read(mipi, cmd))
@@ -416,7 +432,8 @@ static int mipi_dbi_typec3_command(struct mipi_dbi *mipi, u8 cmd,
 	MIPI_DBI_DEBUG_COMMAND(cmd, par, num);
 
 	gpiod_set_value_cansleep(mipi->dc, 0);
-	ret = tinydrm_spi_transfer(spi, 0, NULL, 8, &cmd, 1);
+	speed_hz = mipi_dbi_spi_cmd_max_speed(spi, 1);
+	ret = tinydrm_spi_transfer(spi, speed_hz, NULL, 8, &cmd, 1);
 	if (ret || !num)
 		return ret;
 
@@ -424,8 +441,9 @@ static int mipi_dbi_typec3_command(struct mipi_dbi *mipi, u8 cmd,
 		bpw = 16;
 
 	gpiod_set_value_cansleep(mipi->dc, 1);
+	speed_hz = mipi_dbi_spi_cmd_max_speed(spi, num);
 
-	return tinydrm_spi_transfer(spi, 0, NULL, bpw, par, num);
+	return tinydrm_spi_transfer(spi, speed_hz, NULL, bpw, par, num);
 }
 
 /**

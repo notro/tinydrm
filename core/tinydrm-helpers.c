@@ -403,17 +403,22 @@ bool tinydrm_spi_bpw_supported(struct spi_device *spi, u8 bpw)
 }
 EXPORT_SYMBOL(tinydrm_spi_bpw_supported);
 
-static void tinydrm_dbg_spi_print_buf(const void *buf, size_t len,
-				      size_t bpw, int index, bool tx)
+static void
+tinydrm_dbg_spi_print(struct spi_device *spi, struct spi_transfer *tr,
+		      const void *buf, int idx, bool tx)
 {
+	u32 speed_hz = tr->speed_hz ? tr->speed_hz : spi->max_speed_hz;
 	char linebuf[3 * 32];
 
-	hex_dump_to_buffer(buf, len, 16, DIV_ROUND_UP(bpw, 8),
+	hex_dump_to_buffer(buf, tr->len, 16,
+			   DIV_ROUND_UP(tr->bits_per_word, 8),
 			   linebuf, sizeof(linebuf), false);
 
-	printk(KERN_DEBUG "    tr(%i): bpw=%i, len=%u, %s_buf=[%s%s]\n",
-	       index, bpw, len, tx ? "tx" : "rx", linebuf,
-	       len > 16 ? " ..." : "");
+	printk(KERN_DEBUG
+	       "    tr(%i): speed=%u%s, bpw=%i, len=%u, %s_buf=[%s%s]\n", idx,
+	       speed_hz > 1000000 ? speed_hz / 1000000 : speed_hz / 1000,
+	       speed_hz > 1000000 ? "MHz" : "kHz", tr->bits_per_word, tr->len,
+	       tx ? "tx" : "rx", linebuf, tr->len > 16 ? " ..." : "");
 }
 
 /* called through tinydrm_dbg_spi_message() */
@@ -427,11 +432,9 @@ void _tinydrm_dbg_spi_message(struct spi_device *spi, struct spi_message *m)
 		tmp = list_entry(pos, struct spi_transfer, transfer_list);
 
 		if (tmp->tx_buf)
-			tinydrm_dbg_spi_print_buf(tmp->tx_buf, tmp->len,
-						  tmp->bits_per_word, i, true);
+			tinydrm_dbg_spi_print(spi, tmp, tmp->tx_buf, i, true);
 		if (tmp->rx_buf)
-			tinydrm_dbg_spi_print_buf(tmp->rx_buf, tmp->len,
-						  tmp->bits_per_word, i, false);
+			tinydrm_dbg_spi_print(spi, tmp, tmp->rx_buf, i, false);
 		i++;
 	}
 }
