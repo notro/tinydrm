@@ -114,10 +114,8 @@ static inline int mipi_dbi_command_buf(struct mipi_dbi *mipi, u8 cmd,
 
 #ifdef CONFIG_DEBUG_FS
 int mipi_dbi_debugfs_init(struct drm_minor *minor);
-void mipi_dbi_debugfs_cleanup(struct drm_minor *minor);
 #else
 #define mipi_dbi_debugfs_init		NULL
-#define mipi_dbi_debugfs_cleanup	NULL
 #endif
 
 #endif /* __LINUX_MIPI_DBI_H */

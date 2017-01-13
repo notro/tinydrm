@@ -116,7 +116,7 @@ static bool mipi_dbi_command_is_read(struct mipi_dbi *mipi, u8 cmd)
 /*
  * Many controllers have a max speed of 10MHz, but can be pushed way beyond
  * that. Increase reliability by running pixel data at max speed and the rest
- * at 10MHz, preventing transfer glitches from messsing up the init settings.
+ * at 10MHz, preventing transfer glitches from messing up the init settings.
  */
 static u32 mipi_dbi_spi_cmd_max_speed(struct spi_device *spi, size_t len)
 {
@@ -1042,19 +1042,6 @@ int mipi_dbi_debugfs_init(struct drm_minor *minor)
 					minor->debugfs_root, minor);
 }
 EXPORT_SYMBOL(mipi_dbi_debugfs_init);
-
-/**
- * mipi_dbi_debugfs_cleanup - Cleanup debugfs entries
- * @minor: DRM minor
- *
- * Drivers can use this as their &drm_driver->debugfs_cleanup callback.
- */
-void mipi_dbi_debugfs_cleanup(struct drm_minor *minor)
-{
-	drm_debugfs_remove_files(mipi_dbi_debugfs_list,
-				 ARRAY_SIZE(mipi_dbi_debugfs_list), minor);
-}
-EXPORT_SYMBOL(mipi_dbi_debugfs_cleanup);
 
 #endif
 
