@@ -232,7 +232,13 @@ static int mi0283qt_probe(struct spi_device *spi)
 			dev_warn(dev, "Failed to set dma mask %d\n", ret);
 	}
 
-	mipi = devm_kzalloc(dev, sizeof(*mipi), GFP_KERNEL);
+	/*
+	 * FIXME
+	 * This is freed when drm ref drops to zero since it embeds drm_device.
+	 * Is there a way to avoid that? I want to use devm_kzalloc() here,
+	 * it simplifies the error handling, but I do want to embed...
+	 */
+	mipi = kzalloc(sizeof(*mipi), GFP_KERNEL);
 	if (!mipi)
 		return -ENOMEM;
 
