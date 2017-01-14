@@ -39,7 +39,7 @@
  */
 void tinydrm_lastclose(struct drm_device *drm)
 {
-	struct tinydrm_device *tdev = drm_to_tinydrm(drm);
+	struct tinydrm_device *tdev = drm->dev_private;
 
 	DRM_DEBUG_KMS("\n");
 	drm_fbdev_cma_restore_mode(tdev->fbdev_cma);
@@ -159,17 +159,23 @@ static int tinydrm_init(struct device *parent, struct tinydrm_device *tdev,
 			const struct drm_framebuffer_funcs *fb_funcs,
 			struct drm_driver *driver)
 {
-	struct drm_device *drm = &tdev->drm;
-	int ret;
+	struct drm_device *drm;
 
 	INIT_WORK(&tdev->dirty_work, tinydrm_dirty_work);
 	mutex_init(&tdev->dev_lock);
 	tdev->fb_funcs = fb_funcs;
 
-	ret = drm_dev_init(drm, driver, parent);
-	if (ret)
-		return ret;
+	/*
+	 * We don't embed drm_device, because that prevent us from using
+	 * devm_kzalloc() on tinydrm_device in the driver since drm_dev_unref()
+	 * frees the structure. The devm_ functions gives easy error handling.
+	 */
+	drm = drm_dev_alloc(driver, parent);
+	if (IS_ERR(drm))
+		return PTR_ERR(drm);
 
+	tdev->drm = drm;
+	drm->dev_private = tdev;
 	drm_mode_config_init(drm);
 	drm->mode_config.funcs = &tinydrm_mode_config_funcs;
 
@@ -178,13 +184,12 @@ static int tinydrm_init(struct device *parent, struct tinydrm_device *tdev,
 
 static void tinydrm_fini(struct tinydrm_device *tdev)
 {
-	struct drm_device *drm = &tdev->drm;
-
 	DRM_DEBUG_KMS("\n");
 
-	drm_mode_config_cleanup(drm);
+	drm_mode_config_cleanup(tdev->drm);
 	mutex_destroy(&tdev->dev_lock);
-	drm_dev_unref(drm);
+	tdev->drm->dev_private = NULL;
+	drm_dev_unref(tdev->drm);
 }
 
 static void devm_tinydrm_release(void *data)
@@ -228,10 +233,9 @@ EXPORT_SYMBOL(devm_tinydrm_init);
 
 static int tinydrm_register(struct tinydrm_device *tdev)
 {
-	struct drm_device *drm = &tdev->drm;
 	int ret;
 
-	ret = drm_dev_register(drm, 0);
+	ret = drm_dev_register(tdev->drm, 0);
 	if (ret)
 		return ret;
 
@@ -244,14 +248,12 @@ static int tinydrm_register(struct tinydrm_device *tdev)
 
 static void tinydrm_unregister(struct tinydrm_device *tdev)
 {
-	struct drm_device *drm = &tdev->drm;
-
 	DRM_DEBUG_KMS("\n");
 
-	drm_crtc_force_disable_all(drm);
+	drm_crtc_force_disable_all(tdev->drm);
 	cancel_work_sync(&tdev->dirty_work);
 	tinydrm_fbdev_fini(tdev);
-	drm_dev_unregister(drm);
+	drm_dev_unregister(tdev->drm);
 }
 
 static void devm_tinydrm_register_release(void *data)
@@ -272,7 +274,7 @@ static void devm_tinydrm_register_release(void *data)
  */
 int devm_tinydrm_register(struct tinydrm_device *tdev)
 {
-	struct device *dev = tdev->drm.dev;
+	struct device *dev = tdev->drm->dev;
 	int ret;
 
 	ret = tinydrm_register(tdev);
@@ -297,9 +299,7 @@ EXPORT_SYMBOL(devm_tinydrm_register);
  */
 void tinydrm_shutdown(struct tinydrm_device *tdev)
 {
-	struct drm_device *drm = &tdev->drm;
-
-	drm_crtc_force_disable_all(drm);
+	drm_crtc_force_disable_all(tdev->drm);
 }
 EXPORT_SYMBOL(tinydrm_shutdown);
 
@@ -316,7 +316,6 @@ EXPORT_SYMBOL(tinydrm_shutdown);
  */
 int tinydrm_suspend(struct tinydrm_device *tdev)
 {
-	struct drm_device *drm = &tdev->drm;
 	struct drm_atomic_state *state;
 
 	if (tdev->suspend_state) {
@@ -325,7 +324,7 @@ int tinydrm_suspend(struct tinydrm_device *tdev)
 	}
 
 	drm_fbdev_cma_set_suspend_unlocked(tdev->fbdev_cma, 1);
-	state = drm_atomic_helper_suspend(drm);
+	state = drm_atomic_helper_suspend(tdev->drm);
 	if (IS_ERR(state)) {
 		drm_fbdev_cma_set_suspend_unlocked(tdev->fbdev_cma, 0);
 		return PTR_ERR(state);
@@ -350,7 +349,6 @@ EXPORT_SYMBOL(tinydrm_suspend);
 int tinydrm_resume(struct tinydrm_device *tdev)
 {
 	struct drm_atomic_state *state = tdev->suspend_state;
-	struct drm_device *drm = &tdev->drm;
 	int ret;
 
 	if (!state) {
@@ -360,7 +358,7 @@ int tinydrm_resume(struct tinydrm_device *tdev)
 
 	tdev->suspend_state = NULL;
 
-	ret = drm_atomic_helper_resume(drm, state);
+	ret = drm_atomic_helper_resume(tdev->drm, state);
 	if (ret) {
 		DRM_ERROR("Error resuming state: %d\n", ret);
 		return ret;

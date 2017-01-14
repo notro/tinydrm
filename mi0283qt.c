@@ -78,7 +78,7 @@ static void mi0283qt_enable(struct drm_simple_display_pipe *pipe,
 {
 	struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
 	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
-	struct device *dev = tdev->drm.dev;
+	struct device *dev = tdev->drm->dev;
 	u8 addr_mode;
 	int ret;
 
@@ -232,13 +232,7 @@ static int mi0283qt_probe(struct spi_device *spi)
 			dev_warn(dev, "Failed to set dma mask %d\n", ret);
 	}
 
-	/*
-	 * FIXME
-	 * This is freed when drm ref drops to zero since it embeds drm_device.
-	 * Is there a way to avoid that? I want to use devm_kzalloc() here,
-	 * it simplifies the error handling, but I do want to embed...
-	 */
-	mipi = kzalloc(sizeof(*mipi), GFP_KERNEL);
+	mipi = devm_kzalloc(dev, sizeof(*mipi), GFP_KERNEL);
 	if (!mipi)
 		return -ENOMEM;
 
@@ -286,9 +280,9 @@ static int mi0283qt_probe(struct spi_device *spi)
 	spi_set_drvdata(spi, tdev);
 
 	DRM_DEBUG_DRIVER("Initialized %s:%s @%uMHz on minor %d\n",
-			 tdev->drm.driver->name, dev_name(dev),
+			 tdev->drm->driver->name, dev_name(dev),
 			 spi->max_speed_hz / 1000000,
-			 tdev->drm.primary->index);
+			 tdev->drm->primary->index);
 
 	return 0;
 }

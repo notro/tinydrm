@@ -14,8 +14,6 @@
 #include <drm/drm_gem_cma_helper.h>
 #include <drm/drm_simple_kms_helper.h>
 
-struct tinydrm_debugfs_dirty;
-
 /**
  * struct tinydrm_device - tinydrm device
  * @drm: DRM device
@@ -29,10 +27,9 @@ struct tinydrm_debugfs_dirty;
  * @fbdev_helper: fbdev helper (from the private fbdev CMA structure).
  * @fbdev_used: fbdev has actually been used
  * @suspend_state: atomic state when suspended
- * @debugfs_dirty: debugfs dirty file control structure
  */
 struct tinydrm_device {
-	struct drm_device drm;
+	struct drm_device *drm;
 	struct drm_simple_display_pipe pipe;
 	struct drm_pending_vblank_event *event;
 	struct work_struct dirty_work;
@@ -41,16 +38,9 @@ struct tinydrm_device {
 	bool enabled;
 	struct drm_fbdev_cma *fbdev_cma;
 	struct drm_atomic_state *suspend_state;
-	struct tinydrm_debugfs_dirty *debugfs_dirty;
 /* private: */
 	const struct drm_framebuffer_funcs *fb_funcs;
 };
-
-static inline struct tinydrm_device *
-drm_to_tinydrm(struct drm_device *drm)
-{
-	return container_of(drm, struct tinydrm_device, drm);
-}
 
 static inline struct tinydrm_device *
 pipe_to_tinydrm(struct drm_simple_display_pipe *pipe)

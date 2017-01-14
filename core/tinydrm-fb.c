@@ -42,7 +42,7 @@
 bool tinydrm_check_dirty(struct drm_framebuffer *fb,
 			 struct drm_clip_rect **clips, unsigned int *num_clips)
 {
-	struct tinydrm_device *tdev = drm_to_tinydrm(fb->dev);
+	struct tinydrm_device *tdev = fb->dev->dev_private;
 
 	WARN_ON_ONCE(!mutex_is_locked(&tdev->dev_lock));
 
@@ -77,7 +77,7 @@ struct drm_framebuffer *
 tinydrm_fb_create(struct drm_device *drm, struct drm_file *file_priv,
 		  const struct drm_mode_fb_cmd2 *mode_cmd)
 {
-	struct tinydrm_device *tdev = drm_to_tinydrm(drm);
+	struct tinydrm_device *tdev = drm->dev_private;
 
 	return drm_fb_cma_create_with_funcs(drm, file_priv, mode_cmd,
 					    tdev->fb_funcs);
@@ -107,7 +107,7 @@ EXPORT_SYMBOL(tinydrm_fb_create);
  */
 int tinydrm_fbdev_init(struct tinydrm_device *tdev)
 {
-	struct drm_device *drm = &tdev->drm;
+	struct drm_device *drm = tdev->drm;
 	struct drm_fbdev_cma *fbdev;
 	int bpp;
 

@@ -213,7 +213,7 @@ tinydrm_display_pipe_init(struct tinydrm_device *tdev,
 			  const struct drm_display_mode *mode,
 			  unsigned int rotation)
 {
-	struct drm_device *drm = &tdev->drm;
+	struct drm_device *drm = tdev->drm;
 	struct drm_display_mode *mode_copy;
 	struct drm_connector *connector;
 	int ret;

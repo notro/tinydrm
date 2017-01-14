@@ -558,7 +558,7 @@ static int mipi_dbi_fb_dirty(struct drm_framebuffer *fb,
 			     unsigned int num_clips)
 {
 	struct drm_gem_cma_object *cma_obj = drm_fb_cma_get_gem_obj(fb, 0);
-	struct tinydrm_device *tdev = drm_to_tinydrm(fb->dev);
+	struct tinydrm_device *tdev = fb->dev->dev_private;
 	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
 	bool swap = mipi->swap_bytes;
 	struct drm_clip_rect clip;
@@ -628,7 +628,7 @@ static const struct drm_framebuffer_funcs mipi_dbi_fb_funcs = {
 
 static void mipi_dbi_blank(struct mipi_dbi *mipi)
 {
-	struct drm_device *drm = &mipi->tinydrm.drm;
+	struct drm_device *drm = mipi->tinydrm.drm;
 	u16 height = drm->mode_config.min_height;
 	u16 width = drm->mode_config.min_width;
 	size_t len = width * height * 2;
@@ -708,7 +708,6 @@ int mipi_dbi_init(struct device *dev, struct mipi_dbi *mipi,
 {
 	size_t bufsize = mode->vdisplay * mode->hdisplay * sizeof(u16);
 	struct tinydrm_device *tdev = &mipi->tinydrm;
-	struct drm_device *drm = &tdev->drm;
 	int ret;
 
 	mipi->tx_buf = devm_kmalloc(dev, bufsize, GFP_KERNEL);
@@ -728,13 +727,13 @@ int mipi_dbi_init(struct device *dev, struct mipi_dbi *mipi,
 	if (ret)
 		return ret;
 
-	drm->mode_config.preferred_depth = 16;
+	tdev->drm->mode_config.preferred_depth = 16;
 	mipi->rotation = rotation;
 
-	drm_mode_config_reset(drm);
+	drm_mode_config_reset(tdev->drm);
 
 	DRM_DEBUG_KMS("preferred_depth=%u, rotation = %u\n",
-		      drm->mode_config.preferred_depth, rotation);
+		      tdev->drm->mode_config.preferred_depth, rotation);
 
 	return 0;
 }
@@ -883,7 +882,7 @@ static int mipi_dbi_debugfs_show(struct seq_file *m, void *arg)
 {
 	struct drm_info_node *node = (struct drm_info_node *)m->private;
 	struct drm_device *drm = node->minor->dev;
-	struct tinydrm_device *tdev = drm_to_tinydrm(drm);
+	struct tinydrm_device *tdev = drm->dev_private;
 	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
 	u8 buf[4];
 	u8 val8;
