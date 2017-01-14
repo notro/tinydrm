@@ -303,14 +303,20 @@ static int __maybe_unused tinydrm_pm_suspend(struct device *dev)
 {
 	struct tinydrm_device *tdev = dev_get_drvdata(dev);
 
-	return tdev ? tinydrm_suspend(tdev) : -EINVAL;
+	if (WARN_ON(!tdev || !tdev->drm || tdev != tdev->drm->dev_private))
+		return -EINVAL;
+
+	return tinydrm_suspend(tdev);
 }
 
 static int __maybe_unused tinydrm_pm_resume(struct device *dev)
 {
 	struct tinydrm_device *tdev = dev_get_drvdata(dev);
 
-	return tdev ? tinydrm_resume(tdev) : -EINVAL;
+	if (WARN_ON(!tdev || !tdev->drm || tdev != tdev->drm->dev_private))
+		return -EINVAL;
+
+	return tinydrm_resume(tdev);
 }
 
 /*
@@ -337,8 +343,10 @@ void tinydrm_spi_shutdown(struct spi_device *spi)
 {
 	struct tinydrm_device *tdev = spi_get_drvdata(spi);
 
-	if (tdev)
-		tinydrm_shutdown(tdev);
+	if (WARN_ON(!tdev || !tdev->drm || tdev != tdev->drm->dev_private))
+		return;
+
+	tinydrm_shutdown(tdev);
 }
 EXPORT_SYMBOL(tinydrm_spi_shutdown);
 
