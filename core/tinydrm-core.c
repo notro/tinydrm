@@ -187,9 +187,9 @@ static void tinydrm_fini(struct tinydrm_device *tdev)
 	drm_dev_unref(drm);
 }
 
-static void devm_tinydrm_release(struct device *dev, void *res)
+static void devm_tinydrm_release(void *data)
 {
-	tinydrm_fini(*(struct tinydrm_device **)res);
+	tinydrm_fini(data);
 }
 
 /**
@@ -212,23 +212,17 @@ int devm_tinydrm_init(struct device *parent, struct tinydrm_device *tdev,
 		      const struct drm_framebuffer_funcs *fb_funcs,
 		      struct drm_driver *driver)
 {
-	struct tinydrm_device **ptr;
 	int ret;
 
-	ptr = devres_alloc(devm_tinydrm_release, sizeof(*ptr), GFP_KERNEL);
-	if (!ptr)
-		return -ENOMEM;
-
 	ret = tinydrm_init(parent, tdev, fb_funcs, driver);
-	if (ret) {
-		devres_free(ptr);
+	if (ret)
 		return ret;
-	}
 
-	*ptr = tdev;
-	devres_add(parent, ptr);
+	ret = devm_add_action(parent, devm_tinydrm_release, tdev);
+	if (ret)
+		tinydrm_fini(tdev);
 
-	return 0;
+	return ret;
 }
 EXPORT_SYMBOL(devm_tinydrm_init);
 
@@ -260,9 +254,9 @@ static void tinydrm_unregister(struct tinydrm_device *tdev)
 	drm_dev_unregister(drm);
 }
 
-static void devm_tinydrm_register_release(struct device *dev, void *res)
+static void devm_tinydrm_register_release(void *data)
 {
-	tinydrm_unregister(*(struct tinydrm_device **)res);
+	tinydrm_unregister(data);
 }
 
 /**
@@ -279,24 +273,17 @@ static void devm_tinydrm_register_release(struct device *dev, void *res)
 int devm_tinydrm_register(struct tinydrm_device *tdev)
 {
 	struct device *dev = tdev->drm.dev;
-	struct tinydrm_device **ptr;
 	int ret;
 
-	ptr = devres_alloc(devm_tinydrm_register_release, sizeof(*ptr),
-			   GFP_KERNEL);
-	if (!ptr)
-		return -ENOMEM;
-
 	ret = tinydrm_register(tdev);
-	if (ret) {
-		devres_free(ptr);
+	if (ret)
 		return ret;
-	}
 
-	*ptr = tdev;
-	devres_add(dev, ptr);
+	ret = devm_add_action(dev, devm_tinydrm_register_release, tdev);
+	if (ret)
+		tinydrm_unregister(tdev);
 
-	return 0;
+	return ret;
 }
 EXPORT_SYMBOL(devm_tinydrm_register);
 
