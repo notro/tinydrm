@@ -25,6 +25,7 @@ struct regulator;
  * mipi_dbi - MIPI DBI controller
  * @tinydrm: tinydrm base
  * @spi: SPI device
+ * @cmdlock: Command lock
  * @command: Bus specific callback executing commands.
  * @read_commands: Array of read commands terminated by a zero entry.
  * @dc: Optional D/C gpio.
@@ -42,6 +43,7 @@ struct regulator;
 struct mipi_dbi {
 	struct tinydrm_device tinydrm;
 	struct spi_device *spi;
+	struct mutex cmdlock;
 	int (*command)(struct mipi_dbi *mipi, u8 cmd, u8 *parameters, size_t num);
 	const u8 *read_commands;
 	struct gpio_desc *dc;
@@ -91,7 +93,7 @@ bool mipi_dbi_display_is_on(struct mipi_dbi *mipi);
 #define mipi_dbi_command(mipi, cmd, seq...) \
 ({ \
 	u8 d[] = { seq }; \
-	mipi->command(mipi, cmd, d, ARRAY_SIZE(d)); \
+	mipi_dbi_command_buf(mipi, cmd, d, ARRAY_SIZE(d)); \
 })
 
 /**
@@ -109,7 +111,13 @@ bool mipi_dbi_display_is_on(struct mipi_dbi *mipi);
 static inline int mipi_dbi_command_buf(struct mipi_dbi *mipi, u8 cmd,
 				       u8 *data, size_t len)
 {
-	return mipi->command(mipi, cmd, data, len);
+	int ret;
+
+	mutex_lock(&mipi->cmdlock);
+	ret = mipi->command(mipi, cmd, data, len);
+	mutex_unlock(&mipi->cmdlock);
+
+	return ret;
 }
 
 #ifdef CONFIG_DEBUG_FS

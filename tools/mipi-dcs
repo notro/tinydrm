@@ -1,0 +1,293 @@
+#!/usr/bin/env python
+
+#
+# Copyright (C) 2017 Noralf Tronnes
+#
+# MIT License
+#
+
+import os
+import sys
+
+MIPI_DCS_NOP                    = 0x00
+MIPI_DCS_SOFT_RESET             = 0x01
+MIPI_DCS_GET_DISPLAY_ID         = 0x04
+MIPI_DCS_GET_RED_CHANNEL        = 0x06
+MIPI_DCS_GET_GREEN_CHANNEL      = 0x07
+MIPI_DCS_GET_BLUE_CHANNEL       = 0x08
+MIPI_DCS_GET_DISPLAY_STATUS     = 0x09
+MIPI_DCS_GET_POWER_MODE         = 0x0A
+MIPI_DCS_GET_ADDRESS_MODE       = 0x0B
+MIPI_DCS_GET_PIXEL_FORMAT       = 0x0C
+MIPI_DCS_GET_DISPLAY_MODE       = 0x0D
+MIPI_DCS_GET_SIGNAL_MODE        = 0x0E
+MIPI_DCS_GET_DIAGNOSTIC_RESULT  = 0x0F
+MIPI_DCS_ENTER_SLEEP_MODE       = 0x10
+MIPI_DCS_EXIT_SLEEP_MODE        = 0x11
+MIPI_DCS_ENTER_PARTIAL_MODE     = 0x12
+MIPI_DCS_ENTER_NORMAL_MODE      = 0x13
+MIPI_DCS_EXIT_INVERT_MODE       = 0x20
+MIPI_DCS_ENTER_INVERT_MODE      = 0x21
+MIPI_DCS_SET_GAMMA_CURVE        = 0x26
+MIPI_DCS_SET_DISPLAY_OFF        = 0x28
+MIPI_DCS_SET_DISPLAY_ON         = 0x29
+MIPI_DCS_SET_COLUMN_ADDRESS     = 0x2A
+MIPI_DCS_SET_PAGE_ADDRESS       = 0x2B
+MIPI_DCS_WRITE_MEMORY_START     = 0x2C
+MIPI_DCS_WRITE_LUT              = 0x2D
+MIPI_DCS_READ_MEMORY_START      = 0x2E
+MIPI_DCS_SET_PARTIAL_AREA       = 0x30
+MIPI_DCS_SET_SCROLL_AREA        = 0x33
+MIPI_DCS_SET_TEAR_OFF           = 0x34
+MIPI_DCS_SET_TEAR_ON            = 0x35
+MIPI_DCS_SET_ADDRESS_MODE       = 0x36
+MIPI_DCS_SET_SCROLL_START       = 0x37
+MIPI_DCS_EXIT_IDLE_MODE         = 0x38
+MIPI_DCS_ENTER_IDLE_MODE        = 0x39
+MIPI_DCS_SET_PIXEL_FORMAT       = 0x3A
+MIPI_DCS_WRITE_MEMORY_CONTINUE  = 0x3C
+MIPI_DCS_READ_MEMORY_CONTINUE   = 0x3E
+MIPI_DCS_SET_TEAR_SCANLINE      = 0x44
+MIPI_DCS_GET_SCANLINE           = 0x45
+MIPI_DCS_SET_DISPLAY_BRIGHTNESS = 0x51
+MIPI_DCS_GET_DISPLAY_BRIGHTNESS = 0x52
+MIPI_DCS_WRITE_CONTROL_DISPLAY  = 0x53
+MIPI_DCS_GET_CONTROL_DISPLAY    = 0x54
+MIPI_DCS_WRITE_POWER_SAVE       = 0x55
+MIPI_DCS_GET_POWER_SAVE         = 0x56
+MIPI_DCS_SET_CABC_MIN_BRIGHTNESS = 0x5E
+MIPI_DCS_GET_CABC_MIN_BRIGHTNESS = 0x5F
+MIPI_DCS_READ_DDB_START         = 0xA1
+MIPI_DCS_READ_DDB_CONTINUE      = 0xA8
+
+def dcs_name(cmd):
+    if cmd == MIPI_DCS_NOP: return 'NOP'
+    if cmd == MIPI_DCS_SOFT_RESET: return 'SOFT_RESET'
+    if cmd == MIPI_DCS_GET_DISPLAY_ID: return 'GET_DISPLAY_ID'
+    if cmd == MIPI_DCS_GET_RED_CHANNEL: return 'GET_RED_CHANNEL'
+    if cmd == MIPI_DCS_GET_GREEN_CHANNEL: return 'GET_GREEN_CHANNEL'
+    if cmd == MIPI_DCS_GET_BLUE_CHANNEL: return 'GET_BLUE_CHANNEL'
+    if cmd == MIPI_DCS_GET_DISPLAY_STATUS: return 'GET_DISPLAY_STATUS'
+    if cmd == MIPI_DCS_GET_POWER_MODE: return 'GET_POWER_MODE'
+    if cmd == MIPI_DCS_GET_ADDRESS_MODE: return 'GET_ADDRESS_MODE'
+    if cmd == MIPI_DCS_GET_PIXEL_FORMAT: return 'GET_PIXEL_FORMAT'
+    if cmd == MIPI_DCS_GET_DISPLAY_MODE: return 'GET_DISPLAY_MODE'
+    if cmd == MIPI_DCS_GET_SIGNAL_MODE: return 'GET_SIGNAL_MODE'
+    if cmd == MIPI_DCS_GET_DIAGNOSTIC_RESULT: return 'GET_DIAGNOSTIC_RESULT'
+    if cmd == MIPI_DCS_ENTER_SLEEP_MODE: return 'ENTER_SLEEP_MODE'
+    if cmd == MIPI_DCS_EXIT_SLEEP_MODE: return 'EXIT_SLEEP_MODE'
+    if cmd == MIPI_DCS_ENTER_PARTIAL_MODE: return 'ENTER_PARTIAL_MODE'
+    if cmd == MIPI_DCS_ENTER_NORMAL_MODE: return 'ENTER_NORMAL_MODE'
+    if cmd == MIPI_DCS_EXIT_INVERT_MODE: return 'EXIT_INVERT_MODE'
+    if cmd == MIPI_DCS_ENTER_INVERT_MODE: return 'ENTER_INVERT_MODE'
+    if cmd == MIPI_DCS_SET_GAMMA_CURVE: return 'SET_GAMMA_CURVE'
+    if cmd == MIPI_DCS_SET_DISPLAY_OFF: return 'SET_DISPLAY_OFF'
+    if cmd == MIPI_DCS_SET_DISPLAY_ON: return 'SET_DISPLAY_ON'
+    if cmd == MIPI_DCS_SET_COLUMN_ADDRESS: return 'SET_COLUMN_ADDRESS'
+    if cmd == MIPI_DCS_SET_PAGE_ADDRESS: return 'SET_PAGE_ADDRESS'
+    if cmd == MIPI_DCS_WRITE_MEMORY_START: return 'WRITE_MEMORY_START'
+    if cmd == MIPI_DCS_WRITE_LUT: return 'WRITE_LUT'
+    if cmd == MIPI_DCS_READ_MEMORY_START: return 'READ_MEMORY_START'
+    if cmd == MIPI_DCS_SET_PARTIAL_AREA: return 'SET_PARTIAL_AREA'
+    if cmd == MIPI_DCS_SET_SCROLL_AREA: return 'SET_SCROLL_AREA'
+    if cmd == MIPI_DCS_SET_TEAR_OFF: return 'SET_TEAR_OFF'
+    if cmd == MIPI_DCS_SET_TEAR_ON: return 'SET_TEAR_ON'
+    if cmd == MIPI_DCS_SET_ADDRESS_MODE: return 'SET_ADDRESS_MODE'
+    if cmd == MIPI_DCS_SET_SCROLL_START: return 'SET_SCROLL_START'
+    if cmd == MIPI_DCS_EXIT_IDLE_MODE: return 'EXIT_IDLE_MODE'
+    if cmd == MIPI_DCS_ENTER_IDLE_MODE: return 'ENTER_IDLE_MODE'
+    if cmd == MIPI_DCS_SET_PIXEL_FORMAT: return 'SET_PIXEL_FORMAT'
+    if cmd == MIPI_DCS_WRITE_MEMORY_CONTINUE: return 'WRITE_MEMORY_CONTINUE'
+    if cmd == MIPI_DCS_READ_MEMORY_CONTINUE: return 'READ_MEMORY_CONTINUE'
+    if cmd == MIPI_DCS_SET_TEAR_SCANLINE: return 'SET_TEAR_SCANLINE'
+    if cmd == MIPI_DCS_GET_SCANLINE: return 'GET_SCANLINE'
+    if cmd == MIPI_DCS_SET_DISPLAY_BRIGHTNESS: return 'SET_DISPLAY_BRIGHTNESS'
+    if cmd == MIPI_DCS_GET_DISPLAY_BRIGHTNESS: return 'GET_DISPLAY_BRIGHTNESS'
+    if cmd == MIPI_DCS_WRITE_CONTROL_DISPLAY: return 'WRITE_CONTROL_DISPLAY'
+    if cmd == MIPI_DCS_GET_CONTROL_DISPLAY: return 'GET_CONTROL_DISPLAY'
+    if cmd == MIPI_DCS_WRITE_POWER_SAVE: return 'WRITE_POWER_SAVE'
+    if cmd == MIPI_DCS_GET_POWER_SAVE: return 'GET_POWER_SAVE'
+    if cmd == MIPI_DCS_SET_CABC_MIN_BRIGHTNESS: return 'SET_CABC_MIN_BRIGHTNESS'
+    if cmd == MIPI_DCS_GET_CABC_MIN_BRIGHTNESS: return 'GET_CABC_MIN_BRIGHTNESS'
+    if cmd == MIPI_DCS_READ_DDB_START: return 'READ_DDB_START'
+    if cmd == MIPI_DCS_READ_DDB_CONTINUE: return 'READ_DDB_CONTINUE'
+    return 'Unknown'
+
+
+
+def printf(format, *args):
+    sys.stdout.write(format % args)
+
+def BIT(bitnr):
+    return 1 << bitnr
+
+BITS_PER_LONG = 32
+
+def GENMASK(h, l):
+    return (((~0) << (l)) & (~0 >> (BITS_PER_LONG - 1 - (h))))
+
+
+def bit_val(desc, val, bit):
+    bit_val = not not (val & BIT(bit));
+    printf("    D%u=%u: %s\n", bit, bit_val, desc)
+
+def bit_reserved(val, end, start):
+    for i in range(end, start - 1, -1):
+        bit_val("Reserved", val, i)
+
+def bit_array(desc, val, end, start):
+    bits_val = (val & GENMASK(end, start)) >> start
+
+    printf("    D[%u:%u]=%u: %s ", end, start, bits_val, desc)
+    for i in range(end, start - 1, -1):
+        printf("%u ", not not(val & BIT(i)))
+
+    printf('\n');
+
+def bit_text(desc, val, bit, on, off):
+    bit_val = not not (val & BIT(bit))
+
+    printf("    D%u=%u: %s %s\n", bit, bit_val, desc, on if bit_val else off)
+
+def bit_on_off(desc, val, bit):
+    bit_text(desc, val, bit, "On", "Off")
+
+def mipi_pixel_format_str(val):
+    if val == 0:
+        return "Reserved"
+    elif val == 1:
+        return "3 bits/pixel"
+    elif val == 2:
+        return "8 bits/pixel"
+    elif val == 3:
+        return "12 bits/pixel"
+    elif val == 4:
+        return "Reserved"
+    elif val == 5:
+        return "16 bits/pixel"
+    elif val == 6:
+        return "18 bits/pixel"
+    elif val == 7:
+        return "24 bits/pixel"
+    else:
+        return "Illegal format"
+
+
+def print_cmd(desc, cmd, val, len):
+    printf("%s(%02Xh): %0*x (%s)\n", dcs_name(cmd), cmd, len * 2, val, bin(val))
+
+
+def mipi_decode(cmd, val):
+    if cmd == MIPI_DCS_GET_DISPLAY_ID:
+        print_cmd("Display ID", cmd, val, 3)
+        printf("    ID1 = %02x\n", (val >> 24))
+        printf("    ID2 = %02x\n", ((val >> 16) & 0xff))
+        printf("    ID3 = %02x\n", (val & 0xff))
+    elif cmd == MIPI_DCS_GET_DISPLAY_STATUS:
+    	stat = val
+        print_cmd("Display status", cmd, val, 3)
+        bit_on_off("Booster voltage status:", stat, 31)
+        bit_val("Row address order", stat, 30)
+        bit_val("Column address order", stat, 29)
+        bit_val("Row/column exchange", stat, 28)
+        bit_text("Vertical refresh:", stat, 27, "Bottom to Top", "Top to Bottom")
+        bit_text("RGB/BGR order:", stat, 26, "BGR", "RGB")
+        bit_text("Horizontal refresh order:", stat, 25, "Right to Left", "Left to Right")
+        bit_reserved(stat, 24, 23)
+        bit_array("Interface color pixel format:", stat, 22, 20)
+        bit_on_off("Idle mode:", stat, 19)
+        bit_on_off("Partial mode:", stat, 18)
+        bit_text("Sleep:", stat, 17, "Out", "In")
+        bit_on_off("Display normal mode:", stat, 16)
+        bit_on_off("Vertical scrolling status:", stat, 15)
+        bit_reserved(stat, 14, 14)
+        bit_val("Inversion status", stat, 13)
+        bit_val("All pixel ON", stat, 12)
+        bit_val("All pixel OFF", stat, 11)
+        bit_on_off("Display:", stat, 10)
+        bit_on_off("Tearing effect line:", stat, 9)
+        bit_array("Gamma curve selection:", stat, 8, 6)
+        bit_text("Tearing effect line mode:", stat, 5, "Mode 2, both H-Blanking and V-Blanking", "Mode 1, V-Blanking only")
+        bit_reserved(stat, 4, 0)
+    elif cmd == MIPI_DCS_GET_POWER_MODE:
+        print_cmd("Power mode", cmd, val, 1)
+        bit_text("Booster", val, 7, "On", "Off or faulty")
+        bit_on_off("Idle Mode", val, 6)
+        bit_on_off("Partial Mode", val, 5)
+        bit_text("Sleep", val, 4, "Out Mode", "In Mode")
+        bit_on_off("Display Normal Mode", val, 3)
+        bit_on_off("Display is", val, 2)
+        bit_reserved(val, 1, 0)
+    elif cmd == MIPI_DCS_GET_ADDRESS_MODE:
+        print_cmd("Address mode", cmd, val, 1)
+        bit_text("Page Address Order:", val, 7, "Bottom to Top", "Top to Bottom")
+        bit_text("Column Address Order:", val, 6, "Right to Left", "Left to Right")
+        bit_text("Page/Column Order:", val, 5, "Reverse Mode", "Normal Mode")
+        bit_text("Line Address Order: LCD Refresh", val, 4, "Bottom to Top", "Top to Bottom")
+        bit_text("RGB/BGR Order:", val, 3, "BGR", "RGB")
+        bit_text("Display Data Latch Data Order: LCD Refresh", val, 2, "Right to Left", "Left to Right")
+        bit_reserved(val, 1, 0)
+    elif cmd == MIPI_DCS_GET_PIXEL_FORMAT:
+        print_cmd("Pixel format", cmd, val, 1)
+        dpi = (val >> 4) & 0x7;
+        dbi = val & 0x7;
+        bit_reserved(val, 7, 7)
+        printf("    D[6:4]=%u: DPI: %s\n", dpi, mipi_pixel_format_str(dpi))
+        bit_reserved(val, 3, 3)
+        printf("    D[2:0]=%u: DBI: %s\n", dbi, mipi_pixel_format_str(dbi))
+    elif cmd == MIPI_DCS_GET_DISPLAY_MODE:
+        print_cmd("Image mode", cmd, val, 1)
+        gc = val & 0x7;
+
+        bit_on_off("Vertical Scrolling Status:", val, 7)
+        bit_reserved(val, 6, 6)
+        bit_on_off("Inversion:", val, 5)
+        bit_reserved(val, 4, 3)
+        printf("    D[2:0]=%u: Gamma Curve Selection: ", gc)
+        if gc < 4:
+            printf("GC%u\n", gc)
+        else:
+            printf("Reserved\n")
+    elif cmd == MIPI_DCS_GET_SIGNAL_MODE:
+        print_cmd("Signal mode", cmd, val, 1)
+        bit_on_off("Tearing Effect Line:", val, 7)
+        bit_text("Tearing Effect Line Output Mode: Mode", val, 6, "2", "1")
+        bit_reserved(val, 5, 0)
+    elif cmd == MIPI_DCS_GET_DIAGNOSTIC_RESULT:
+        print_cmd("Diagnostic result", cmd, val, 1)
+        bit_text("Register Loading Detection:", val, 7, "OK", "Fault or reset")
+        bit_text("Functionality Detection:", val, 6, "OK", "Fault or reset")
+        bit_text("Chip Attachment Detection:", val, 5, "Fault", "OK or unimplemented")
+        bit_text("Display Glass Break Detection:", val, 4, "Fault", "OK or unimplemented")
+        bit_reserved(val, 3, 0);
+    elif cmd == MIPI_DCS_READ_MEMORY_START:
+        print_cmd("Read memory start", cmd, val, 2)
+    elif cmd == MIPI_DCS_READ_MEMORY_CONTINUE:
+        print_cmd("Read memory continue", cmd, val, 2)
+    else:
+        print_cmd("", cmd, val, 1)
+
+
+def mipi_read(fn):
+    printf("File: %s\n\n", fn)
+    with open(fn, 'rb') as f:
+        s = f.read()
+
+    for l in s.splitlines():
+        if 'XX' in l:
+            print 'XX'
+        else:
+            v = l.split(':')
+            if len(v) != 2:
+                print l
+            else:
+                mipi_decode(int(v[0], 16), int(v[1], 16))
+
+
+
+dirname = '/sys/kernel/debug/dri'
+
+for d in os.listdir(dirname):
+    fn = os.path.join(dirname, d, 'command')
+    if os.path.isfile(fn):
+    	mipi_read(fn)

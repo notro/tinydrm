@@ -149,6 +149,11 @@ void tinydrm_display_pipe_update(struct drm_simple_display_pipe *pipe,
 	else
 		DRM_DEBUG_KMS("No fb change\n");
 
+	/*
+	 * FIXME
+	 * Is it possible to get a new event here while one is pending?
+	 */
+
 	if (fb && (fb != old_state->fb)) {
 		struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
 

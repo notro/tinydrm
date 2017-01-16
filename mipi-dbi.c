@@ -16,6 +16,7 @@
 #include <drm/tinydrm/mipi-dbi.h>
 #include <drm/tinydrm/tinydrm.h>
 #include <drm/tinydrm/tinydrm-helpers.h>
+#include <linux/debugfs.h>
 #include <linux/dma-buf.h>
 #include <linux/gpio/consumer.h>
 #include <linux/module.h>
@@ -490,6 +491,7 @@ int mipi_dbi_spi_init(struct spi_device *spi, struct mipi_dbi *mipi,
 		return -EINVAL;
 	}
 
+	mutex_init(&mipi->cmdlock);
 	mipi->spi = spi;
 	mipi->write_only = write_only;
 	mipi->read_commands = mipi_dbi_dcs_read_commands;
@@ -790,239 +792,119 @@ EXPORT_SYMBOL(mipi_dbi_display_is_on);
 
 #ifdef CONFIG_DEBUG_FS
 
-static bool mipi_dbi_debugfs_readreg(struct seq_file *m, struct mipi_dbi *mipi,
-				     u8 cmd, const char *desc,
-				     u8 *buf, size_t len)
+static ssize_t mipi_dbi_debugfs_command_write(struct file *file,
+					      const char __user *ubuf,
+					      size_t count, loff_t *ppos)
 {
+	struct seq_file *m = file->private_data;
+	struct mipi_dbi *mipi = m->private;
+	u8 val, cmd, parameters[64];
+	char *buf, *pos, *token;
+	unsigned int i;
 	int ret;
 
-	ret = mipi_dbi_command_buf(mipi, cmd, buf, len);
-	if (ret) {
-		seq_printf(m, "\n%s: command %02Xh failed: %d\n", desc, cmd,
-			   ret);
-		return false;
-	}
+	buf = memdup_user_nul(ubuf, count);
+	if (IS_ERR(buf))
+		return PTR_ERR(buf);
 
-	seq_printf(m, "\n%s (%02Xh=%*phN):\n", desc, cmd, len, buf);
-
-	return true;
-}
-
-static void
-seq_bit_val(struct seq_file *m, const char *desc, u32 val, u8 bit)
-{
-	bool bit_val = !!(val & BIT(bit));
-
-	seq_printf(m, "    D%u=%u: %s\n", bit, bit_val, desc);
-}
-
-static void
-seq_bit_reserved(struct seq_file *m, u32 val, u8 end, u8 start)
-{
-	int i;
-
-	for (i = end; i >= start; i--)
-		seq_bit_val(m, "Reserved", val, i);
-}
-
-static void
-seq_bit_array(struct seq_file *m, const char *desc, u32 val, u8 end, u8 start)
-{
-	u32 bits_val = (val & GENMASK(end, start)) >> start;
-	int i;
-
-	seq_printf(m, "    D[%u:%u]=%u: %s ", end, start, bits_val, desc);
-	for (i = end; i >= start; i--)
-		seq_printf(m, "%u ", !!(val & BIT(i)));
-
-	seq_putc(m, '\n');
-}
-
-static void
-seq_bit_text(struct seq_file *m, const char *desc, u32 val, u8 bit,
-	     const char *on, const char *off)
-{
-	bool bit_val = val & BIT(bit);
-
-	seq_printf(m, "    D%u=%u: %s %s\n", bit, bit_val, desc,
-		   bit_val ? on : off);
-}
-
-static inline void
-seq_bit_on_off(struct seq_file *m, const char *desc, u32 val, u8 bit)
-{
-	seq_bit_text(m, desc, val, bit, "On", "Off");
-}
-
-static char *mipi_pixel_format_str(u8 val)
-{
-	switch (val) {
-	case 0:
-		return "Reserved";
-	case 1:
-		return "3 bits/pixel";
-	case 2:
-		return "8 bits/pixel";
-	case 3:
-		return "12 bits/pixel";
-	case 4:
-		return "Reserved";
-	case 5:
-		return "16 bits/pixel";
-	case 6:
-		return "18 bits/pixel";
-	case 7:
-		return "24 bits/pixel";
-	default:
-		return "Illegal format";
-	}
-}
-
-static int mipi_dbi_debugfs_show(struct seq_file *m, void *arg)
-{
-	struct drm_info_node *node = (struct drm_info_node *)m->private;
-	struct drm_device *drm = node->minor->dev;
-	struct tinydrm_device *tdev = drm->dev_private;
-	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
-	u8 buf[4];
-	u8 val8;
-	int ret;
-
-	ret = mipi_dbi_command_buf(mipi, MIPI_DCS_GET_POWER_MODE, buf, 1);
-	if (ret == -EACCES || ret == -ENOTSUPP) {
-		seq_puts(m, "Controller is write-only\n");
-		return 0;
-	}
-
-	/*
-	 * Read Display ID (04h) and Read Display Status (09h) are
-	 * non-standard commands that Nokia wanted back in the day,
-	 * so most vendors implemented them.
-	 */
-	if (mipi_dbi_debugfs_readreg(m, mipi, MIPI_DCS_GET_DISPLAY_ID,
-				     "Display ID", buf, 3)) {
-		seq_printf(m, "    ID1 = 0x%02x\n", buf[0]);
-		seq_printf(m, "    ID2 = 0x%02x\n", buf[1]);
-		seq_printf(m, "    ID3 = 0x%02x\n", buf[2]);
-	}
-
-	if (mipi_dbi_debugfs_readreg(m, mipi, MIPI_DCS_GET_DISPLAY_STATUS,
-				     "Display status", buf, 4)) {
-		u32 stat;
-
-		stat = (buf[0] << 24) | (buf[1] << 16) | (buf[2] << 8) | buf[3];
-
-		seq_bit_on_off(m, "Booster voltage status:", stat, 31);
-		seq_bit_val(m, "Row address order", stat, 30);
-		seq_bit_val(m, "Column address order", stat, 29);
-		seq_bit_val(m, "Row/column exchange", stat, 28);
-		seq_bit_text(m, "Vertical refresh:", stat, 27,
-			     "Bottom to Top", "Top to Bottom");
-		seq_bit_text(m, "RGB/BGR order:", stat, 26, "BGR", "RGB");
-		seq_bit_text(m, "Horizontal refresh order:", stat, 25,
-			     "Right to Left", "Left to Right");
-		seq_bit_reserved(m, stat, 24, 23);
-		seq_bit_array(m, "Interface color pixel format:", stat, 22, 20);
-		seq_bit_on_off(m, "Idle mode:", stat, 19);
-		seq_bit_on_off(m, "Partial mode:", stat, 18);
-		seq_bit_text(m, "Sleep:", stat, 17, "Out", "In");
-		seq_bit_on_off(m, "Display normal mode:", stat, 16);
-		seq_bit_on_off(m, "Vertical scrolling status:", stat, 15);
-		seq_bit_reserved(m, stat, 14, 14);
-		seq_bit_val(m, "Inversion status", stat, 13);
-		seq_bit_val(m, "All pixel ON", stat, 12);
-		seq_bit_val(m, "All pixel OFF", stat, 11);
-		seq_bit_on_off(m, "Display:", stat, 10);
-		seq_bit_on_off(m, "Tearing effect line:", stat, 9);
-		seq_bit_array(m, "Gamma curve selection:", stat, 8, 6);
-		seq_bit_text(m, "Tearing effect line mode:", stat, 5,
-			     "Mode 2, both H-Blanking and V-Blanking",
-			     "Mode 1, V-Blanking only");
-		seq_bit_reserved(m, stat, 4, 0);
-	}
-
-	if (mipi_dbi_debugfs_readreg(m, mipi, MIPI_DCS_GET_POWER_MODE,
-				     "Power mode", &val8, 1)) {
-		seq_bit_text(m, "Booster", val8, 7, "On", "Off or faulty");
-		seq_bit_on_off(m, "Idle Mode", val8, 6);
-		seq_bit_on_off(m, "Partial Mode", val8, 5);
-		seq_bit_text(m, "Sleep", val8, 4, "Out Mode", "In Mode");
-		seq_bit_on_off(m, "Display Normal Mode", val8, 3);
-		seq_bit_on_off(m, "Display is", val8, 2);
-		seq_bit_reserved(m, val8, 1, 0);
-	}
-
-	if (mipi_dbi_debugfs_readreg(m, mipi, MIPI_DCS_GET_ADDRESS_MODE,
-				     "Address mode", &val8, 1)) {
-		seq_bit_text(m, "Page Address Order:", val8, 7,
-			     "Bottom to Top", "Top to Bottom");
-		seq_bit_text(m, "Column Address Order:", val8, 6,
-			     "Right to Left", "Left to Right");
-		seq_bit_text(m, "Page/Column Order:", val8, 5,
-			     "Reverse Mode", "Normal Mode");
-		seq_bit_text(m, "Line Address Order: LCD Refresh", val8, 4,
-			     "Bottom to Top", "Top to Bottom");
-		seq_bit_text(m, "RGB/BGR Order:", val8, 3, "BGR", "RGB");
-		seq_bit_text(m, "Display Data Latch Data Order: LCD Refresh",
-			     val8, 2, "Right to Left", "Left to Right");
-		seq_bit_reserved(m, val8, 1, 0);
-	}
-
-	if (mipi_dbi_debugfs_readreg(m, mipi, MIPI_DCS_GET_PIXEL_FORMAT,
-				     "Pixel format", &val8, 1)) {
-		u8 dpi = (val8 >> 4) & 0x7;
-		u8 dbi = val8 & 0x7;
-
-		seq_bit_reserved(m, val8, 7, 7);
-		seq_printf(m, "    D[6:4]=%u: DPI: %s\n", dpi,
-			   mipi_pixel_format_str(dpi));
-		seq_bit_reserved(m, val8, 3, 3);
-		seq_printf(m, "    D[2:0]=%u: DBI: %s\n", dbi,
-			   mipi_pixel_format_str(dbi));
-	}
-
-	if (mipi_dbi_debugfs_readreg(m, mipi, MIPI_DCS_GET_DISPLAY_MODE,
-				     "Image Mode", &val8, 1)) {
-		u8 gc = val8 & 0x7;
-
-		seq_bit_on_off(m, "Vertical Scrolling Status:", val8, 7);
-		seq_bit_reserved(m, val8, 6, 6);
-		seq_bit_on_off(m, "Inversion:", val8, 5);
-		seq_bit_reserved(m, val8, 4, 3);
-		seq_printf(m, "    D[2:0]=%u: Gamma Curve Selection: ", gc);
-		if (gc < 4)
-			seq_printf(m, "GC%u\n", gc);
+	/* strip trailing whitespace */
+	for (i = count - 1; i > 0; i--)
+		if (isspace(buf[i]))
+			buf[i] = '\0';
 		else
-			seq_puts(m, "Reserved\n");
+			break;
+	i = 0;
+	pos = buf;
+	while (pos) {
+		token = strsep(&pos, " ");
+		if (!token) {
+			ret = -EINVAL;
+			goto err_free;
+		}
+
+		ret = kstrtou8(token, 16, &val);
+		if (ret < 0)
+			goto err_free;
+
+		if (token == buf)
+			cmd = val;
+		else
+			parameters[i++] = val;
+
+		if (i == 64) {
+			ret = -E2BIG;
+			goto err_free;
+		}
 	}
 
-	if (mipi_dbi_debugfs_readreg(m, mipi, MIPI_DCS_GET_SIGNAL_MODE,
-				     "Signal Mode", &val8, 1)) {
-		seq_bit_on_off(m, "Tearing Effect Line:", val8, 7);
-		seq_bit_text(m, "Tearing Effect Line Output Mode: Mode",
-			     val8, 6, "2", "1");
-		seq_bit_reserved(m, val8, 5, 0);
-	}
+	ret = mipi_dbi_command_buf(mipi, cmd, parameters, i);
 
-	if (mipi_dbi_debugfs_readreg(m, mipi, MIPI_DCS_GET_DIAGNOSTIC_RESULT,
-				     "Diagnostic result", &val8, 1)) {
-		seq_bit_text(m, "Register Loading Detection:", val8, 7,
-			     "OK", "Fault or reset");
-		seq_bit_text(m, "Functionality Detection:", val8, 6,
-			     "OK", "Fault or reset");
-		seq_bit_text(m, "Chip Attachment Detection:", val8, 5,
-			     "Fault", "OK or unimplemented");
-		seq_bit_text(m, "Display Glass Break Detection:", val8, 4,
-			     "Fault", "OK or unimplemented");
-		seq_bit_reserved(m, val8, 3, 0);
+err_free:
+	kfree(buf);
+
+	return ret < 0 ? ret : count;
+}
+
+static int mipi_dbi_debugfs_command_show(struct seq_file *m, void *unused)
+{
+	struct mipi_dbi *mipi = m->private;
+	u8 cmd, val[4];
+	size_t len, i;
+	int ret;
+
+	for (cmd = 0; cmd < 255; cmd++) {
+		if (!mipi_dbi_command_is_read(mipi, cmd))
+			continue;
+
+		switch (cmd) {
+		case MIPI_DCS_READ_MEMORY_START:
+		case MIPI_DCS_READ_MEMORY_CONTINUE:
+			len = 2;
+			break;
+		case MIPI_DCS_GET_DISPLAY_ID:
+			len = 3;
+			break;
+		case MIPI_DCS_GET_DISPLAY_STATUS:
+			len = 4;
+			break;
+		default:
+			len = 1;
+			break;
+		}
+
+		seq_printf(m, "%02x: ", cmd);
+		ret = mipi_dbi_command_buf(mipi, cmd, val, len);
+		if (ret) {
+			seq_puts(m, "XX\n");
+			continue;
+		}
+
+		for (i = 0; i < len; i++)
+			seq_printf(m, "%02x", val[i]);
+		seq_puts(m, "\n");
 	}
 
 	return 0;
 }
 
+static int mipi_dbi_debugfs_command_open(struct inode *inode,
+					 struct file *file)
+{
+	return single_open(file, mipi_dbi_debugfs_command_show,
+			   inode->i_private);
+}
+
+static const struct file_operations mipi_dbi_debugfs_command_fops = {
+	.owner = THIS_MODULE,
+	.open = mipi_dbi_debugfs_command_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+	.write = mipi_dbi_debugfs_command_write,
+};
+
 static const struct drm_info_list mipi_dbi_debugfs_list[] = {
 	{ "fb",   drm_fb_cma_debugfs_show, 0 },
-	{ "mipi",   mipi_dbi_debugfs_show, 0 },
 };
 
 /**
@@ -1036,6 +918,13 @@ static const struct drm_info_list mipi_dbi_debugfs_list[] = {
  */
 int mipi_dbi_debugfs_init(struct drm_minor *minor)
 {
+	struct tinydrm_device *tdev = minor->dev->dev_private;
+	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
+
+	debugfs_create_file("command", S_IFREG | S_IRUGO | S_IWUSR,
+			    minor->debugfs_root, mipi,
+			    &mipi_dbi_debugfs_command_fops);
+
 	return drm_debugfs_create_files(mipi_dbi_debugfs_list,
 					ARRAY_SIZE(mipi_dbi_debugfs_list),
 					minor->debugfs_root, minor);
