@@ -485,10 +485,29 @@ int mipi_dbi_spi_init(struct spi_device *spi, struct mipi_dbi *mipi,
 {
 	size_t tx_size = tinydrm_spi_max_transfer_size(spi, 0);
 	struct device *dev = &spi->dev;
+	int ret;
 
 	if (tx_size < 16) {
 		DRM_ERROR("SPI transmit buffer too small: %zu\n", tx_size);
 		return -EINVAL;
+	}
+
+	/*
+	 * Even though it's not the SPI device that does DMA (the master does),
+	 * the dma mask is necessary for the dma_alloc_wc() in
+	 * drm_gem_cma_create(). The dma_addr returned will be a physical
+	 * adddress which might be different from the bus address, but this is
+	 * not a problem since the address will not be used.
+	 * The virtual address is used in the transfer and the SPI core
+	 * re-maps it on the SPI master device using the DMA streaming API
+	 * (spi_map_buf()).
+	 */
+	if (!dev->coherent_dma_mask) {
+		ret = dma_coerce_mask_and_coherent(dev, DMA_BIT_MASK(32));
+		if (ret) {
+			dev_warn(dev, "Failed to set dma mask %d\n", ret);
+			return ret;
+		}
 	}
 
 	mutex_init(&mipi->cmdlock);

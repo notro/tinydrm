@@ -226,12 +226,6 @@ static int mi0283qt_probe(struct spi_device *spi)
 	bool writeonly;
 	int ret;
 
-	if (!dev->coherent_dma_mask) {
-		ret = dma_coerce_mask_and_coherent(dev, DMA_BIT_MASK(32));
-		if (ret)
-			dev_warn(dev, "Failed to set dma mask %d\n", ret);
-	}
-
 	mipi = devm_kzalloc(dev, sizeof(*mipi), GFP_KERNEL);
 	if (!mipi)
 		return -ENOMEM;

@@ -135,6 +135,9 @@ EXPORT_SYMBOL(tinydrm_fbdev_init);
  */
 void tinydrm_fbdev_fini(struct tinydrm_device *tdev)
 {
+	if (!tdev->fbdev_cma)
+		return;
+
 	drm_fbdev_cma_fini(tdev->fbdev_cma);
 	tdev->fbdev_cma = NULL;
 }
