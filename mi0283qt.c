@@ -1,5 +1,3 @@
-#define DEBUG
-
 /*
  * DRM driver for Multi-Inno MI0283QT panels
  *
@@ -77,7 +75,7 @@ static void mi0283qt_enable(struct drm_simple_display_pipe *pipe,
 	u8 addr_mode;
 	int ret;
 
-	dev_dbg(dev, "%s\n", __func__);
+	DRM_DEBUG_KMS("\n");
 
 	mutex_lock(&tdev->dev_lock);
 

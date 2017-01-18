@@ -10,7 +10,6 @@ menuconfig DRM_TINYDRM
 
 config TINYDRM_MIPI_DBI
 	tristate
-	select REGMAP
 
 config TINYDRM_MI0283QT
 	tristate "DRM support for MI0283QT"
