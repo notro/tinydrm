@@ -59,7 +59,6 @@ Example:
 
 #include <drm/tinydrm/ili9341.h>
 #include <drm/tinydrm/mipi-dbi.h>
-#include <drm/tinydrm/tinydrm.h>
 #include <drm/tinydrm/tinydrm-helpers.h>
 #include <linux/delay.h>
 #include <linux/gpio/consumer.h>

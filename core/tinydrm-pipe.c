@@ -7,12 +7,9 @@
  * (at your option) any later version.
  */
 
-#include <drm/drmP.h>
 #include <drm/drm_atomic_helper.h>
 #include <drm/drm_crtc_helper.h>
-#include <drm/drm_fb_helper.h>
 #include <drm/drm_modes.h>
-#include <drm/drm_simple_kms_helper.h>
 #include <drm/tinydrm/tinydrm.h>
 
 struct tinydrm_connector {

@@ -7,10 +7,7 @@
  * (at your option) any later version.
  */
 
-#include <drm/drmP.h>
-#include <drm/drm_crtc.h>
 #include <drm/drm_fb_cma_helper.h>
-#include <drm/drm_fb_helper.h>
 #include <drm/tinydrm/tinydrm.h>
 
 /**

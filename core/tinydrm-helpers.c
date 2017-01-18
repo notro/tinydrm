@@ -8,12 +8,12 @@
  * (at your option) any later version.
  */
 
-#include <drm/drmP.h>
 #include <drm/tinydrm/tinydrm.h>
 #include <drm/tinydrm/tinydrm-helpers.h>
 #include <linux/backlight.h>
 #include <linux/pm.h>
 #include <linux/spi/spi.h>
+#include <linux/swab.h>
 
 static unsigned int spi_max;
 module_param(spi_max, uint, 0400);
