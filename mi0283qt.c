@@ -100,6 +100,7 @@ static void mi0283qt_enable(struct drm_simple_display_pipe *pipe,
 	ret = mipi_dbi_command(mipi, MIPI_DCS_SOFT_RESET);
 	if (ret) {
 		dev_err(dev, "Error writing command %d\n", ret);
+		regulator_disable(mipi->regulator);
 		goto out_unlock;
 	}
 
