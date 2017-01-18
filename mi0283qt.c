@@ -44,10 +44,6 @@ Optional properties:
 - power-supply:	A regulator node for the supply voltage.
 - backlight:	phandle of the backlight device attached to the panel
 - rotation:	panel rotation in degrees counter clockwise (0,90,180,270)
-- write-only:	LCD controller is write only. This depends on the interface
-		mode, SPI master driver and wiring:
-		- IM=11xx and MISO not connected
-		- IM=01xx and SPI master driver doesn't support spi-3wire (SDA)
 
 Example:
 	mi0283qt@0{
@@ -223,7 +219,6 @@ static int mi0283qt_probe(struct spi_device *spi)
 	struct mipi_dbi *mipi;
 	struct gpio_desc *dc;
 	u32 rotation = 0;
-	bool writeonly;
 	int ret;
 
 	mipi = devm_kzalloc(dev, sizeof(*mipi), GFP_KERNEL);
@@ -256,12 +251,10 @@ static int mi0283qt_probe(struct spi_device *spi)
 	if (IS_ERR(mipi->backlight))
 		return PTR_ERR(mipi->backlight);
 
-	writeonly = device_property_read_bool(dev, "write-only");
 	device_property_read_u32(dev, "rotation", &rotation);
 
-	ret = mipi_dbi_spi_init(spi, mipi, dc, writeonly,
-				&mi0283qt_pipe_funcs, &mi0283qt_driver,
-				&mi0283qt_mode, rotation);
+	ret = mipi_dbi_spi_init(spi, mipi, dc, &mi0283qt_pipe_funcs,
+				&mi0283qt_driver, &mi0283qt_mode, rotation);
 	if (ret)
 		return ret;
 

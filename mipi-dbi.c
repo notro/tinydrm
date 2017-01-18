@@ -114,6 +114,51 @@ static bool mipi_dbi_command_is_read(struct mipi_dbi *mipi, u8 cmd)
 	return false;
 }
 
+/**
+ * mipi_dbi_command_read - MIPI DCS read command
+ * @mipi: MIPI structure
+ * @cmd: Command
+ * @val: Value read
+ *
+ * Send MIPI DCS read command to the controller.
+ *
+ * Returns:
+ * Zero on success, negative error code on failure.
+ */
+int mipi_dbi_command_read(struct mipi_dbi *mipi, u8 cmd, u8 *val)
+{
+	if (!mipi->read_commands)
+		return -EACCES;
+
+	if (!mipi_dbi_command_is_read(mipi, cmd))
+		return -EINVAL;
+
+	return mipi_dbi_command_buf(mipi, cmd, val, 1);
+}
+EXPORT_SYMBOL(mipi_dbi_command_read);
+
+/**
+ * mipi_dbi_command_buf - MIPI DCS command with parameter(s) in an array
+ * @mipi: MIPI structure
+ * @cmd: Command
+ * @data: Parameter buffer
+ * @len: Buffer length
+ *
+ * Returns:
+ * Zero on success, negative error code on failure.
+ */
+int mipi_dbi_command_buf(struct mipi_dbi *mipi, u8 cmd, u8 *data, size_t len)
+{
+	int ret;
+
+	mutex_lock(&mipi->cmdlock);
+	ret = mipi->command(mipi, cmd, data, len);
+	mutex_unlock(&mipi->cmdlock);
+
+	return ret;
+}
+EXPORT_SYMBOL(mipi_dbi_command_buf);
+
 /*
  * Many controllers have a max speed of 10MHz, but can be pushed way beyond
  * that. Increase reliability by running pixel data at max speed and the rest
@@ -373,9 +418,6 @@ static int mipi_dbi_typec3_command_read(struct mipi_dbi *mipi, u8 cmd,
 	if (!len)
 		return -EINVAL;
 
-	if (mipi->write_only)
-		return -EACCES;
-
 	/*
 	 * Support non-standard 24-bit and 32-bit Nokia read commands which
 	 * start with a dummy clock, so we need to read an extra byte.
@@ -451,19 +493,15 @@ static int mipi_dbi_typec3_command(struct mipi_dbi *mipi, u8 cmd,
  * mipi_dbi_spi_init - Initialize MIPI DBI SPI interfaced controller
  * @spi: SPI device
  * @dc: D/C gpio (optional)
- * @write_only: Controller is write-only
  * @mipi: &mipi_dbi structure to initialize
  * @pipe_funcs: Display pipe functions
  * @driver: DRM driver
  * @mode: Display mode
  * @rotation: Initial rotation in degrees Counter Clock Wise
  *
-FIXME XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
- * This function initializes a &mipi_dbi structure using mipi_dbi_init()
-
- * and intitalizes a &regmap that can be used to send commands to
- * the controller. mipi_dbi_write() can be used to send commands.
-
+ * This function sets &mipi_dbi->command, enables &mipi->read_commands for the
+ * usual read commands and initializes @mipi using mipi_dbi_init().
+ *
  * If @dc is set, a Type C Option 3 interface is assumed, if not
  * Type C Option 1.
  *
@@ -477,7 +515,7 @@ FIXME XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
  * Zero on success, negative error code on failure.
  */
 int mipi_dbi_spi_init(struct spi_device *spi, struct mipi_dbi *mipi,
-		      struct gpio_desc *dc, bool write_only,
+		      struct gpio_desc *dc,
 		      const struct drm_simple_display_pipe_funcs *pipe_funcs,
 		      struct drm_driver *driver,
 		      const struct drm_display_mode *mode,
@@ -510,9 +548,7 @@ int mipi_dbi_spi_init(struct spi_device *spi, struct mipi_dbi *mipi,
 		}
 	}
 
-	mutex_init(&mipi->cmdlock);
 	mipi->spi = spi;
-	mipi->write_only = write_only;
 	mipi->read_commands = mipi_dbi_dcs_read_commands;
 
 	if (dc) {
@@ -731,6 +767,11 @@ int mipi_dbi_init(struct device *dev, struct mipi_dbi *mipi,
 	struct tinydrm_device *tdev = &mipi->tinydrm;
 	int ret;
 
+	if (!mipi->command)
+		return -EINVAL;
+
+	mutex_init(&mipi->cmdlock);
+
 	mipi->tx_buf = devm_kmalloc(dev, bufsize, GFP_KERNEL);
 	if (!mipi->tx_buf)
 		return -ENOMEM;
@@ -794,7 +835,7 @@ bool mipi_dbi_display_is_on(struct mipi_dbi *mipi)
 {
 	u8 val;
 
-	if (mipi_dbi_command_buf(mipi, MIPI_DCS_GET_POWER_MODE, &val, 1))
+	if (mipi_dbi_command_read(mipi, MIPI_DCS_GET_POWER_MODE, &val))
 		return false;
 
 	val &= ~DCS_POWER_MODE_RESERVED_MASK;
@@ -939,9 +980,11 @@ int mipi_dbi_debugfs_init(struct drm_minor *minor)
 {
 	struct tinydrm_device *tdev = minor->dev->dev_private;
 	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
+	umode_t mode = S_IFREG | S_IWUSR;
 
-	debugfs_create_file("command", S_IFREG | S_IRUGO | S_IWUSR,
-			    minor->debugfs_root, mipi,
+	if (mipi->read_commands)
+		mode |= S_IRUGO;
+	debugfs_create_file("command", mode, minor->debugfs_root, mipi,
 			    &mipi_dbi_debugfs_command_fops);
 
 	return drm_debugfs_create_files(mipi_dbi_debugfs_list,

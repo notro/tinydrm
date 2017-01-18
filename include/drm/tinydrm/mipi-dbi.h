@@ -28,8 +28,8 @@ struct regulator;
  * @cmdlock: Command lock
  * @command: Bus specific callback executing commands.
  * @read_commands: Array of read commands terminated by a zero entry.
+ *                 Reading is disabled if this is NULL.
  * @dc: Optional D/C gpio.
- * @write_only: Controller is write only.
  * @tx_buf: Buffer used for transfer (copy clip rect area)
  * @tx_buf9: Buffer used for Option 1 9-bit conversion
  * @tx_buf9_len: Size of tx_buf9.
@@ -47,7 +47,6 @@ struct mipi_dbi {
 	int (*command)(struct mipi_dbi *mipi, u8 cmd, u8 *parameters, size_t num);
 	const u8 *read_commands;
 	struct gpio_desc *dc;
-	bool write_only;
 	u16 *tx_buf;
 	void *tx_buf9;
 	size_t tx_buf9_len;
@@ -66,7 +65,7 @@ mipi_dbi_from_tinydrm(struct tinydrm_device *tdev)
 }
 
 int mipi_dbi_spi_init(struct spi_device *spi, struct mipi_dbi *mipi,
-		      struct gpio_desc *dc, bool write_only,
+		      struct gpio_desc *dc,
 		      const struct drm_simple_display_pipe_funcs *pipe_funcs,
 		      struct drm_driver *driver,
 		      const struct drm_display_mode *mode,
@@ -79,13 +78,17 @@ void mipi_dbi_pipe_disable(struct drm_simple_display_pipe *pipe);
 void mipi_dbi_hw_reset(struct mipi_dbi *mipi);
 bool mipi_dbi_display_is_on(struct mipi_dbi *mipi);
 
+int mipi_dbi_command_read(struct mipi_dbi *mipi, u8 cmd, u8 *val);
+int mipi_dbi_command_buf(struct mipi_dbi *mipi, u8 cmd, u8 *data, size_t len);
+
 /**
  * mipi_dbi_command - MIPI DCS command with optional parameter(s)
  * @mipi: MIPI structure
  * @cmd: Command
  * @...: Parameters
  *
- * Send MIPI DCS command to the controller. Use mipi_dbi_command_buf() for get/read.
+ * Send MIPI DCS command to the controller. Use mipi_dbi_command_read() for
+ * get/read.
  *
  * Returns:
  * Zero on success, negative error code on failure.
@@ -95,30 +98,6 @@ bool mipi_dbi_display_is_on(struct mipi_dbi *mipi);
 	u8 d[] = { seq }; \
 	mipi_dbi_command_buf(mipi, cmd, d, ARRAY_SIZE(d)); \
 })
-
-/**
- * mipi_dbi_command_buf - MIPI DCS command with parameter(s) in an array
- * @mipi: MIPI structure
- * @cmd: Command
- * @data: Parameter buffer
- * @len: Buffer length
- *
- * This function should be used for read commands.
- *
- * Returns:
- * Zero on success, negative error code on failure.
- */
-static inline int mipi_dbi_command_buf(struct mipi_dbi *mipi, u8 cmd,
-				       u8 *data, size_t len)
-{
-	int ret;
-
-	mutex_lock(&mipi->cmdlock);
-	ret = mipi->command(mipi, cmd, data, len);
-	mutex_unlock(&mipi->cmdlock);
-
-	return ret;
-}
 
 #ifdef CONFIG_DEBUG_FS
 int mipi_dbi_debugfs_init(struct drm_minor *minor);
