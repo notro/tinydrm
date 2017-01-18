@@ -23,8 +23,6 @@
  * @prepared: device prepared state (prepared for framebuffer flushing)
  * @enabled: device enabled state (display is on)
  * @fbdev_cma: fbdev CMA structure
- * @fbdev_helper: fbdev helper (from the private fbdev CMA structure).
- * @fbdev_used: fbdev has actually been used
  * @suspend_state: atomic state when suspended
  */
 struct tinydrm_device {

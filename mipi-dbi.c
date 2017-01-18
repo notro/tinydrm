@@ -702,10 +702,9 @@ static void mipi_dbi_blank(struct mipi_dbi *mipi)
  * mipi_dbi_pipe_disable - MIPI DBI pipe disable helper
  * @pipe: Display pipe
  *
- * This function disables the display pipeline by disabling backlight and
- * regulator if present.
- * Drivers can use this as their &drm_simple_display_pipe_funcs->disable
- * callback.
+ * This function disables backlight and regulator if present and if not the
+ * display memory is blanked. Drivers can use this as their
+ * &drm_simple_display_pipe_funcs->disable callback.
  */
 void mipi_dbi_pipe_disable(struct drm_simple_display_pipe *pipe)
 {

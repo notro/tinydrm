@@ -84,12 +84,10 @@ static void mi0283qt_enable(struct drm_simple_display_pipe *pipe,
 	if (tdev->prepared)
 		goto out_unlock;
 
-	if (mipi->regulator) {
-		ret = regulator_enable(mipi->regulator);
-		if (ret) {
-			dev_err(dev, "Failed to enable regulator %d\n", ret);
-			goto out_unlock;
-		}
+	ret = regulator_enable(mipi->regulator);
+	if (ret) {
+		dev_err(dev, "Failed to enable regulator %d\n", ret);
+		goto out_unlock;
 	}
 
 	/* Avoid flicker by skipping setup if the bootloader has done it */
@@ -236,14 +234,9 @@ static int mi0283qt_probe(struct spi_device *spi)
 		return PTR_ERR(dc);
 	}
 
-	mipi->regulator = devm_regulator_get_optional(dev, "power");
-	if (IS_ERR(mipi->regulator)) {
-		ret = PTR_ERR(mipi->regulator);
-		if (ret != -ENODEV)
-			return ret;
-
-		mipi->regulator = NULL;
-	}
+	mipi->regulator = devm_regulator_get(dev, "power");
+	if (IS_ERR(mipi->regulator))
+		return PTR_ERR(mipi->regulator);
 
 	mipi->enable_delay_ms = 50;
 	mipi->backlight = tinydrm_of_find_backlight(dev);
