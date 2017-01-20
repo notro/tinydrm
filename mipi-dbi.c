@@ -623,7 +623,11 @@ static int mipi_dbi_fb_dirty(struct drm_framebuffer *fb,
 
 	mutex_lock(&tdev->dev_lock);
 
-	if (!tinydrm_check_dirty(fb, &clips, &num_clips))
+	if (!mipi->enabled)
+		goto out_unlock;
+
+	/* fbdev can flush even when we're not interested */
+	if (tdev->pipe.plane.fb != fb)
 		goto out_unlock;
 
 	full = tinydrm_merge_clips(&clip, clips, num_clips, flags,
@@ -651,19 +655,6 @@ static int mipi_dbi_fb_dirty(struct drm_framebuffer *fb,
 
 	ret = mipi_dbi_command_buf(mipi, MIPI_DCS_WRITE_MEMORY_START, tr,
 				(clip.x2 - clip.x1) * (clip.y2 - clip.y1) * 2);
-	if (ret)
-		goto out_unlock;
-
-	if (!tdev->enabled) {
-		if (mipi->enable_delay_ms)
-			msleep(mipi->enable_delay_ms);
-		ret = tinydrm_enable_backlight(mipi->backlight);
-		if (ret) {
-			DRM_ERROR("Failed to enable backlight %d\n", ret);
-			goto out_unlock;
-		}
-		tdev->enabled = true;
-	}
 
 out_unlock:
 	mutex_unlock(&tdev->dev_lock);
@@ -680,6 +671,30 @@ static const struct drm_framebuffer_funcs mipi_dbi_fb_funcs = {
 	.create_handle	= drm_fb_cma_create_handle,
 	.dirty		= mipi_dbi_fb_dirty,
 };
+
+/**
+ * mipi_dbi_pipe_enable - MIPI DBI pipe enable helper
+ * @pipe: Display pipe
+ *
+ * This function enables backlight. Drivers can use this as their
+ * &drm_simple_display_pipe_funcs->enable callback.
+ */
+void mipi_dbi_pipe_enable(struct drm_simple_display_pipe *pipe,
+			  struct drm_crtc_state *crtc_state)
+{
+	struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
+	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
+	struct drm_framebuffer *fb = pipe->plane.fb;
+
+	DRM_DEBUG_KMS("\n");
+
+	mipi->enabled = true;
+	if (fb)
+		fb->funcs->dirty(fb, NULL, 0, 0, NULL, 0);
+
+	tinydrm_enable_backlight(mipi->backlight);
+}
+EXPORT_SYMBOL(mipi_dbi_pipe_enable);
 
 static void mipi_dbi_blank(struct mipi_dbi *mipi)
 {
@@ -702,7 +717,7 @@ static void mipi_dbi_blank(struct mipi_dbi *mipi)
  * mipi_dbi_pipe_disable - MIPI DBI pipe disable helper
  * @pipe: Display pipe
  *
- * This function disables backlight and regulator if present and if not the
+ * This function disables backlight if present or if not the
  * display memory is blanked. Drivers can use this as their
  * &drm_simple_display_pipe_funcs->disable callback.
  */
@@ -713,22 +728,12 @@ void mipi_dbi_pipe_disable(struct drm_simple_display_pipe *pipe)
 
 	DRM_DEBUG_KMS("\n");
 
-	mutex_lock(&tdev->dev_lock);
+	mipi->enabled = false;
 
-	if (tdev->enabled) {
-		if (mipi->backlight)
-			tinydrm_disable_backlight(mipi->backlight);
-		else if (!mipi->regulator)
-			mipi_dbi_blank(mipi);
-	}
-	tdev->enabled = false;
-
-	if (tdev->prepared && mipi->regulator) {
-		regulator_disable(mipi->regulator);
-		tdev->prepared = false;
-	}
-
-	mutex_unlock(&tdev->dev_lock);
+	if (mipi->backlight)
+		tinydrm_disable_backlight(mipi->backlight);
+	else
+		mipi_dbi_blank(mipi);
 }
 EXPORT_SYMBOL(mipi_dbi_pipe_disable);
 

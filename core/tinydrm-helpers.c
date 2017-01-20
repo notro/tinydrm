@@ -251,15 +251,16 @@ struct backlight_device *tinydrm_of_find_backlight(struct device *dev)
 EXPORT_SYMBOL(tinydrm_of_find_backlight);
 
 /**
- * tinydrm_enable_backlight - enable backlight helper
+ * tinydrm_enable_backlight - Enable backlight helper
  * @backlight: backlight device
  *
- * Helper to enable backlight for use in &tinydrm_funcs ->enable callback
- * functions.
+ * Returns:
+ * Zero on success, negative error code on failure.
  */
 int tinydrm_enable_backlight(struct backlight_device *backlight)
 {
 	unsigned int old_state;
+	int ret;
 
 	if (!backlight)
 		return 0;
@@ -269,24 +270,28 @@ int tinydrm_enable_backlight(struct backlight_device *backlight)
 	DRM_DEBUG_KMS("Backlight state: 0x%x -> 0x%x\n", old_state,
 		      backlight->props.state);
 
-	return backlight_update_status(backlight);
+	ret = backlight_update_status(backlight);
+	if (ret)
+		DRM_ERROR("Failed to enable backlight %d\n", ret);
+
+	return ret;
 }
 EXPORT_SYMBOL(tinydrm_enable_backlight);
 
 /**
- * tinydrm_disable_backlight - disable backlight helper
+ * tinydrm_disable_backlight - Disable backlight helper
  * @backlight: backlight device
  *
- * Helper to disable backlight for use in &tinydrm_funcs ->disable callback
- * functions.
+ * Returns:
+ * Zero on success, negative error code on failure.
  */
-void tinydrm_disable_backlight(struct backlight_device *backlight)
+int tinydrm_disable_backlight(struct backlight_device *backlight)
 {
 	unsigned int old_state;
 	int ret;
 
 	if (!backlight)
-		return;
+		return 0;
 
 	old_state = backlight->props.state;
 	backlight->props.state |= BL_CORE_SUSPENDED;
@@ -295,60 +300,11 @@ void tinydrm_disable_backlight(struct backlight_device *backlight)
 	ret = backlight_update_status(backlight);
 	if (ret)
 		DRM_ERROR("Failed to disable backlight %d\n", ret);
+
+	return ret;
 }
 EXPORT_SYMBOL(tinydrm_disable_backlight);
 #endif
-
-static int __maybe_unused tinydrm_pm_suspend(struct device *dev)
-{
-	struct tinydrm_device *tdev = dev_get_drvdata(dev);
-
-	if (WARN_ON(!tdev || !tdev->drm || tdev != tdev->drm->dev_private))
-		return -EINVAL;
-
-	return tinydrm_suspend(tdev);
-}
-
-static int __maybe_unused tinydrm_pm_resume(struct device *dev)
-{
-	struct tinydrm_device *tdev = dev_get_drvdata(dev);
-
-	if (WARN_ON(!tdev || !tdev->drm || tdev != tdev->drm->dev_private))
-		return -EINVAL;
-
-	return tinydrm_resume(tdev);
-}
-
-/*
- * tinydrm_simple_pm_ops - tinydrm simple power management operations
- *
- * This provides simple suspend/resume power management and can be assigned
- * to the drivers &device_driver->pm property. &tinydrm_device must be set
- * on the device using dev_set_drvdata() or equivalent.
- */
-const struct dev_pm_ops tinydrm_simple_pm_ops = {
-	SET_SYSTEM_SLEEP_PM_OPS(tinydrm_pm_suspend, tinydrm_pm_resume)
-};
-EXPORT_SYMBOL(tinydrm_simple_pm_ops);
-
-/**
- * tinydrm_spi_shutdown - SPI driver shutdown callback helper
- * @spi: SPI device
- *
- * This is a helper function for the &spi_driver ->shutdown callback which
- * makes sure that the tinydrm device is disabled and unprepared on shutdown.
- * &tinydrm_device must be set on the device using spi_set_drvdata().
- */
-void tinydrm_spi_shutdown(struct spi_device *spi)
-{
-	struct tinydrm_device *tdev = spi_get_drvdata(spi);
-
-	if (WARN_ON(!tdev || !tdev->drm || tdev != tdev->drm->dev_private))
-		return;
-
-	tinydrm_shutdown(tdev);
-}
-EXPORT_SYMBOL(tinydrm_spi_shutdown);
 
 #ifdef CONFIG_SPI
 

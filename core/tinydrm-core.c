@@ -30,9 +30,8 @@
  * @drm: DRM device
  *
  * This function ensures that fbdev is restored when drm_lastclose() is called
- * on the last drm_release(). If fbdev is disabled the pipeline is disabled
- * instead. tinydrm drivers should use this as their &drm_driver->lastclose
- * callback.
+ * on the last drm_release(). tinydrm drivers should use this as their
+ * &drm_driver->lastclose callback.
  */
 void tinydrm_lastclose(struct drm_device *drm)
 {
@@ -133,32 +132,12 @@ static const struct drm_mode_config_funcs tinydrm_mode_config_funcs = {
 	.atomic_commit = drm_atomic_helper_commit,
 };
 
-static void tinydrm_dirty_work(struct work_struct *work)
-{
-	struct tinydrm_device *tdev = container_of(work, struct tinydrm_device,
-						   dirty_work);
-	struct drm_framebuffer *fb = tdev->pipe.plane.fb;
-	struct drm_crtc *crtc = &tdev->pipe.crtc;
-
-	if (fb && fb->funcs->dirty)
-		fb->funcs->dirty(fb, NULL, 0, 0, NULL, 0);
-
-	if (tdev->event) {
-		DRM_DEBUG_KMS("crtc event\n");
-		spin_lock_irq(&crtc->dev->event_lock);
-		drm_crtc_send_vblank_event(crtc, tdev->event);
-		spin_unlock_irq(&crtc->dev->event_lock);
-		tdev->event = NULL;
-	}
-}
-
 static int tinydrm_init(struct device *parent, struct tinydrm_device *tdev,
 			const struct drm_framebuffer_funcs *fb_funcs,
 			struct drm_driver *driver)
 {
 	struct drm_device *drm;
 
-	INIT_WORK(&tdev->dirty_work, tinydrm_dirty_work);
 	mutex_init(&tdev->dev_lock);
 	tdev->fb_funcs = fb_funcs;
 
@@ -248,7 +227,6 @@ static void tinydrm_unregister(struct tinydrm_device *tdev)
 	DRM_DEBUG_KMS("\n");
 
 	drm_crtc_force_disable_all(tdev->drm);
-	cancel_work_sync(&tdev->dirty_work);
 	tinydrm_fbdev_fini(tdev);
 	drm_dev_unregister(tdev->drm);
 }
@@ -290,7 +268,7 @@ EXPORT_SYMBOL(devm_tinydrm_register);
  * tinydrm_shutdown - Shutdown tinydrm
  * @tdev: tinydrm device
  *
- * This function makes sure that tinydrm is disabled and unprepared.
+ * This function makes sure that the display pipeline is disabled.
  * Used by drivers in their shutdown callback to turn off the display
  * on machine shutdown and reboot.
  */

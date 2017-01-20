@@ -127,10 +127,9 @@ EXPORT_SYMBOL(tinydrm_connector_create);
  * @pipe: Simple display pipe
  * @old_state: Old plane state
  *
- * This function schedules a full framebuffer flush if the plane framebuffer
- * has changed. It also detects if fbdev is being used.
- * Drivers can use this as their &drm_simple_display_pipe_funcs->update
- * callback.
+ * This function does a full framebuffer flush if the plane framebuffer
+ * has changed. Drivers can use this as their
+ * &drm_simple_display_pipe_funcs->update callback.
  */
 void tinydrm_display_pipe_update(struct drm_simple_display_pipe *pipe,
 				 struct drm_plane_state *old_state)
@@ -141,26 +140,17 @@ void tinydrm_display_pipe_update(struct drm_simple_display_pipe *pipe,
 
 	if (!fb)
 		DRM_DEBUG_KMS("fb unset\n");
+	else if (!old_state->fb)
+		DRM_DEBUG_KMS("fb set\n");
 	else if (fb != old_state->fb)
 		DRM_DEBUG_KMS("fb changed\n");
 	else
 		DRM_DEBUG_KMS("No fb change\n");
 
-	/*
-	 * FIXME
-	 * Is it possible to get a new event here while one is pending?
-	 */
-
 	if (fb && (fb != old_state->fb)) {
-		struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
-
-		if (crtc->state->event) {
-			tdev->event = crtc->state->event;
-			crtc->state->event = NULL;
-		}
-
 		pipe->plane.fb = fb;
-		schedule_work(&tdev->dirty_work);
+		if (fb->funcs->dirty)
+			fb->funcs->dirty(fb, NULL, 0, 0, NULL, 0);
 	}
 
 	if (crtc->state->event) {

@@ -17,22 +17,15 @@
  * struct tinydrm_device - tinydrm device
  * @drm: DRM device
  * @pipe: Display pipe structure
- * @dirty_work: framebuffer flusher
  * @dev_lock: serializes device access and protects
  *            prepared/enabled state changes
- * @prepared: device prepared state (prepared for framebuffer flushing)
- * @enabled: device enabled state (display is on)
  * @fbdev_cma: fbdev CMA structure
  * @suspend_state: atomic state when suspended
  */
 struct tinydrm_device {
 	struct drm_device *drm;
 	struct drm_simple_display_pipe pipe;
-	struct drm_pending_vblank_event *event;
-	struct work_struct dirty_work;
 	struct mutex dev_lock;
-	bool prepared;
-	bool enabled;
 	struct drm_fbdev_cma *fbdev_cma;
 	struct drm_atomic_state *suspend_state;
 /* private: */
@@ -101,9 +94,6 @@ tinydrm_gem_cma_prime_import_sg_table(struct drm_device *drm,
 struct drm_framebuffer *
 tinydrm_fb_create(struct drm_device *drm, struct drm_file *file_priv,
 		  const struct drm_mode_fb_cmd2 *mode_cmd);
-bool tinydrm_check_dirty(struct drm_framebuffer *fb,
-			 struct drm_clip_rect **clips,
-			 unsigned int *num_clips);
 struct drm_connector *
 tinydrm_connector_create(struct drm_device *drm,
 			 const struct drm_display_mode *mode,

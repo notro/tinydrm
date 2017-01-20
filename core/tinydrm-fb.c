@@ -23,44 +23,6 @@
  */
 
 /**
- * tinydrm_check_dirty - check before flushing framebuffer
- * @fb: framebuffer
- * @clips: pointer to dirty clip rectangles array
- * @num_clips: pointer to number of clips
- *
- * This function checks that the device is prepared and that @fb is the
- * framebuffer set on the plane. If the device hasn't been enabled, which
- * makes this the first flush, do flush everything.
- * Caller has to hold the dev_lock.
- *
- * Returns:
- * True if the dirty call can proceed, false otherwise.
- */
-bool tinydrm_check_dirty(struct drm_framebuffer *fb,
-			 struct drm_clip_rect **clips, unsigned int *num_clips)
-{
-	struct tinydrm_device *tdev = fb->dev->dev_private;
-
-	WARN_ON_ONCE(!mutex_is_locked(&tdev->dev_lock));
-
-	if (!tdev->prepared)
-		return false;
-
-	/* fbdev can flush even when we're not interested */
-	if (tdev->pipe.plane.fb != fb)
-		return false;
-
-	/* Make sure to flush everything the first time */
-	if (!tdev->enabled) {
-		*clips = NULL;
-		*num_clips = 0;
-	}
-
-	return true;
-}
-EXPORT_SYMBOL(tinydrm_check_dirty);
-
-/**
  * tinydrm_fb_create - tinydrm .fb_create() helper
  * @drm: DRM device
  * @file_priv: DRM file info
