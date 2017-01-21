@@ -155,6 +155,296 @@ int mipi_dbi_command_buf(struct mipi_dbi *mipi, u8 cmd, u8 *data, size_t len)
 }
 EXPORT_SYMBOL(mipi_dbi_command_buf);
 
+static int mipi_dbi_buf_copy(void *dst, struct drm_framebuffer *fb,
+				struct drm_clip_rect *clip, bool swap)
+{
+	struct drm_gem_cma_object *cma_obj = drm_fb_cma_get_gem_obj(fb, 0);
+	struct dma_buf_attachment *import_attach = cma_obj->base.import_attach;
+	struct drm_format_name_buf format_name;
+	void *src = cma_obj->vaddr;
+	int ret = 0;
+
+	if (import_attach) {
+		ret = dma_buf_begin_cpu_access(import_attach->dmabuf,
+					       DMA_FROM_DEVICE);
+		if (ret)
+			return ret;
+	}
+
+	switch (fb->format->format) {
+	case DRM_FORMAT_RGB565:
+		if (swap)
+			tinydrm_swab16(dst, src, fb, clip);
+		else
+			tinydrm_memcpy(dst, src, fb, clip);
+		break;
+	case DRM_FORMAT_XRGB8888:
+		tinydrm_xrgb8888_to_rgb565(dst, src, fb, clip, swap);
+		break;
+	default:
+		dev_err_once(fb->dev->dev, "Format is not supported: %s\n",
+			     drm_get_format_name(fb->format->format,
+						 &format_name));
+		return -EINVAL;
+	}
+
+	if (import_attach)
+		ret = dma_buf_end_cpu_access(import_attach->dmabuf,
+					     DMA_FROM_DEVICE);
+	return ret;
+}
+
+static int mipi_dbi_fb_dirty(struct drm_framebuffer *fb,
+			     struct drm_file *file_priv,
+			     unsigned int flags, unsigned int color,
+			     struct drm_clip_rect *clips,
+			     unsigned int num_clips)
+{
+	struct drm_gem_cma_object *cma_obj = drm_fb_cma_get_gem_obj(fb, 0);
+	struct tinydrm_device *tdev = fb->dev->dev_private;
+	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
+	bool swap = mipi->swap_bytes;
+	struct drm_clip_rect clip;
+	int ret = 0;
+	bool full;
+	void *tr;
+
+	mutex_lock(&tdev->dev_lock);
+
+	if (!mipi->enabled)
+		goto out_unlock;
+
+	/* fbdev can flush even when we're not interested */
+	if (tdev->pipe.plane.fb != fb)
+		goto out_unlock;
+
+	full = tinydrm_merge_clips(&clip, clips, num_clips, flags,
+				   fb->width, fb->height);
+
+	DRM_DEBUG("Flushing [FB:%d] x1=%u, x2=%u, y1=%u, y2=%u\n", fb->base.id,
+		  clip.x1, clip.x2, clip.y1, clip.y2);
+
+	if (!mipi->dc || !full || swap ||
+	    fb->format->format == DRM_FORMAT_XRGB8888) {
+		tr = mipi->tx_buf;
+		ret = mipi_dbi_buf_copy(mipi->tx_buf, fb, &clip, swap);
+		if (ret)
+			goto out_unlock;
+	} else {
+		tr = cma_obj->vaddr;
+	}
+
+	mipi_dbi_command(mipi, MIPI_DCS_SET_COLUMN_ADDRESS,
+			 (clip.x1 >> 8) & 0xFF, clip.x1 & 0xFF,
+			 (clip.x2 >> 8) & 0xFF, (clip.x2 - 1) & 0xFF);
+	mipi_dbi_command(mipi, MIPI_DCS_SET_PAGE_ADDRESS,
+			 (clip.y1 >> 8) & 0xFF, clip.y1 & 0xFF,
+			 (clip.y2 >> 8) & 0xFF, (clip.y2 - 1) & 0xFF);
+
+	ret = mipi_dbi_command_buf(mipi, MIPI_DCS_WRITE_MEMORY_START, tr,
+				(clip.x2 - clip.x1) * (clip.y2 - clip.y1) * 2);
+
+out_unlock:
+	mutex_unlock(&tdev->dev_lock);
+
+	if (ret)
+		dev_err_once(fb->dev->dev, "Failed to update display %d\n",
+			     ret);
+
+	return ret;
+}
+
+static const struct drm_framebuffer_funcs mipi_dbi_fb_funcs = {
+	.destroy	= drm_fb_cma_destroy,
+	.create_handle	= drm_fb_cma_create_handle,
+	.dirty		= mipi_dbi_fb_dirty,
+};
+
+/**
+ * mipi_dbi_pipe_enable - MIPI DBI pipe enable helper
+ * @pipe: Display pipe
+ * @crtc_state: CRTC state
+ *
+ * This function enables backlight. Drivers can use this as their
+ * &drm_simple_display_pipe_funcs->enable callback.
+ */
+void mipi_dbi_pipe_enable(struct drm_simple_display_pipe *pipe,
+			  struct drm_crtc_state *crtc_state)
+{
+	struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
+	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
+	struct drm_framebuffer *fb = pipe->plane.fb;
+
+	DRM_DEBUG_KMS("\n");
+
+	mipi->enabled = true;
+	if (fb)
+		fb->funcs->dirty(fb, NULL, 0, 0, NULL, 0);
+
+	tinydrm_enable_backlight(mipi->backlight);
+}
+EXPORT_SYMBOL(mipi_dbi_pipe_enable);
+
+static void mipi_dbi_blank(struct mipi_dbi *mipi)
+{
+	struct drm_device *drm = mipi->tinydrm.drm;
+	u16 height = drm->mode_config.min_height;
+	u16 width = drm->mode_config.min_width;
+	size_t len = width * height * 2;
+
+	memset(mipi->tx_buf, 0, len);
+
+	mipi_dbi_command(mipi, MIPI_DCS_SET_COLUMN_ADDRESS, 0, 0,
+			 (width >> 8) & 0xFF, (width - 1) & 0xFF);
+	mipi_dbi_command(mipi, MIPI_DCS_SET_PAGE_ADDRESS, 0, 0,
+			 (height >> 8) & 0xFF, (height - 1) & 0xFF);
+	mipi_dbi_command_buf(mipi, MIPI_DCS_WRITE_MEMORY_START,
+			     (u8 *)mipi->tx_buf, len);
+}
+
+/**
+ * mipi_dbi_pipe_disable - MIPI DBI pipe disable helper
+ * @pipe: Display pipe
+ *
+ * This function disables backlight if present or if not the
+ * display memory is blanked. Drivers can use this as their
+ * &drm_simple_display_pipe_funcs->disable callback.
+ */
+void mipi_dbi_pipe_disable(struct drm_simple_display_pipe *pipe)
+{
+	struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
+	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
+
+	DRM_DEBUG_KMS("\n");
+
+	mipi->enabled = false;
+
+	if (mipi->backlight)
+		tinydrm_disable_backlight(mipi->backlight);
+	else
+		mipi_dbi_blank(mipi);
+}
+EXPORT_SYMBOL(mipi_dbi_pipe_disable);
+
+static const uint32_t mipi_dbi_formats[] = {
+	DRM_FORMAT_RGB565,
+	DRM_FORMAT_XRGB8888,
+};
+
+/**
+ * mipi_dbi_init - MIPI DBI initialization
+ * @dev: Parent device
+ * @mipi: &mipi_dbi structure to initialize
+ * @pipe_funcs: Display pipe functions
+ * @driver: DRM driver
+ * @mode: Display mode
+ * @rotation: Initial rotation in degrees Counter Clock Wise
+ *
+ * This function initializes a &mipi_dbi structure and it's underlying
+ * @tinydrm_device. It also sets up the display pipeline.
+ *
+ * Supported formats: Native RGB565 and emulated XRGB8888.
+ *
+ * Objects created by this function will be automatically freed on driver
+ * detach (devres).
+ *
+ * Returns:
+ * Zero on success, negative error code on failure.
+ */
+int mipi_dbi_init(struct device *dev, struct mipi_dbi *mipi,
+		  const struct drm_simple_display_pipe_funcs *pipe_funcs,
+		  struct drm_driver *driver,
+		  const struct drm_display_mode *mode, unsigned int rotation)
+{
+	size_t bufsize = mode->vdisplay * mode->hdisplay * sizeof(u16);
+	struct tinydrm_device *tdev = &mipi->tinydrm;
+	int ret;
+
+	if (!mipi->command)
+		return -EINVAL;
+
+	mutex_init(&mipi->cmdlock);
+
+	mipi->tx_buf = devm_kmalloc(dev, bufsize, GFP_KERNEL);
+	if (!mipi->tx_buf)
+		return -ENOMEM;
+
+	ret = devm_tinydrm_init(dev, tdev, &mipi_dbi_fb_funcs, driver);
+	if (ret)
+		return ret;
+
+	/* TODO: Maybe add DRM_MODE_CONNECTOR_SPI */
+	ret = tinydrm_display_pipe_init(tdev, pipe_funcs,
+					DRM_MODE_CONNECTOR_VIRTUAL,
+					mipi_dbi_formats,
+					ARRAY_SIZE(mipi_dbi_formats), mode,
+					rotation);
+	if (ret)
+		return ret;
+
+	tdev->drm->mode_config.preferred_depth = 16;
+	mipi->rotation = rotation;
+
+	drm_mode_config_reset(tdev->drm);
+
+	DRM_DEBUG_KMS("preferred_depth=%u, rotation = %u\n",
+		      tdev->drm->mode_config.preferred_depth, rotation);
+
+	return 0;
+}
+EXPORT_SYMBOL(mipi_dbi_init);
+
+/**
+ * mipi_dbi_hw_reset - Hardware reset of controller
+ * @mipi: MIPI DBI structure
+ *
+ * Reset controller if the &mipi_dbi->reset gpio is set.
+ */
+void mipi_dbi_hw_reset(struct mipi_dbi *mipi)
+{
+	if (!mipi->reset)
+		return;
+
+	gpiod_set_value_cansleep(mipi->reset, 0);
+	msleep(20);
+	gpiod_set_value_cansleep(mipi->reset, 1);
+	msleep(120);
+}
+EXPORT_SYMBOL(mipi_dbi_hw_reset);
+
+/**
+ * mipi_dbi_display_is_on - Check if display is on
+ * @mipi: MIPI DBI structure
+ *
+ * This function checks the Power Mode register (if readable) to see if
+ * display output is turned on. This can be used to see if the bootloader
+ * has already turned on the display avoiding flicker when the pipeline is
+ * enabled.
+ *
+ * Returns:
+ * true if the display can be verified to be on, false otherwise.
+ */
+bool mipi_dbi_display_is_on(struct mipi_dbi *mipi)
+{
+	u8 val;
+
+	if (mipi_dbi_command_read(mipi, MIPI_DCS_GET_POWER_MODE, &val))
+		return false;
+
+	val &= ~DCS_POWER_MODE_RESERVED_MASK;
+
+	if (val != (DCS_POWER_MODE_DISPLAY |
+	    DCS_POWER_MODE_DISPLAY_NORMAL_MODE | DCS_POWER_MODE_SLEEP_MODE))
+		return false;
+
+	DRM_DEBUG_DRIVER("Display is ON\n");
+
+	return true;
+}
+EXPORT_SYMBOL(mipi_dbi_display_is_on);
+
+#ifdef CONFIG_SPI
+
 /*
  * Many controllers have a max speed of 10MHz, but can be pushed way beyond
  * that. Increase reliability by running pixel data at max speed and the rest
@@ -565,293 +855,7 @@ int mipi_dbi_spi_init(struct spi_device *spi, struct mipi_dbi *mipi,
 }
 EXPORT_SYMBOL(mipi_dbi_spi_init);
 
-static int mipi_dbi_buf_copy(void *dst, struct drm_framebuffer *fb,
-				struct drm_clip_rect *clip, bool swap)
-{
-	struct drm_gem_cma_object *cma_obj = drm_fb_cma_get_gem_obj(fb, 0);
-	struct dma_buf_attachment *import_attach = cma_obj->base.import_attach;
-	struct drm_format_name_buf format_name;
-	void *src = cma_obj->vaddr;
-	int ret = 0;
-
-	if (import_attach) {
-		ret = dma_buf_begin_cpu_access(import_attach->dmabuf,
-					       DMA_FROM_DEVICE);
-		if (ret)
-			return ret;
-	}
-
-	switch (fb->format->format) {
-	case DRM_FORMAT_RGB565:
-		if (swap)
-			tinydrm_swab16(dst, src, fb, clip);
-		else
-			tinydrm_memcpy(dst, src, fb, clip);
-		break;
-	case DRM_FORMAT_XRGB8888:
-		tinydrm_xrgb8888_to_rgb565(dst, src, fb, clip, swap);
-		break;
-	default:
-		dev_err_once(fb->dev->dev, "Format is not supported: %s\n",
-			     drm_get_format_name(fb->format->format,
-						 &format_name));
-		return -EINVAL;
-	}
-
-	if (import_attach)
-		ret = dma_buf_end_cpu_access(import_attach->dmabuf,
-					     DMA_FROM_DEVICE);
-	return ret;
-}
-
-static int mipi_dbi_fb_dirty(struct drm_framebuffer *fb,
-			     struct drm_file *file_priv,
-			     unsigned int flags, unsigned int color,
-			     struct drm_clip_rect *clips,
-			     unsigned int num_clips)
-{
-	struct drm_gem_cma_object *cma_obj = drm_fb_cma_get_gem_obj(fb, 0);
-	struct tinydrm_device *tdev = fb->dev->dev_private;
-	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
-	bool swap = mipi->swap_bytes;
-	struct drm_clip_rect clip;
-	int ret = 0;
-	bool full;
-	void *tr;
-
-	mutex_lock(&tdev->dev_lock);
-
-	if (!mipi->enabled)
-		goto out_unlock;
-
-	/* fbdev can flush even when we're not interested */
-	if (tdev->pipe.plane.fb != fb)
-		goto out_unlock;
-
-	full = tinydrm_merge_clips(&clip, clips, num_clips, flags,
-				   fb->width, fb->height);
-
-	DRM_DEBUG("Flushing [FB:%d] x1=%u, x2=%u, y1=%u, y2=%u\n", fb->base.id,
-		  clip.x1, clip.x2, clip.y1, clip.y2);
-
-	if (!mipi->dc || !full || swap ||
-	    fb->format->format == DRM_FORMAT_XRGB8888) {
-		tr = mipi->tx_buf;
-		ret = mipi_dbi_buf_copy(mipi->tx_buf, fb, &clip, swap);
-		if (ret)
-			goto out_unlock;
-	} else {
-		tr = cma_obj->vaddr;
-	}
-
-	mipi_dbi_command(mipi, MIPI_DCS_SET_COLUMN_ADDRESS,
-			 (clip.x1 >> 8) & 0xFF, clip.x1 & 0xFF,
-			 (clip.x2 >> 8) & 0xFF, (clip.x2 - 1) & 0xFF);
-	mipi_dbi_command(mipi, MIPI_DCS_SET_PAGE_ADDRESS,
-			 (clip.y1 >> 8) & 0xFF, clip.y1 & 0xFF,
-			 (clip.y2 >> 8) & 0xFF, (clip.y2 - 1) & 0xFF);
-
-	ret = mipi_dbi_command_buf(mipi, MIPI_DCS_WRITE_MEMORY_START, tr,
-				(clip.x2 - clip.x1) * (clip.y2 - clip.y1) * 2);
-
-out_unlock:
-	mutex_unlock(&tdev->dev_lock);
-
-	if (ret)
-		dev_err_once(fb->dev->dev, "Failed to update display %d\n",
-			     ret);
-
-	return ret;
-}
-
-static const struct drm_framebuffer_funcs mipi_dbi_fb_funcs = {
-	.destroy	= drm_fb_cma_destroy,
-	.create_handle	= drm_fb_cma_create_handle,
-	.dirty		= mipi_dbi_fb_dirty,
-};
-
-/**
- * mipi_dbi_pipe_enable - MIPI DBI pipe enable helper
- * @pipe: Display pipe
- * @crtc_state: CRTC state
- *
- * This function enables backlight. Drivers can use this as their
- * &drm_simple_display_pipe_funcs->enable callback.
- */
-void mipi_dbi_pipe_enable(struct drm_simple_display_pipe *pipe,
-			  struct drm_crtc_state *crtc_state)
-{
-	struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
-	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
-	struct drm_framebuffer *fb = pipe->plane.fb;
-
-	DRM_DEBUG_KMS("\n");
-
-	mipi->enabled = true;
-	if (fb)
-		fb->funcs->dirty(fb, NULL, 0, 0, NULL, 0);
-
-	tinydrm_enable_backlight(mipi->backlight);
-}
-EXPORT_SYMBOL(mipi_dbi_pipe_enable);
-
-static void mipi_dbi_blank(struct mipi_dbi *mipi)
-{
-	struct drm_device *drm = mipi->tinydrm.drm;
-	u16 height = drm->mode_config.min_height;
-	u16 width = drm->mode_config.min_width;
-	size_t len = width * height * 2;
-
-	memset(mipi->tx_buf, 0, len);
-
-	mipi_dbi_command(mipi, MIPI_DCS_SET_COLUMN_ADDRESS, 0, 0,
-			 (width >> 8) & 0xFF, (width - 1) & 0xFF);
-	mipi_dbi_command(mipi, MIPI_DCS_SET_PAGE_ADDRESS, 0, 0,
-			 (height >> 8) & 0xFF, (height - 1) & 0xFF);
-	mipi_dbi_command_buf(mipi, MIPI_DCS_WRITE_MEMORY_START,
-			     (u8 *)mipi->tx_buf, len);
-}
-
-/**
- * mipi_dbi_pipe_disable - MIPI DBI pipe disable helper
- * @pipe: Display pipe
- *
- * This function disables backlight if present or if not the
- * display memory is blanked. Drivers can use this as their
- * &drm_simple_display_pipe_funcs->disable callback.
- */
-void mipi_dbi_pipe_disable(struct drm_simple_display_pipe *pipe)
-{
-	struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
-	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
-
-	DRM_DEBUG_KMS("\n");
-
-	mipi->enabled = false;
-
-	if (mipi->backlight)
-		tinydrm_disable_backlight(mipi->backlight);
-	else
-		mipi_dbi_blank(mipi);
-}
-EXPORT_SYMBOL(mipi_dbi_pipe_disable);
-
-static const uint32_t mipi_dbi_formats[] = {
-	DRM_FORMAT_RGB565,
-	DRM_FORMAT_XRGB8888,
-};
-
-/**
- * mipi_dbi_init - MIPI DBI initialization
- * @dev: Parent device
- * @mipi: &mipi_dbi structure to initialize
- * @pipe_funcs: Display pipe functions
- * @driver: DRM driver
- * @mode: Display mode
- * @rotation: Initial rotation in degrees Counter Clock Wise
- *
- * This function initializes a &mipi_dbi structure and it's underlying
- * @tinydrm_device. It also sets up the display pipeline.
- *
- * Supported formats: Native RGB565 and emulated XRGB8888.
- *
- * Objects created by this function will be automatically freed on driver
- * detach (devres).
- *
- * Returns:
- * Zero on success, negative error code on failure.
- */
-int mipi_dbi_init(struct device *dev, struct mipi_dbi *mipi,
-		  const struct drm_simple_display_pipe_funcs *pipe_funcs,
-		  struct drm_driver *driver,
-		  const struct drm_display_mode *mode, unsigned int rotation)
-{
-	size_t bufsize = mode->vdisplay * mode->hdisplay * sizeof(u16);
-	struct tinydrm_device *tdev = &mipi->tinydrm;
-	int ret;
-
-	if (!mipi->command)
-		return -EINVAL;
-
-	mutex_init(&mipi->cmdlock);
-
-	mipi->tx_buf = devm_kmalloc(dev, bufsize, GFP_KERNEL);
-	if (!mipi->tx_buf)
-		return -ENOMEM;
-
-	ret = devm_tinydrm_init(dev, tdev, &mipi_dbi_fb_funcs, driver);
-	if (ret)
-		return ret;
-
-	/* TODO: Maybe add DRM_MODE_CONNECTOR_SPI */
-	ret = tinydrm_display_pipe_init(tdev, pipe_funcs,
-					DRM_MODE_CONNECTOR_VIRTUAL,
-					mipi_dbi_formats,
-					ARRAY_SIZE(mipi_dbi_formats), mode,
-					rotation);
-	if (ret)
-		return ret;
-
-	tdev->drm->mode_config.preferred_depth = 16;
-	mipi->rotation = rotation;
-
-	drm_mode_config_reset(tdev->drm);
-
-	DRM_DEBUG_KMS("preferred_depth=%u, rotation = %u\n",
-		      tdev->drm->mode_config.preferred_depth, rotation);
-
-	return 0;
-}
-EXPORT_SYMBOL(mipi_dbi_init);
-
-/**
- * mipi_dbi_hw_reset - Hardware reset of controller
- * @mipi: MIPI DBI structure
- *
- * Reset controller if the &mipi_dbi->reset gpio is set.
- */
-void mipi_dbi_hw_reset(struct mipi_dbi *mipi)
-{
-	if (!mipi->reset)
-		return;
-
-	gpiod_set_value_cansleep(mipi->reset, 0);
-	msleep(20);
-	gpiod_set_value_cansleep(mipi->reset, 1);
-	msleep(120);
-}
-EXPORT_SYMBOL(mipi_dbi_hw_reset);
-
-/**
- * mipi_dbi_display_is_on - Check if display is on
- * @mipi: MIPI DBI structure
- *
- * This function checks the Power Mode register (if readable) to see if
- * display output is turned on. This can be used to see if the bootloader
- * has already turned on the display avoiding flicker when the pipeline is
- * enabled.
- *
- * Returns:
- * true if the display can be verified to be on, false otherwise.
- */
-bool mipi_dbi_display_is_on(struct mipi_dbi *mipi)
-{
-	u8 val;
-
-	if (mipi_dbi_command_read(mipi, MIPI_DCS_GET_POWER_MODE, &val))
-		return false;
-
-	val &= ~DCS_POWER_MODE_RESERVED_MASK;
-
-	if (val != (DCS_POWER_MODE_DISPLAY |
-	    DCS_POWER_MODE_DISPLAY_NORMAL_MODE | DCS_POWER_MODE_SLEEP_MODE))
-		return false;
-
-	DRM_DEBUG_DRIVER("Display is ON\n");
-
-	return true;
-}
-EXPORT_SYMBOL(mipi_dbi_display_is_on);
+#endif /* CONFIG_SPI */
 
 #ifdef CONFIG_DEBUG_FS
 
