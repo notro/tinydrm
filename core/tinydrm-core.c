@@ -152,7 +152,7 @@ static int tinydrm_init(struct device *parent, struct tinydrm_device *tdev,
 {
 	struct drm_device *drm;
 
-	mutex_init(&tdev->dev_lock);
+	mutex_init(&tdev->dirty_lock);
 	tdev->fb_funcs = fb_funcs;
 
 	/*
@@ -178,7 +178,7 @@ static void tinydrm_fini(struct tinydrm_device *tdev)
 	DRM_DEBUG_KMS("\n");
 
 	drm_mode_config_cleanup(tdev->drm);
-	mutex_destroy(&tdev->dev_lock);
+	mutex_destroy(&tdev->dirty_lock);
 	tdev->drm->dev_private = NULL;
 	drm_dev_unref(tdev->drm);
 }

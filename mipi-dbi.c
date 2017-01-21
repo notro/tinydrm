@@ -209,7 +209,7 @@ static int mipi_dbi_fb_dirty(struct drm_framebuffer *fb,
 	bool full;
 	void *tr;
 
-	mutex_lock(&tdev->dev_lock);
+	mutex_lock(&tdev->dirty_lock);
 
 	if (!mipi->enabled)
 		goto out_unlock;
@@ -245,7 +245,7 @@ static int mipi_dbi_fb_dirty(struct drm_framebuffer *fb,
 				(clip.x2 - clip.x1) * (clip.y2 - clip.y1) * 2);
 
 out_unlock:
-	mutex_unlock(&tdev->dev_lock);
+	mutex_unlock(&tdev->dirty_lock);
 
 	if (ret)
 		dev_err_once(fb->dev->dev, "Failed to update display %d\n",
