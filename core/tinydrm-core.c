@@ -15,22 +15,27 @@
 #include <linux/device.h>
 #include <linux/dma-buf.h>
 
+#include "internal.h"
+
 /**
- * DOC: Overview
+ * DOC: overview
  *
- * This library provides helpers for displays with onboard graphics memory
- * connected through a slow interface.
+ * This library provides driver helpers for very simple display hardware.
  *
- * In order for the display to turn off at shutdown, the device driver shutdown
- * callback has to be set. This function should call tinydrm_shutdown().
+ * It is based on &drm_simple_display_pipe coupled with a &drm_connector which has only one fixed &drm_display_mode.
+ * The framebuffers are backed by the cma helper and have support for framebuffer flushing (dirty).
+ * fbdev support is also included.
+ *
+ * The driver allocates &tinydrm_device, initializes it using devm_tinydrm_init(), sets up the pipeline using tinydrm_display_pipe_init()
+ * and registers the DRM device using devm_tinydrm_register().
  */
 
 /**
- * tinydrm_lastclose - DRM .lastclose() helper
+ * tinydrm_lastclose - DRM lastclose helper
  * @drm: DRM device
  *
  * This function ensures that fbdev is restored when drm_lastclose() is called
- * on the last drm_release(). tinydrm drivers should use this as their
+ * on the last drm_release(). Drivers can use this as their
  * &drm_driver->lastclose callback.
  */
 void tinydrm_lastclose(struct drm_device *drm)
@@ -43,41 +48,18 @@ void tinydrm_lastclose(struct drm_device *drm)
 EXPORT_SYMBOL(tinydrm_lastclose);
 
 /**
- * tinydrm_gem_cma_free_object - free resources associated with a CMA GEM
- *                               object
- * @gem_obj: GEM object to free
- *
- * This function frees the backing memory of the CMA GEM object, cleans up the
- * GEM object state and frees the memory used to store the object itself using
- * drm_gem_cma_free_object(). It also handles PRIME buffers which has the kernel
- * virtual address set by tinydrm_gem_cma_prime_import_sg_table(). tinydrm
- * drivers should set this as their &drm_driver->gem_free_object callback.
- */
-void tinydrm_gem_cma_free_object(struct drm_gem_object *gem_obj)
-{
-	if (gem_obj->import_attach) {
-		struct drm_gem_cma_object *cma_obj;
-
-		cma_obj = to_drm_gem_cma_obj(gem_obj);
-		dma_buf_vunmap(gem_obj->import_attach->dmabuf, cma_obj->vaddr);
-		cma_obj->vaddr = NULL;
-	}
-
-	drm_gem_cma_free_object(gem_obj);
-}
-EXPORT_SYMBOL_GPL(tinydrm_gem_cma_free_object);
-
-/**
- * tinydrm_gem_cma_prime_import_sg_table - produce a CMA GEM object from
+ * tinydrm_gem_cma_prime_import_sg_table - Produce a CMA GEM object from
  *     another driver's scatter/gather table of pinned pages
- * @drm: device to import into
+ * @drm: DRM device to import into
  * @attach: DMA-BUF attachment
- * @sgt: scatter/gather table of pinned pages
+ * @sgt: Scatter/gather table of pinned pages
  *
  * This function imports a scatter/gather table exported via DMA-BUF by
- * another driver using drm_gem_cma_prime_import_sg_table(). It also sets the
- * kernel virtual address on the CMA object. tinydrm drivers should use this
- * as their &drm_driver->gem_prime_import_sg_table callback.
+ * another driver using drm_gem_cma_prime_import_sg_table(). It sets the
+ * kernel virtual address on the CMA object. Drivers should use this as their
+ * &drm_driver->gem_prime_import_sg_table callback if they need the virtual
+ * address. tinydrm_gem_cma_free_object() should be used in combination with
+ * this function.
  *
  * Returns:
  * A pointer to a newly created GEM object or an ERR_PTR-encoded negative
@@ -111,6 +93,31 @@ tinydrm_gem_cma_prime_import_sg_table(struct drm_device *drm,
 }
 EXPORT_SYMBOL(tinydrm_gem_cma_prime_import_sg_table);
 
+/**
+ * tinydrm_gem_cma_free_object - Free resources associated with a CMA GEM
+ *                               object
+ * @gem_obj: GEM object to free
+ *
+ * This function frees the backing memory of the CMA GEM object, cleans up the
+ * GEM object state and frees the memory used to store the object itself using
+ * drm_gem_cma_free_object(). It also handles PRIME buffers which has the kernel
+ * virtual address set by tinydrm_gem_cma_prime_import_sg_table(). Drivers
+ * can use this as their &drm_driver->gem_free_object callback.
+ */
+void tinydrm_gem_cma_free_object(struct drm_gem_object *gem_obj)
+{
+	if (gem_obj->import_attach) {
+		struct drm_gem_cma_object *cma_obj;
+
+		cma_obj = to_drm_gem_cma_obj(gem_obj);
+		dma_buf_vunmap(gem_obj->import_attach->dmabuf, cma_obj->vaddr);
+		cma_obj->vaddr = NULL;
+	}
+
+	drm_gem_cma_free_object(gem_obj);
+}
+EXPORT_SYMBOL_GPL(tinydrm_gem_cma_free_object);
+
 const struct file_operations tinydrm_fops = {
 	.owner		= THIS_MODULE,
 	.open		= drm_open,
@@ -143,8 +150,9 @@ static int tinydrm_init(struct device *parent, struct tinydrm_device *tdev,
 
 	/*
 	 * We don't embed drm_device, because that prevent us from using
-	 * devm_kzalloc() on tinydrm_device in the driver since drm_dev_unref()
-	 * frees the structure. The devm_ functions gives easy error handling.
+	 * devm_kzalloc() to allocate tinydrm_device in the driver since
+	 * drm_dev_unref() frees the structure. The devm_ functions provide
+	 * for easy error handling.
 	 */
 	drm = drm_dev_alloc(driver, parent);
 	if (IS_ERR(drm))
@@ -181,10 +189,8 @@ static void devm_tinydrm_release(void *data)
  * @driver: DRM driver
  *
  * This function initializes @tdev, the underlying DRM device and it's
- * mode_config. Additionally it sets &drm_mode_config_funcs using
- * tinydrm_fb_create() for framebuffer creation.
- * Resources will be automatically freed on driver detach (devres) using
- * drm_mode_config_cleanup() and drm_dev_unref().
+ * mode_config. Resources will be automatically freed on driver detach (devres)
+ * using drm_mode_config_cleanup() and drm_dev_unref().
  *
  * Returns:
  * Zero on success, negative error code on failure.
@@ -240,7 +246,7 @@ static void devm_tinydrm_register_release(void *data)
  * devm_tinydrm_register - Register tinydrm device
  * @tdev: tinydrm device
  *
- * This function registers the underlying DRM device, connectors and fbdev.
+ * This function registers the underlying DRM device and fbdev.
  * These resources will be automatically unregistered on driver detach (devres)
  * and the display pipeline will be disabled.
  *

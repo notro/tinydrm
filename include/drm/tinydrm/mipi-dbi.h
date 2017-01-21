@@ -22,7 +22,7 @@ struct gpio_desc;
 struct regulator;
 
 /**
- * mipi_dbi - MIPI DBI controller
+ * struct mipi_dbi - MIPI DBI controller
  * @tinydrm: tinydrm base
  * @spi: SPI device
  * @enabled: Pipeline is enabled
@@ -87,7 +87,7 @@ int mipi_dbi_command_buf(struct mipi_dbi *mipi, u8 cmd, u8 *data, size_t len);
  * mipi_dbi_command - MIPI DCS command with optional parameter(s)
  * @mipi: MIPI structure
  * @cmd: Command
- * @...: Parameters
+ * @seq...: Optional parameter(s)
  *
  * Send MIPI DCS command to the controller. Use mipi_dbi_command_read() for
  * get/read.

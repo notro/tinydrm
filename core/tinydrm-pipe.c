@@ -81,18 +81,6 @@ static const struct drm_connector_funcs tinydrm_connector_funcs = {
 	.atomic_destroy_state = drm_atomic_helper_connector_destroy_state,
 };
 
-/**
- * tinydrm_connector_create - Create simple connector
- * @drm: DRM device
- * @mode: Supported display mode
- * @connector_type: Connector type
- *
- * This function creates a simple &drm_connector with one fixed
- * &drm_display_mode.
- *
- * Returns:
- * DRM connector on success, error pointer on failure.
- */
 struct drm_connector *
 tinydrm_connector_create(struct drm_device *drm,
 			 const struct drm_display_mode *mode,
@@ -121,7 +109,6 @@ tinydrm_connector_create(struct drm_device *drm,
 
 	return connector;
 }
-EXPORT_SYMBOL(tinydrm_connector_create);
 
 /**
  * tinydrm_display_pipe_update - Display pipe update helper
@@ -129,7 +116,7 @@ EXPORT_SYMBOL(tinydrm_connector_create);
  * @old_state: Old plane state
  *
  * This function does a full framebuffer flush if the plane framebuffer
- * has changed. Drivers can use this as their
+ * has changed. It also handles vblank events. Drivers can use this as their
  * &drm_simple_display_pipe_funcs->update callback.
  */
 void tinydrm_display_pipe_update(struct drm_simple_display_pipe *pipe,
@@ -203,7 +190,7 @@ static int tinydrm_rotate_mode(struct drm_display_mode *mode,
  * @tdev: tinydrm device
  * @funcs: Display pipe functions
  * @connector_type: Connector type
- * @formats: Array of supported formats (%DRM_FORMAT_*)
+ * @formats: Array of supported formats (DRM_FORMAT\_\*)
  * @format_count: Number of elements in @formats
  * @mode: Supported mode
  * @rotation: Initial @mode rotation in degrees Counter Clock Wise

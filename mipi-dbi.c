@@ -38,10 +38,10 @@
  * This library provides helpers for MIPI Display Bus Interface (DBI)
  * compatible display controllers.
  *
- * Many controllers are MIPI compliant and can use this library.
- * If a controller uses registers 0x2A and 0x2B to set the area to update
- * and uses register 0x2C to write to frame memory, it is most likely MIPI
- * compliant.
+ * Many controllers for tiny lcd displays are MIPI compliant and can use this
+ * library. If a controller uses registers 0x2A and 0x2B to set the area to
+ * update and uses register 0x2C to write to frame memory, it is most likely
+ * MIPI compliant.
  *
  * Only MIPI Type 1 displays are supported since a full frame memory is needed.
  *
@@ -675,6 +675,7 @@ static const struct drm_framebuffer_funcs mipi_dbi_fb_funcs = {
 /**
  * mipi_dbi_pipe_enable - MIPI DBI pipe enable helper
  * @pipe: Display pipe
+ * @crtc_state: CRTC state
  *
  * This function enables backlight. Drivers can use this as their
  * &drm_simple_display_pipe_funcs->enable callback.
@@ -752,8 +753,10 @@ static const uint32_t mipi_dbi_formats[] = {
  * @rotation: Initial rotation in degrees Counter Clock Wise
  *
  * This function initializes a &mipi_dbi structure and it's underlying
- * @tinydrm_device and &drm_device. It also sets up the display pipeline.
+ * @tinydrm_device. It also sets up the display pipeline.
+ *
  * Supported formats: Native RGB565 and emulated XRGB8888.
+ *
  * Objects created by this function will be automatically freed on driver
  * detach (devres).
  *
@@ -822,8 +825,8 @@ void mipi_dbi_hw_reset(struct mipi_dbi *mipi)
 EXPORT_SYMBOL(mipi_dbi_hw_reset);
 
 /**
- * mipi_dbi_display_is_on - check if display is on
- * @reg: LCD register
+ * mipi_dbi_display_is_on - Check if display is on
+ * @mipi: MIPI DBI structure
  *
  * This function checks the Power Mode register (if readable) to see if
  * display output is turned on. This can be used to see if the bootloader
@@ -973,6 +976,8 @@ static const struct drm_info_list mipi_dbi_debugfs_list[] = {
  * mipi_dbi_debugfs_init - Create debugfs entries
  * @minor: DRM minor
  *
+ * This function creates a 'command' debugfs file for sending commands to the
+ * controller or getting the read command values.
  * Drivers can use this as their &drm_driver->debugfs_init callback.
  *
  * Returns:

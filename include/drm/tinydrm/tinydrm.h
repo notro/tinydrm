@@ -17,10 +17,11 @@
  * struct tinydrm_device - tinydrm device
  * @drm: DRM device
  * @pipe: Display pipe structure
- * @dev_lock: serializes device access and protects
+ * @dev_lock: Serializes device access and protects
  *            prepared/enabled state changes
- * @fbdev_cma: fbdev CMA structure
- * @suspend_state: atomic state when suspended
+ * @fbdev_cma: CMA fbdev structure
+ * @suspend_state: Atomic state when suspended
+ * @fb_funcs: Framebuffer functions used when creating framebuffers
  */
 struct tinydrm_device {
 	struct drm_device *drm;
@@ -28,7 +29,6 @@ struct tinydrm_device {
 	struct mutex dev_lock;
 	struct drm_fbdev_cma *fbdev_cma;
 	struct drm_atomic_state *suspend_state;
-/* private: */
 	const struct drm_framebuffer_funcs *fb_funcs;
 };
 
@@ -38,7 +38,7 @@ pipe_to_tinydrm(struct drm_simple_display_pipe *pipe)
 	return container_of(pipe, struct tinydrm_device, pipe);
 }
 
-/*
+/**
  * TINYDRM_GEM_DRIVER_OPS - default tinydrm gem operations
  *
  * This macro provides a shortcut for setting the tinydrm GEM operations in
@@ -63,10 +63,10 @@ pipe_to_tinydrm(struct drm_simple_display_pipe *pipe)
 
 /**
  * TINYDRM_MODE - tinydrm display mode
- * @hd: horizontal resolution, width
- * @vd: vertical resolution, height
- * @hd_mm: display width in millimeters
- * @vd_mm: display height in millimeters
+ * @hd: Horizontal resolution, width
+ * @vd: Vertical resolution, height
+ * @hd_mm: Display width in millimeters
+ * @vd_mm: Display height in millimeters
  *
  * This macro creates a &drm_display_mode for use with tinydrm.
  */
@@ -91,13 +91,14 @@ struct drm_gem_object *
 tinydrm_gem_cma_prime_import_sg_table(struct drm_device *drm,
 				      struct dma_buf_attachment *attach,
 				      struct sg_table *sgt);
-struct drm_framebuffer *
-tinydrm_fb_create(struct drm_device *drm, struct drm_file *file_priv,
-		  const struct drm_mode_fb_cmd2 *mode_cmd);
-struct drm_connector *
-tinydrm_connector_create(struct drm_device *drm,
-			 const struct drm_display_mode *mode,
-			 int connector_type);
+int devm_tinydrm_init(struct device *parent, struct tinydrm_device *tdev,
+		      const struct drm_framebuffer_funcs *fb_funcs,
+		      struct drm_driver *driver);
+int devm_tinydrm_register(struct tinydrm_device *tdev);
+void tinydrm_shutdown(struct tinydrm_device *tdev);
+int tinydrm_suspend(struct tinydrm_device *tdev);
+int tinydrm_resume(struct tinydrm_device *tdev);
+
 void tinydrm_display_pipe_update(struct drm_simple_display_pipe *pipe,
 				 struct drm_plane_state *old_state);
 int tinydrm_display_pipe_prepare_fb(struct drm_simple_display_pipe *pipe,
@@ -110,15 +111,5 @@ tinydrm_display_pipe_init(struct tinydrm_device *tdev,
 			  unsigned int format_count,
 			  const struct drm_display_mode *mode,
 			  unsigned int rotation);
-int devm_tinydrm_init(struct device *parent, struct tinydrm_device *tdev,
-		      const struct drm_framebuffer_funcs *fb_funcs,
-		      struct drm_driver *driver);
-int devm_tinydrm_register(struct tinydrm_device *tdev);
-void tinydrm_shutdown(struct tinydrm_device *tdev);
-int tinydrm_suspend(struct tinydrm_device *tdev);
-int tinydrm_resume(struct tinydrm_device *tdev);
-
-int tinydrm_fbdev_init(struct tinydrm_device *tdev);
-void tinydrm_fbdev_fini(struct tinydrm_device *tdev);
 
 #endif /* __LINUX_TINYDRM_H */

@@ -23,7 +23,7 @@ struct device;
  * tinydrm_machine_little_endian - Machine is little endian
  *
  * Returns:
- * true if defined(__LITTLE_ENDIAN), false otherwise
+ * true if *defined(__LITTLE_ENDIAN)*, false otherwise
  */
 static inline bool tinydrm_machine_little_endian(void)
 {
@@ -83,7 +83,7 @@ void _tinydrm_dbg_spi_message(struct spi_device *spi, struct spi_message *m);
  *
  * Dumps info about the transfers in a SPI message including buffer content.
  * DEBUG has to be defined for this function to be enabled alongside setting
- * the DRM_UT_DRIVER bit of drm_debug.
+ * the DRM_UT_DRIVER bit of &drm_debug.
  */
 static inline void tinydrm_dbg_spi_message(struct spi_device *spi,
 					   struct spi_message *m)

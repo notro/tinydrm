@@ -20,13 +20,13 @@ module_param(spi_max, uint, 0400);
 MODULE_PARM_DESC(spi_max, "Set a lower SPI max transfer size");
 
 /**
- * tinydrm_merge_clips - merge clip rectangles
- * @dst: destination clip rectangle
- * @src: source clip rectangle(s)
- * @num_clips: number of @src clip rectangles
- * @flags: dirty fb ioctl flags
- * @max_width: maximum width of @dst
- * @max_height: maximum height of @dst
+ * tinydrm_merge_clips - Merge clip rectangles
+ * @dst: Destination clip rectangle
+ * @src: Source clip rectangle(s)
+ * @num_clips: Number of @src clip rectangles
+ * @flags: Dirty fb ioctl flags
+ * @max_width: Maximum width of @dst
+ * @max_height: Maximum height of @dst
  *
  * This function merges @src clip rectangle(s) into @dst. If @src is NULL,
  * @max_width and @min_width is used to set a full @dst clip rectangle.
@@ -103,8 +103,8 @@ EXPORT_SYMBOL(tinydrm_memcpy);
 
 /**
  * tinydrm_swab16 - Swap bytes into clip buffer
- * @dst: rgb565 destination buffer
- * @vaddr: rgb565 source buffer
+ * @dst: RGB565 destination buffer
+ * @vaddr: RGB565 source buffer
  * @fb: DRM framebuffer
  * @clip: Clip rectangle area to copy
  */
@@ -173,15 +173,15 @@ void tinydrm_swab16(u16 *dst, void *vaddr, struct drm_framebuffer *fb,
 EXPORT_SYMBOL(tinydrm_swab16);
 
 /**
- * tinydrm_xrgb8888_to_rgb565 - convert xrgb8888 to rgb565 clip buffer
- * @dst: rgb565 destination buffer
- * @vaddr: xrgb8888 source buffer
+ * tinydrm_xrgb8888_to_rgb565 - Convert XRGB8888 to RGB565 clip buffer
+ * @dst: RGB565 destination buffer
+ * @vaddr: XRGB8888 source buffer
  * @fb: DRM framebuffer
  * @clip: Clip rectangle area to copy
  * @swap: Swap bytes
  *
- * Drivers can use this function for rgb565 devices that don't natively
- * support xrgb8888.
+ * Drivers can use this function for RGB565 devices that don't natively
+ * support XRGB8888.
  */
 void tinydrm_xrgb8888_to_rgb565(u16 *dst, void *vaddr,
 				struct drm_framebuffer *fb,
@@ -211,8 +211,8 @@ EXPORT_SYMBOL(tinydrm_xrgb8888_to_rgb565);
 
 #ifdef CONFIG_BACKLIGHT_CLASS_DEVICE
 /**
- * tinydrm_of_find_backlight - find backlight device in device-tree
- * @dev: device
+ * tinydrm_of_find_backlight - Find backlight device in device-tree
+ * @dev: Device
  *
  * This function looks for a DT node pointed to by a property named 'backlight'
  * and uses of_find_backlight_by_node() to get the backlight device.
@@ -252,7 +252,7 @@ EXPORT_SYMBOL(tinydrm_of_find_backlight);
 
 /**
  * tinydrm_enable_backlight - Enable backlight helper
- * @backlight: backlight device
+ * @backlight: Backlight device
  *
  * Returns:
  * Zero on success, negative error code on failure.
@@ -280,7 +280,7 @@ EXPORT_SYMBOL(tinydrm_enable_backlight);
 
 /**
  * tinydrm_disable_backlight - Disable backlight helper
- * @backlight: backlight device
+ * @backlight: Backlight device
  *
  * Returns:
  * Zero on success, negative error code on failure.
@@ -415,8 +415,9 @@ EXPORT_SYMBOL(_tinydrm_dbg_spi_message);
  *
  * This SPI transfer helper breaks up the transfer of @buf into chunks which
  * the SPI master driver can handle. If the machine is Little Endian and the
- * SPI master driver doesn't support @bpw=16, it swaps the bytes and does a
- * 8-bit transfer. If @header is set, it is prepended to each SPI message.
+ * SPI master driver doesn't support 16 bits per word, it swaps the bytes and
+ * does a 8-bit transfer.
+ * If @header is set, it is prepended to each SPI message.
  *
  * Returns:
  * Zero on success, negative error code on failure.
