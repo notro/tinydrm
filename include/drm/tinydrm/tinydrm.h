@@ -11,6 +11,7 @@
 #define __LINUX_TINYDRM_H
 
 #include <drm/drm_gem_cma_helper.h>
+#include <drm/drm_fb_cma_helper.h>
 #include <drm/drm_simple_kms_helper.h>
 
 /**
