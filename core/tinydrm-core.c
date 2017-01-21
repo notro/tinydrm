@@ -15,8 +15,6 @@
 #include <linux/device.h>
 #include <linux/dma-buf.h>
 
-#include "internal.h"
-
 /**
  * DOC: overview
  *
@@ -133,6 +131,16 @@ const struct file_operations tinydrm_fops = {
 };
 EXPORT_SYMBOL(tinydrm_fops);
 
+static struct drm_framebuffer *
+tinydrm_fb_create(struct drm_device *drm, struct drm_file *file_priv,
+		  const struct drm_mode_fb_cmd2 *mode_cmd)
+{
+	struct tinydrm_device *tdev = drm->dev_private;
+
+	return drm_fb_cma_create_with_funcs(drm, file_priv, mode_cmd,
+					    tdev->fb_funcs);
+}
+
 static const struct drm_mode_config_funcs tinydrm_mode_config_funcs = {
 	.fb_create = tinydrm_fb_create,
 	.atomic_check = drm_atomic_helper_check,
@@ -215,15 +223,23 @@ EXPORT_SYMBOL(devm_tinydrm_init);
 
 static int tinydrm_register(struct tinydrm_device *tdev)
 {
+	struct drm_device *drm = tdev->drm;
+	int bpp = drm->mode_config.preferred_depth;
+	struct drm_fbdev_cma *fbdev;
 	int ret;
 
 	ret = drm_dev_register(tdev->drm, 0);
 	if (ret)
 		return ret;
 
-	ret = tinydrm_fbdev_init(tdev);
-	if (ret)
-		DRM_ERROR("Failed to initialize fbdev: %d\n", ret);
+	fbdev = drm_fbdev_cma_init_with_funcs(drm, bpp ? bpp : 32,
+					      drm->mode_config.num_crtc,
+					      drm->mode_config.num_connector,
+					      tdev->fb_funcs);
+	if (IS_ERR(fbdev))
+		DRM_ERROR("Failed to initialize fbdev: %ld\n", PTR_ERR(fbdev));
+	else
+		tdev->fbdev_cma = fbdev;
 
 	return 0;
 }
@@ -233,7 +249,10 @@ static void tinydrm_unregister(struct tinydrm_device *tdev)
 	DRM_DEBUG_KMS("\n");
 
 	drm_crtc_force_disable_all(tdev->drm);
-	tinydrm_fbdev_fini(tdev);
+
+	if (tdev->fbdev_cma)
+		drm_fbdev_cma_fini(tdev->fbdev_cma);
+
 	drm_dev_unregister(tdev->drm);
 }
 
