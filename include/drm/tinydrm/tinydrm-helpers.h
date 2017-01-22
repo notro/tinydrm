@@ -16,7 +16,6 @@ struct drm_clip_rect;
 struct spi_transfer;
 struct spi_message;
 struct spi_device;
-struct dev_pm_ops;
 struct device;
 
 /**

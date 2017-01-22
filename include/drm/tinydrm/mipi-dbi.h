@@ -42,7 +42,7 @@ struct mipi_dbi {
 	struct spi_device *spi;
 	bool enabled;
 	struct mutex cmdlock;
-	int (*command)(struct mipi_dbi *mipi, u8 cmd, u8 *parameters, size_t num);
+	int (*command)(struct mipi_dbi *mipi, u8 cmd, u8 *param, size_t num);
 	const u8 *read_commands;
 	struct gpio_desc *dc;
 	u16 *tx_buf;

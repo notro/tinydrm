@@ -19,11 +19,13 @@
  *
  * This library provides driver helpers for very simple display hardware.
  *
- * It is based on &drm_simple_display_pipe coupled with a &drm_connector which has only one fixed &drm_display_mode.
- * The framebuffers are backed by the cma helper and have support for framebuffer flushing (dirty).
+ * It is based on &drm_simple_display_pipe coupled with a &drm_connector which
+ * has only one fixed &drm_display_mode. The framebuffers are backed by the
+ * cma helper and have support for framebuffer flushing (dirty).
  * fbdev support is also included.
  *
- * The driver allocates &tinydrm_device, initializes it using devm_tinydrm_init(), sets up the pipeline using tinydrm_display_pipe_init()
+ * The driver allocates &tinydrm_device, initializes it using
+ * devm_tinydrm_init(), sets up the pipeline using tinydrm_display_pipe_init()
  * and registers the DRM device using devm_tinydrm_register().
  */
 
