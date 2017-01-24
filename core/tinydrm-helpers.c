@@ -108,67 +108,31 @@ EXPORT_SYMBOL(tinydrm_memcpy);
  * @fb: DRM framebuffer
  * @clip: Clip rectangle area to copy
  */
-
-
-/*
-
-FIXME
-
-Doing a memcpy to a temporary buffer before swapping bytes, increases
-framerate by 26%, instead of swapping directly from the source buffer
-which is drm_gem_cma_object->vaddr.
-
-Why is that?
-
-(swapping is needed because Raspberry Pi is Little Endian and doesn't
-have 16-bit SPI support).
-
-# SPI @32MHz
-$ modetest <...> 320x240@RG16 -v
-
-no tmp buffer
-freq: 18.91Hz
-
-tmp buffer
-freq: 23.98Hz
-
-
-*/
-static void *buf;
-
 void tinydrm_swab16(u16 *dst, void *vaddr, struct drm_framebuffer *fb,
 		    struct drm_clip_rect *clip)
 {
-#if 1
-	unsigned int pitch = fb->pitches[0];
+	size_t len = (clip->x2 - clip->x1) * sizeof(u16);
 	unsigned int x, y;
-	u16 *src;
+	u16 *src, *buf;
 
+	/*
+	 * The cma memory is write-combined so reads are uncached.
+	 * Speed up by fetching one line at a time.
+	 */
+	buf = kmalloc(len, GFP_KERNEL);
 	if (!buf)
-		buf = kmalloc(320 * 2, GFP_KERNEL);
-	if (WARN_ON_ONCE(!buf))
 		return;
 
 	for (y = clip->y1; y < clip->y2; y++) {
-		src = vaddr + (y * pitch);
+		src = vaddr + (y * fb->pitches[0]);
 		src += clip->x1;
-		memcpy(buf, src, (clip->x2 - clip->x1) * 2);
+		memcpy(buf, src, len);
 		src = buf;
 		for (x = clip->x1; x < clip->x2; x++)
 			*dst++ = swab16(*src++);
 	}
-#else
-	unsigned int pitch = fb->pitches[0];
-	unsigned int x, y;
-	u16 *src;
 
-	for (y = clip->y1; y < clip->y2; y++) {
-		src = vaddr + (y * pitch);
-		src += clip->x1;
-		for (x = clip->x1; x < clip->x2; x++)
-			*dst++ = swab16(*src++);
-	}
-#endif
+	kfree(buf);
 }
 EXPORT_SYMBOL(tinydrm_swab16);
 
@@ -187,14 +151,20 @@ void tinydrm_xrgb8888_to_rgb565(u16 *dst, void *vaddr,
 				struct drm_framebuffer *fb,
 				struct drm_clip_rect *clip, bool swap)
 {
-	unsigned int pitch = fb->pitches[0];
+	size_t len = (clip->x2 - clip->x1) * sizeof(u32);
 	unsigned int x, y;
+	u32 *src, *buf;
 	u16 val16;
-	u32 *src;
+
+	buf = kmalloc(len, GFP_KERNEL);
+	if (!buf)
+		return;
 
 	for (y = clip->y1; y < clip->y2; y++) {
-		src = vaddr + (y * pitch);
+		src = vaddr + (y * fb->pitches[0]);
 		src += clip->x1;
+		memcpy(buf, src, len);
+		src = buf;
 		for (x = clip->x1; x < clip->x2; x++) {
 			val16 = ((*src & 0x00F80000) >> 8) |
 				((*src & 0x0000FC00) >> 5) |
@@ -206,6 +176,8 @@ void tinydrm_xrgb8888_to_rgb565(u16 *dst, void *vaddr,
 				*dst++ = val16;
 		}
 	}
+
+	kfree(buf);
 }
 EXPORT_SYMBOL(tinydrm_xrgb8888_to_rgb565);
 
