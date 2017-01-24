@@ -24,6 +24,11 @@
  * cma helper and have support for framebuffer flushing (dirty).
  * fbdev support is also included.
  *
+ */
+
+/**
+ * DOC: core
+ *
  * The driver allocates &tinydrm_device, initializes it using
  * devm_tinydrm_init(), sets up the pipeline using tinydrm_display_pipe_init()
  * and registers the DRM device using devm_tinydrm_register().
