@@ -251,8 +251,10 @@ static void tinydrm_unregister(struct tinydrm_device *tdev)
 
 	drm_crtc_force_disable_all(tdev->drm);
 
-	if (tdev->fbdev_cma)
+	if (tdev->fbdev_cma) {
 		drm_fbdev_cma_fini(tdev->fbdev_cma);
+		tdev->fbdev_cma = NULL;
+	}
 
 	drm_dev_unregister(tdev->drm);
 }
