@@ -238,7 +238,7 @@ int tinydrm_enable_backlight(struct backlight_device *backlight)
 		return 0;
 
 	old_state = backlight->props.state;
-	backlight->props.state &= ~BL_CORE_SUSPENDED;
+	backlight->props.state &= ~BL_CORE_FBBLANK;
 	DRM_DEBUG_KMS("Backlight state: 0x%x -> 0x%x\n", old_state,
 		      backlight->props.state);
 
@@ -266,7 +266,7 @@ int tinydrm_disable_backlight(struct backlight_device *backlight)
 		return 0;
 
 	old_state = backlight->props.state;
-	backlight->props.state |= BL_CORE_SUSPENDED;
+	backlight->props.state |= BL_CORE_FBBLANK;
 	DRM_DEBUG_KMS("Backlight state: 0x%x -> 0x%x\n", old_state,
 		      backlight->props.state);
 	ret = backlight_update_status(backlight);

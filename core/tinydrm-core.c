@@ -182,8 +182,6 @@ static int tinydrm_init(struct device *parent, struct tinydrm_device *tdev,
 
 static void tinydrm_fini(struct tinydrm_device *tdev)
 {
-	DRM_DEBUG_KMS("\n");
-
 	drm_mode_config_cleanup(tdev->drm);
 	mutex_destroy(&tdev->dirty_lock);
 	tdev->drm->dev_private = NULL;
@@ -252,16 +250,14 @@ static int tinydrm_register(struct tinydrm_device *tdev)
 
 static void tinydrm_unregister(struct tinydrm_device *tdev)
 {
-	DRM_DEBUG_KMS("\n");
+	struct drm_fbdev_cma *fbdev_cma = tdev->fbdev_cma;
 
 	drm_crtc_force_disable_all(tdev->drm);
-
-	if (tdev->fbdev_cma) {
-		drm_fbdev_cma_fini(tdev->fbdev_cma);
-		tdev->fbdev_cma = NULL;
-	}
-
+	/* don't restore fbdev in lastclose, keep pipeline disabled */
+	tdev->fbdev_cma = NULL;
 	drm_dev_unregister(tdev->drm);
+	if (fbdev_cma)
+		drm_fbdev_cma_fini(fbdev_cma);
 }
 
 static void devm_tinydrm_register_release(void *data)

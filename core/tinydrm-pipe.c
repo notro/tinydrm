@@ -125,15 +125,6 @@ void tinydrm_display_pipe_update(struct drm_simple_display_pipe *pipe,
 	struct drm_framebuffer *fb = pipe->plane.state->fb;
 	struct drm_crtc *crtc = &tdev->pipe.crtc;
 
-	if (!fb)
-		DRM_DEBUG_KMS("fb unset\n");
-	else if (!old_state->fb)
-		DRM_DEBUG_KMS("fb set\n");
-	else if (fb != old_state->fb)
-		DRM_DEBUG_KMS("fb changed\n");
-	else
-		DRM_DEBUG_KMS("No fb change\n");
-
 	if (fb && (fb != old_state->fb)) {
 		pipe->plane.fb = fb;
 		if (fb->funcs->dirty)
@@ -141,7 +132,6 @@ void tinydrm_display_pipe_update(struct drm_simple_display_pipe *pipe,
 	}
 
 	if (crtc->state->event) {
-		DRM_DEBUG_KMS("crtc event\n");
 		spin_lock_irq(&crtc->dev->event_lock);
 		drm_crtc_send_vblank_event(crtc, crtc->state->event);
 		spin_unlock_irq(&crtc->dev->event_lock);
