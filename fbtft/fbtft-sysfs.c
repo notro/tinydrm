@@ -1,5 +1,4 @@
 #include "fbtft.h"
-#include "internal.h"
 
 static int get_next_ulong(char **str_p, unsigned long *val, char *sep, int base)
 {
@@ -25,12 +24,12 @@ int fbtft_gamma_parse_str(struct fbtft_par *par, unsigned long *curves,
 	int ret = 0;
 	int curve_counter, value_counter;
 
-	fbtft_par_dbg(DEBUG_SYSFS, par, "%s() str=\n", __func__);
+	pr_debug("%s() str=\n", __func__);
 
 	if (!str || !curves)
 		return -EINVAL;
 
-	fbtft_par_dbg(DEBUG_SYSFS, par, "%s\n", str);
+	pr_debug("%s\n", str);
 
 	tmp = kmemdup(str, size + 1, GFP_KERNEL);
 	if (!tmp)
@@ -144,71 +143,14 @@ static struct device_attribute gamma_device_attrs[] = {
 	__ATTR(gamma, 0660, show_gamma_curve, store_gamma_curve),
 };
 
-void fbtft_expand_debug_value(unsigned long *debug)
-{
-	switch (*debug & 0x7) {
-	case 1:
-		*debug |= DEBUG_LEVEL_1;
-		break;
-	case 2:
-		*debug |= DEBUG_LEVEL_2;
-		break;
-	case 3:
-		*debug |= DEBUG_LEVEL_3;
-		break;
-	case 4:
-		*debug |= DEBUG_LEVEL_4;
-		break;
-	case 5:
-		*debug |= DEBUG_LEVEL_5;
-		break;
-	case 6:
-		*debug |= DEBUG_LEVEL_6;
-		break;
-	case 7:
-		*debug = 0xFFFFFFFF;
-		break;
-	}
-}
-
-static ssize_t store_debug(struct device *device,
-				struct device_attribute *attr,
-				const char *buf, size_t count)
-{
-	struct fb_info *fb_info = dev_get_drvdata(device);
-	struct fbtft_par *par = fb_info->par;
-	int ret;
-
-	ret = kstrtoul(buf, 10, &par->debug);
-	if (ret)
-		return ret;
-	fbtft_expand_debug_value(&par->debug);
-
-	return count;
-}
-
-static ssize_t show_debug(struct device *device,
-				struct device_attribute *attr, char *buf)
-{
-	struct fb_info *fb_info = dev_get_drvdata(device);
-	struct fbtft_par *par = fb_info->par;
-
-	return snprintf(buf, PAGE_SIZE, "%lu\n", par->debug);
-}
-
-static struct device_attribute debug_device_attr = \
-	__ATTR(debug, 0660, show_debug, store_debug);
-
 void fbtft_sysfs_init(struct fbtft_par *par)
 {
-	device_create_file(par->info->dev, &debug_device_attr);
 	if (par->gamma.curves && par->fbtftops.set_gamma)
 		device_create_file(par->info->dev, &gamma_device_attrs[0]);
 }
 
 void fbtft_sysfs_exit(struct fbtft_par *par)
 {
-	device_remove_file(par->info->dev, &debug_device_attr);
 	if (par->gamma.curves && par->fbtftops.set_gamma)
 		device_remove_file(par->info->dev, &gamma_device_attrs[0]);
 }

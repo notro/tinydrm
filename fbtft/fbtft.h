@@ -15,6 +15,8 @@
 #ifndef __LINUX_FBTFT_H
 #define __LINUX_FBTFT_H
 
+#include "../include/drm/tinydrm/tinydrm.h"
+
 #include <linux/fb.h>
 #include <linux/spinlock.h>
 #include <linux/spi/spi.h>
@@ -110,7 +112,6 @@ struct fbtft_ops {
  * @gamma: String representation of Gamma curve(s)
  * @gamma_num: Number of Gamma curves
  * @gamma_len: Number of values per Gamma curve
- * @debug: Initial debug value
  *
  * This structure is not stored by FBTFT except for init_sequence.
  */
@@ -128,7 +129,6 @@ struct fbtft_display {
 	char *gamma;
 	int gamma_num;
 	int gamma_len;
-	unsigned long debug;
 };
 
 /**
@@ -193,10 +193,6 @@ struct fbtft_platform_data {
  * @gamma.curves: Pointer to Gamma curve array
  * @gamma.num_values: Number of values per Gamma curve
  * @gamma.num_curves: Number of Gamma curves
- * @debug: Pointer to debug value
- * @current_debug:
- * @first_update_done: Used to only time the first display update
- * @update_time: Used to calculate 'fps' in debug output
  * @bgr: BGR mode/\n
  * @extra: Extra info needed by driver
  */
@@ -235,9 +231,10 @@ struct fbtft_par {
 		int num_values;
 		int num_curves;
 	} gamma;
+
+	/* Used in fb_agm1264k-fl, fb_ra8875, fb_ssd1331 */
 	unsigned long debug;
-	bool first_update_done;
-	ktime_t update_time;
+
 	bool bgr;
 	void *extra;
 };
@@ -284,7 +281,6 @@ void fbtft_write_reg16_bus16(struct fbtft_par *par, int len, ...);
 /* fbtft-sysfs.c */
 void fbtft_sysfs_init(struct fbtft_par *par);
 void fbtft_sysfs_exit(struct fbtft_par *par);
-void fbtft_expand_debug_value(unsigned long *debug);
 int fbtft_gamma_parse_str(struct fbtft_par *par, unsigned long *curves,
 			  const char *str, int size);
 
@@ -362,31 +358,7 @@ module_exit(fbtft_driver_module_exit);
 
 /* Debug macros */
 
-/* shorthand debug levels */
-#define DEBUG_LEVEL_1	DEBUG_REQUEST_GPIOS
-#define DEBUG_LEVEL_2	(DEBUG_LEVEL_1 | DEBUG_DRIVER_INIT_FUNCTIONS | DEBUG_TIME_FIRST_UPDATE)
-#define DEBUG_LEVEL_3	(DEBUG_LEVEL_2 | DEBUG_RESET | DEBUG_INIT_DISPLAY | DEBUG_BLANK | DEBUG_REQUEST_GPIOS | DEBUG_FREE_GPIOS | DEBUG_VERIFY_GPIOS | DEBUG_BACKLIGHT | DEBUG_SYSFS)
-#define DEBUG_LEVEL_4	(DEBUG_LEVEL_2 | DEBUG_FB_READ | DEBUG_FB_WRITE | DEBUG_FB_FILLRECT | DEBUG_FB_COPYAREA | DEBUG_FB_IMAGEBLIT | DEBUG_FB_BLANK)
-#define DEBUG_LEVEL_5	(DEBUG_LEVEL_3 | DEBUG_UPDATE_DISPLAY)
-#define DEBUG_LEVEL_6	(DEBUG_LEVEL_4 | DEBUG_LEVEL_5)
-#define DEBUG_LEVEL_7	0xFFFFFFFF
-
 #define DEBUG_DRIVER_INIT_FUNCTIONS (1<<3)
-#define DEBUG_TIME_FIRST_UPDATE     (1<<4)
-#define DEBUG_TIME_EACH_UPDATE      (1<<5)
-#define DEBUG_DEFERRED_IO           (1<<6)
-#define DEBUG_FBTFT_INIT_FUNCTIONS  (1<<7)
-
-/* fbops */
-#define DEBUG_FB_READ               (1<<8)
-#define DEBUG_FB_WRITE              (1<<9)
-#define DEBUG_FB_FILLRECT           (1<<10)
-#define DEBUG_FB_COPYAREA           (1<<11)
-#define DEBUG_FB_IMAGEBLIT          (1<<12)
-#define DEBUG_FB_SETCOLREG          (1<<13)
-#define DEBUG_FB_BLANK              (1<<14)
-
-#define DEBUG_SYSFS                 (1<<16)
 
 /* fbtftops */
 #define DEBUG_BACKLIGHT             (1<<17)
@@ -396,31 +368,22 @@ module_exit(fbtft_driver_module_exit);
 #define DEBUG_WRITE_REGISTER        (1<<21)
 #define DEBUG_SET_ADDR_WIN          (1<<22)
 #define DEBUG_RESET                 (1<<23)
-#define DEBUG_MKDIRTY               (1<<24)
-#define DEBUG_UPDATE_DISPLAY        (1<<25)
+
 #define DEBUG_INIT_DISPLAY          (1<<26)
 #define DEBUG_BLANK                 (1<<27)
 #define DEBUG_REQUEST_GPIOS         (1<<28)
-#define DEBUG_FREE_GPIOS            (1<<29)
-#define DEBUG_REQUEST_GPIOS_MATCH   (1<<30)
+
 #define DEBUG_VERIFY_GPIOS          (1<<31)
 
-#define fbtft_init_dbg(dev, format, arg...)                  \
-do {                                                         \
-	if (unlikely((dev)->platform_data &&                 \
-	    (((struct fbtft_platform_data *)(dev)->platform_data)->display.debug & DEBUG_DRIVER_INIT_FUNCTIONS))) \
-		dev_info(dev, format, ##arg);                \
-} while (0)
+/* used in flexfb */
+#define fbtft_init_dbg(dev, format, arg...)
 
-#define fbtft_par_dbg(level, par, format, arg...)            \
-do {                                                         \
-	if (unlikely(par->debug & level))                    \
-		dev_info(par->info->device, format, ##arg);  \
-} while (0)
+#define fbtft_par_dbg(level, par, format, arg...) \
+	DRM_DEV_DEBUG_DRIVER(par->info->device, format, ##arg)
 
 #define fbtft_par_dbg_hex(level, par, dev, type, buf, num, format, arg...) \
 do {                                                                       \
-	if (unlikely(par->debug & level))                                  \
+	if (drm_debug & DRM_UT_DRIVER)                                     \
 		fbtft_dbg_hex(dev, sizeof(type), buf, num * sizeof(type), format, ##arg); \
 } while (0)
 
