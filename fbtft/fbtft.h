@@ -53,13 +53,8 @@ struct fbtft_par;
  * @write_reg: Writes to controller register
  * @set_addr_win: Set the GRAM update window
  * @reset: Reset the LCD controller
- * @mkdirty: Marks display lines for update
- * @update_display: Updates the display
  * @init_display: Initializes the display
  * @blank: Blank the display (optional)
- * @request_gpios_match: Do pinname to gpio matching
- * @request_gpios: Request gpios from the kernel
- * @free_gpios: Free previously requested gpios
  * @verify_gpios: Verify that necessary gpios is present (optional)
  * @register_backlight: Used to register backlight device (optional)
  * @unregister_backlight: Unregister backlight device (optional)
@@ -79,15 +74,10 @@ struct fbtft_ops {
 	void (*set_addr_win)(struct fbtft_par *par,
 		int xs, int ys, int xe, int ye);
 	void (*reset)(struct fbtft_par *par);
-	void (*mkdirty)(struct fb_info *info, int from, int to);
-	void (*update_display)(struct fbtft_par *par,
-				unsigned int start_line, unsigned int end_line);
 	int (*init_display)(struct fbtft_par *par);
 	int (*blank)(struct fbtft_par *par, bool on);
 
-	unsigned long (*request_gpios_match)(struct fbtft_par *par,
-		const struct fbtft_gpio *gpio);
-	int (*request_gpios)(struct fbtft_par *par);
+	/* Dummy, kept for fb_watterott */
 	int (*verify_gpios)(struct fbtft_par *par);
 
 	void (*register_backlight)(struct fbtft_par *par);
@@ -183,11 +173,9 @@ struct fbtft_platform_data {
  * @gpio.dc: Data/Command signal, also known as RS
  * @gpio.rd: Read latching signal
  * @gpio.wr: Write latching signal
- * @gpio.latch: Bus latch signal, eg. 16->8 bit bus latch
  * @gpio.cs: LCD Chip Select with parallel interface bus
  * @gpio.db[16]: Parallel databus
  * @gpio.led[16]: Led control signals
- * @gpio.aux[16]: Auxiliary signals, not used by core
  * @init_sequence: Pointer to LCD initialization array
  * @gamma.lock: Mutex for Gamma curve locking
  * @gamma.curves: Pointer to Gamma curve array
@@ -218,11 +206,9 @@ struct fbtft_par {
 		int dc;
 		int rd;
 		int wr;
-		int latch;
 		int cs;
 		int db[16];
 		int led[16];
-		int aux[16];
 	} gpio;
 	s16 *init_sequence;
 	struct {
@@ -232,7 +218,7 @@ struct fbtft_par {
 		int num_curves;
 	} gamma;
 
-	/* Used in fb_agm1264k-fl, fb_ra8875, fb_ssd1331 */
+	/* Used in fb_ra8875, fb_ssd1331 */
 	unsigned long debug;
 
 	bool bgr;

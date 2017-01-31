@@ -38,6 +38,10 @@
 
 #include "fbtft.h"
 
+static bool no_set_var;
+module_param(no_set_var, bool, 0000);
+MODULE_PARM_DESC(no_set_var, "Don't use fbtft_ops.set_var()");
+
 void fbtft_dbg_hex(const struct device *dev, int groupsize,
 			void *buf, size_t len, const char *fmt, ...)
 {
@@ -60,170 +64,78 @@ void fbtft_dbg_hex(const struct device *dev, int groupsize,
 }
 EXPORT_SYMBOL(fbtft_dbg_hex);
 
-static unsigned long fbtft_request_gpios_match(struct fbtft_par *par,
-					const struct fbtft_gpio *gpio)
+static int fbtft_request_one_gpio(struct fbtft_par *par,
+				  const char *name, int index, int *gpiop,
+				  enum gpiod_flags flags)
 {
+	struct device *dev = par->info->device;
+	struct gpio_desc *desc;
 	int ret;
-	long val;
 
-	if (strcasecmp(gpio->name, "reset") == 0) {
-		par->gpio.reset = gpio->gpio;
-		return GPIOF_OUT_INIT_HIGH;
-	} else if (strcasecmp(gpio->name, "dc") == 0) {
-		par->gpio.dc = gpio->gpio;
-		return GPIOF_OUT_INIT_LOW;
-	} else if (strcasecmp(gpio->name, "cs") == 0) {
-		par->gpio.cs = gpio->gpio;
-		return GPIOF_OUT_INIT_HIGH;
-	} else if (strcasecmp(gpio->name, "wr") == 0) {
-		par->gpio.wr = gpio->gpio;
-		return GPIOF_OUT_INIT_HIGH;
-	} else if (strcasecmp(gpio->name, "rd") == 0) {
-		par->gpio.rd = gpio->gpio;
-		return GPIOF_OUT_INIT_HIGH;
-	} else if (strcasecmp(gpio->name, "latch") == 0) {
-		par->gpio.latch = gpio->gpio;
-		return GPIOF_OUT_INIT_LOW;
-	} else if (gpio->name[0] == 'd' && gpio->name[1] == 'b') {
-		ret = kstrtol(&gpio->name[2], 10, &val);
-		if (ret == 0 && val < 16) {
-			par->gpio.db[val] = gpio->gpio;
-			return GPIOF_OUT_INIT_LOW;
-		}
-	} else if (strcasecmp(gpio->name, "led") == 0) {
-		par->gpio.led[0] = gpio->gpio;
-		return GPIOF_OUT_INIT_LOW;
-	} else if (strcasecmp(gpio->name, "led_") == 0) {
-		par->gpio.led[0] = gpio->gpio;
-		return GPIOF_OUT_INIT_HIGH;
+	desc = devm_gpiod_get_index_optional(dev, name, index, flags);
+	if (!desc)
+		return 0;
+
+	if (IS_ERR(desc)) {
+		ret = PTR_ERR(desc);
+		if (ret != -EPROBE_DEFER)
+			dev_err(dev, "gpiod_get('%s') failed with %d\n",
+				name, ret);
+		return ret;
 	}
 
-	return FBTFT_GPIO_NO_MATCH;
+	if (gpiod_is_active_low(desc))
+		gpiod_set_value_cansleep(desc, flags & GPIOD_OUT_LOW ? 1 : 0);
+
+	*gpiop = desc_to_gpio(desc);
+	DRM_DEBUG_DRIVER("'%s' = GPIO%d\n", name, *gpiop);
+
+	return 0;
 }
 
 static int fbtft_request_gpios(struct fbtft_par *par)
 {
-	struct fbtft_platform_data *pdata = par->pdata;
-	const struct fbtft_gpio *gpio;
-	unsigned long flags;
-	int ret;
+	int i, ret;
 
-	if (!(pdata && pdata->gpios))
-		return 0;
-
-	gpio = pdata->gpios;
-	while (gpio->name[0]) {
-		flags = FBTFT_GPIO_NO_MATCH;
-		/* if driver provides match function, try it first,
-		 * if no match use our own
-		 */
-		if (par->fbtftops.request_gpios_match)
-			flags = par->fbtftops.request_gpios_match(par, gpio);
-		if (flags == FBTFT_GPIO_NO_MATCH)
-			flags = fbtft_request_gpios_match(par, gpio);
-		if (flags != FBTFT_GPIO_NO_MATCH) {
-			ret = devm_gpio_request_one(par->info->device,
-					gpio->gpio, flags,
-					par->info->device->driver->name);
-			if (ret < 0) {
-				dev_err(par->info->device,
-					"%s: gpio_request_one('%s'=%d) failed with %d\n",
-					__func__, gpio->name,
-					gpio->gpio, ret);
-				return ret;
-			}
-		}
-		gpio++;
-	}
-
-	return 0;
-}
-
-#ifdef CONFIG_OF
-static int fbtft_request_one_gpio(struct fbtft_par *par,
-				  const char *name, int index, int *gpiop)
-{
-	struct device *dev = par->info->device;
-	struct device_node *node = dev->of_node;
-	int gpio, flags, ret = 0;
-	enum of_gpio_flags of_flags;
-
-	if (of_find_property(node, name, NULL)) {
-		gpio = of_get_named_gpio_flags(node, name, index, &of_flags);
-		if (gpio == -ENOENT)
-			return 0;
-		if (gpio == -EPROBE_DEFER)
-			return gpio;
-		if (gpio < 0) {
-			dev_err(dev,
-				"failed to get '%s' from DT\n", name);
-			return gpio;
-		}
-
-		/* active low translates to initially low */
-		flags = (of_flags & OF_GPIO_ACTIVE_LOW) ? GPIOF_OUT_INIT_LOW :
-							GPIOF_OUT_INIT_HIGH;
-		ret = devm_gpio_request_one(dev, gpio, flags,
-						dev->driver->name);
-		if (ret) {
-			dev_err(dev,
-				"gpio_request_one('%s'=%d) failed with %d\n",
-				name, gpio, ret);
-			return ret;
-		}
-		if (gpiop)
-			*gpiop = gpio;
-		fbtft_par_dbg(DEBUG_REQUEST_GPIOS, par, "%s: '%s' = GPIO%d\n",
-							__func__, name, gpio);
-	}
-
-	return ret;
-}
-
-static int fbtft_request_gpios_dt(struct fbtft_par *par)
-{
-	int i;
-	int ret;
-
-	if (!par->info->device->of_node)
-		return -EINVAL;
-
-	ret = fbtft_request_one_gpio(par, "reset-gpios", 0, &par->gpio.reset);
+	ret = fbtft_request_one_gpio(par, "reset", 0, &par->gpio.reset,
+				     GPIOD_OUT_LOW);
 	if (ret)
 		return ret;
-	ret = fbtft_request_one_gpio(par, "dc-gpios", 0, &par->gpio.dc);
+
+	ret = fbtft_request_one_gpio(par, "dc", 0, &par->gpio.dc,
+				     GPIOD_OUT_LOW);
 	if (ret)
 		return ret;
-	ret = fbtft_request_one_gpio(par, "rd-gpios", 0, &par->gpio.rd);
+
+	ret = fbtft_request_one_gpio(par, "rd", 0, &par->gpio.rd,
+				     GPIOD_OUT_HIGH);
 	if (ret)
 		return ret;
-	ret = fbtft_request_one_gpio(par, "wr-gpios", 0, &par->gpio.wr);
+
+	ret = fbtft_request_one_gpio(par, "wr", 0, &par->gpio.wr,
+				     GPIOD_OUT_HIGH);
 	if (ret)
 		return ret;
-	ret = fbtft_request_one_gpio(par, "cs-gpios", 0, &par->gpio.cs);
+
+	ret = fbtft_request_one_gpio(par, "cs", 0, &par->gpio.cs,
+				     GPIOD_OUT_HIGH);
 	if (ret)
 		return ret;
-	ret = fbtft_request_one_gpio(par, "latch-gpios", 0, &par->gpio.latch);
-	if (ret)
-		return ret;
+
 	for (i = 0; i < 16; i++) {
-		ret = fbtft_request_one_gpio(par, "db-gpios", i,
-						&par->gpio.db[i]);
+		ret = fbtft_request_one_gpio(par, "db", i, &par->gpio.db[i],
+					     GPIOD_OUT_LOW);
 		if (ret)
 			return ret;
-		ret = fbtft_request_one_gpio(par, "led-gpios", i,
-						&par->gpio.led[i]);
-		if (ret)
-			return ret;
-		ret = fbtft_request_one_gpio(par, "aux-gpios", i,
-						&par->gpio.aux[i]);
+
+		ret = fbtft_request_one_gpio(par, "led", i, &par->gpio.led[i],
+					     GPIOD_OUT_LOW);
 		if (ret)
 			return ret;
 	}
 
 	return 0;
 }
-#endif
 
 #ifdef CONFIG_FB_BACKLIGHT
 static int fbtft_backlight_update_status(struct backlight_device *bd)
@@ -421,53 +333,45 @@ static void fbtft_deferred_io(struct fb_info *info, struct list_head *pagelist)
 			dirty_lines_end = y_high;
 	}
 
-	par->fbtftops.update_display(info->par,
-					dirty_lines_start, dirty_lines_end);
+	fbtft_update_display(info->par, dirty_lines_start, dirty_lines_end);
 }
 
 static void fbtft_fb_fillrect(struct fb_info *info,
 			      const struct fb_fillrect *rect)
 {
-	struct fbtft_par *par = info->par;
-
 	dev_dbg(info->dev,
 		"%s: dx=%d, dy=%d, width=%d, height=%d\n",
 		__func__, rect->dx, rect->dy, rect->width, rect->height);
 	sys_fillrect(info, rect);
 
-	par->fbtftops.mkdirty(info, rect->dy, rect->height);
+	fbtft_mkdirty(info, rect->dy, rect->height);
 }
 
 static void fbtft_fb_copyarea(struct fb_info *info,
 			      const struct fb_copyarea *area)
 {
-	struct fbtft_par *par = info->par;
-
 	dev_dbg(info->dev,
 		"%s: dx=%d, dy=%d, width=%d, height=%d\n",
 		__func__,  area->dx, area->dy, area->width, area->height);
 	sys_copyarea(info, area);
 
-	par->fbtftops.mkdirty(info, area->dy, area->height);
+	fbtft_mkdirty(info, area->dy, area->height);
 }
 
 static void fbtft_fb_imageblit(struct fb_info *info,
 			       const struct fb_image *image)
 {
-	struct fbtft_par *par = info->par;
-
 	dev_dbg(info->dev,
 		"%s: dx=%d, dy=%d, width=%d, height=%d\n",
 		__func__,  image->dx, image->dy, image->width, image->height);
 	sys_imageblit(info, image);
 
-	par->fbtftops.mkdirty(info, image->dy, image->height);
+	fbtft_mkdirty(info, image->dy, image->height);
 }
 
 static ssize_t fbtft_fb_write(struct fb_info *info, const char __user *buf,
 			      size_t count, loff_t *ppos)
 {
-	struct fbtft_par *par = info->par;
 	ssize_t res;
 
 	dev_dbg(info->dev,
@@ -475,7 +379,7 @@ static ssize_t fbtft_fb_write(struct fb_info *info, const char __user *buf,
 	res = fb_sys_write(info, buf, count, ppos);
 
 	/* TODO: only mark changed area update all for now */
-	par->fbtftops.mkdirty(info, -1, 0);
+	fbtft_mkdirty(info, -1, 0);
 
 	return res;
 }
@@ -556,20 +460,10 @@ static void fbtft_merge_fbtftops(struct fbtft_ops *dst, struct fbtft_ops *src)
 		dst->set_addr_win = src->set_addr_win;
 	if (src->reset)
 		dst->reset = src->reset;
-	if (src->mkdirty)
-		dst->mkdirty = src->mkdirty;
-	if (src->update_display)
-		dst->update_display = src->update_display;
 	if (src->init_display)
 		dst->init_display = src->init_display;
 	if (src->blank)
 		dst->blank = src->blank;
-	if (src->request_gpios_match)
-		dst->request_gpios_match = src->request_gpios_match;
-	if (src->request_gpios)
-		dst->request_gpios = src->request_gpios;
-	if (src->verify_gpios)
-		dst->verify_gpios = src->verify_gpios;
 	if (src->register_backlight)
 		dst->register_backlight = src->register_backlight;
 	if (src->unregister_backlight)
@@ -578,6 +472,46 @@ static void fbtft_merge_fbtftops(struct fbtft_ops *dst, struct fbtft_ops *src)
 		dst->set_var = src->set_var;
 	if (src->set_gamma)
 		dst->set_gamma = src->set_gamma;
+}
+
+/**
+ * fbtft_verify_gpios() - Generic verify_gpios() function
+ * @par: Driver data
+ *
+ * Uses @spi, @pdev and @buswidth to determine which GPIOs is needed
+ *
+ * Return: 0 if successful, negative if error
+ */
+static int fbtft_verify_gpios(struct fbtft_par *par)
+{
+	struct fbtft_platform_data *pdata = par->pdata;
+	int i;
+
+	fbtft_par_dbg(DEBUG_VERIFY_GPIOS, par, "%s()\n", __func__);
+
+	if (pdata->display.buswidth != 9 && par->startbyte == 0 &&
+							par->gpio.dc < 0) {
+		dev_err(par->info->device,
+			"Missing info about 'dc' gpio. Aborting.\n");
+		return -EINVAL;
+	}
+
+	if (!par->pdev)
+		return 0;
+
+	if (par->gpio.wr < 0) {
+		dev_err(par->info->device, "Missing 'wr' gpio. Aborting.\n");
+		return -EINVAL;
+	}
+	for (i = 0; i < pdata->display.buswidth; i++) {
+		if (par->gpio.db[i] < 0) {
+			dev_err(par->info->device,
+				"Missing 'db%02d' gpio. Aborting.\n", i);
+			return -EINVAL;
+		}
+	}
+
+	return 0;
 }
 
 /**
@@ -792,11 +726,9 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 	par->gpio.rd = -1;
 	par->gpio.wr = -1;
 	par->gpio.cs = -1;
-	par->gpio.latch = -1;
 	for (i = 0; i < 16; i++) {
 		par->gpio.db[i] = -1;
 		par->gpio.led[i] = -1;
-		par->gpio.aux[i] = -1;
 	}
 
 	/* default fbtft operations */
@@ -806,14 +738,15 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 	par->fbtftops.write_register = fbtft_write_reg8_bus8;
 	par->fbtftops.set_addr_win = fbtft_set_addr_win;
 	par->fbtftops.reset = fbtft_reset;
-	par->fbtftops.mkdirty = fbtft_mkdirty;
-	par->fbtftops.update_display = fbtft_update_display;
-	par->fbtftops.request_gpios = fbtft_request_gpios;
 	if (display->backlight)
 		par->fbtftops.register_backlight = fbtft_register_backlight;
 
 	/* use driver provided functions */
 	fbtft_merge_fbtftops(&par->fbtftops, &display->fbtftops);
+
+	/* Satisfy fb_ra8875 and fb_ssd1331 */
+	if (drm_debug & DRM_UT_DRIVER)
+		par->debug = DEBUG_WRITE_REGISTER;
 
 	return info;
 
@@ -870,27 +803,26 @@ int fbtft_register_framebuffer(struct fb_info *fb_info)
 	if (par->pdev)
 		platform_set_drvdata(par->pdev, fb_info);
 
-	ret = par->fbtftops.request_gpios(par);
+	ret = fbtft_request_gpios(par);
 	if (ret < 0)
 		goto reg_fail;
 
-	if (par->fbtftops.verify_gpios) {
-		ret = par->fbtftops.verify_gpios(par);
-		if (ret < 0)
-			goto reg_fail;
-	}
+	ret = fbtft_verify_gpios(par);
+	if (ret < 0)
+		goto reg_fail;
 
 	ret = par->fbtftops.init_display(par);
 	if (ret < 0)
 		goto reg_fail;
-	if (par->fbtftops.set_var) {
+
+	if (par->fbtftops.set_var && !no_set_var) {
 		ret = par->fbtftops.set_var(par);
 		if (ret < 0)
 			goto reg_fail;
 	}
 
 	/* update the entire display */
-	par->fbtftops.update_display(par, 0, par->info->var.yres - 1);
+	fbtft_update_display(par, 0, par->info->var.yres - 1);
 
 	if (par->fbtftops.set_gamma && par->gamma.curves) {
 		ret = par->fbtftops.set_gamma(par, par->gamma.curves);
@@ -1155,46 +1087,6 @@ int fbtft_init_display(struct fbtft_par *par)
 }
 EXPORT_SYMBOL(fbtft_init_display);
 
-/**
- * fbtft_verify_gpios() - Generic verify_gpios() function
- * @par: Driver data
- *
- * Uses @spi, @pdev and @buswidth to determine which GPIOs is needed
- *
- * Return: 0 if successful, negative if error
- */
-static int fbtft_verify_gpios(struct fbtft_par *par)
-{
-	struct fbtft_platform_data *pdata = par->pdata;
-	int i;
-
-	fbtft_par_dbg(DEBUG_VERIFY_GPIOS, par, "%s()\n", __func__);
-
-	if (pdata->display.buswidth != 9 && par->startbyte == 0 &&
-							par->gpio.dc < 0) {
-		dev_err(par->info->device,
-			"Missing info about 'dc' gpio. Aborting.\n");
-		return -EINVAL;
-	}
-
-	if (!par->pdev)
-		return 0;
-
-	if (par->gpio.wr < 0) {
-		dev_err(par->info->device, "Missing 'wr' gpio. Aborting.\n");
-		return -EINVAL;
-	}
-	for (i = 0; i < pdata->display.buswidth; i++) {
-		if (par->gpio.db[i] < 0) {
-			dev_err(par->info->device,
-				"Missing 'db%02d' gpio. Aborting.\n", i);
-			return -EINVAL;
-		}
-	}
-
-	return 0;
-}
-
 #ifdef CONFIG_OF
 /* returns 0 if the property is not present */
 static u32 fbtft_of_value(struct device_node *node, const char *propname)
@@ -1240,7 +1132,6 @@ static struct fbtft_platform_data *fbtft_probe_dt(struct device *dev)
 		pdata->display.backlight = 1;
 	if (of_find_property(node, "init", NULL))
 		pdata->display.fbtftops.init_display = fbtft_init_display_dt;
-	pdata->display.fbtftops.request_gpios = fbtft_request_gpios_dt;
 
 	return pdata;
 }
@@ -1350,9 +1241,6 @@ int fbtft_probe_common(struct fbtft_display *display,
 			par->fbtftops.write = fbtft_write_spi_emulate_9;
 		}
 	}
-
-	if (!par->fbtftops.verify_gpios)
-		par->fbtftops.verify_gpios = fbtft_verify_gpios;
 
 	/* make sure we still use the driver provided functions */
 	fbtft_merge_fbtftops(&par->fbtftops, &display->fbtftops);
