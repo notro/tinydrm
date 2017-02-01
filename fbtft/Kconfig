@@ -165,12 +165,6 @@ config TINYDRM_FB_TFT_TLS8204
 	help
 	  Generic Framebuffer support for TLS8204
 
-config TINYDRM_FB_TFT_UC1611
-	tristate "FB driver for the UC1611 LCD controller"
-	depends on TINYDRM_FB_TFT
-	help
-	  Generic Framebuffer support for UC1611
-
 config TINYDRM_FB_TFT_UC1701
 	tristate "FB driver for the UC1701 LCD Controller"
 	depends on TINYDRM_FB_TFT

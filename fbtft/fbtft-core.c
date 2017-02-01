@@ -1023,6 +1023,7 @@ int fbtft_probe_common(struct fbtft_display *display,
 	par->spi = sdev;
 	par->pdev = pdev;
 
+	/* make a copy that we can modify */
 	par->display = *display;
 	display = &par->display;
 
@@ -1030,6 +1031,11 @@ int fbtft_probe_common(struct fbtft_display *display,
 		display->fps = 20;
 	if (!display->bpp)
 		display->bpp = 16;
+
+	if (display->bpp != 16) {
+		dev_err(dev, "Only bpp=16 is supported\n");
+		return -EINVAL;
+	}
 
 	ret = fbtft_property_unsigned(dev, "width", &display->width);
 	if (ret)
@@ -1048,10 +1054,6 @@ int fbtft_probe_common(struct fbtft_display *display,
 		return ret;
 
 	ret = fbtft_property_unsigned(dev, "backlight", &display->backlight);
-	if (ret)
-		return ret;
-
-	ret = fbtft_property_unsigned(dev, "bpp", &display->bpp);
 	if (ret)
 		return ret;
 
