@@ -474,22 +474,13 @@ static void fbtft_merge_fbtftops(struct fbtft_ops *dst, struct fbtft_ops *src)
 		dst->set_gamma = src->set_gamma;
 }
 
-/**
- * fbtft_verify_gpios() - Generic verify_gpios() function
- * @par: Driver data
- *
- * Uses @spi, @pdev and @buswidth to determine which GPIOs is needed
- *
- * Return: 0 if successful, negative if error
- */
 static int fbtft_verify_gpios(struct fbtft_par *par)
 {
-	struct fbtft_platform_data *pdata = par->pdata;
 	int i;
 
 	fbtft_par_dbg(DEBUG_VERIFY_GPIOS, par, "%s()\n", __func__);
 
-	if (pdata->display.buswidth != 9 && par->startbyte == 0 &&
+	if (par->display.buswidth != 9 && par->startbyte == 0 &&
 							par->gpio.dc < 0) {
 		dev_err(par->info->device,
 			"Missing info about 'dc' gpio. Aborting.\n");
@@ -503,7 +494,7 @@ static int fbtft_verify_gpios(struct fbtft_par *par)
 		dev_err(par->info->device, "Missing 'wr' gpio. Aborting.\n");
 		return -EINVAL;
 	}
-	for (i = 0; i < pdata->display.buswidth; i++) {
+	for (i = 0; i < par->display.buswidth; i++) {
 		if (par->gpio.db[i] < 0) {
 			dev_err(par->info->device,
 				"Missing 'db%02d' gpio. Aborting.\n", i);
@@ -532,67 +523,21 @@ static int fbtft_verify_gpios(struct fbtft_par *par)
  * Returns the new structure, or NULL if an error occurred.
  *
  */
-struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
+static
+struct fb_info *fbtft_framebuffer_alloc(struct fbtft_par *par,
+					struct fbtft_display *display,
 					struct device *dev,
-					struct fbtft_platform_data *pdata)
+					unsigned int rotate)
 {
 	struct fb_info *info;
-	struct fbtft_par *par;
-	struct fb_ops *fbops = NULL;
-	struct fb_deferred_io *fbdefio = NULL;
-	u8 *vmem = NULL;
-	void *txbuf = NULL;
-	void *buf = NULL;
+	struct fb_ops *fbops;
+	struct fb_deferred_io *fbdefio;
+	u8 *vmem;
 	unsigned int width;
 	unsigned int height;
-	int txbuflen = display->txbuflen;
-	unsigned int bpp = display->bpp;
-	unsigned int fps = display->fps;
-	int vmem_size, i;
-	s16 *init_sequence = display->init_sequence;
-	char *gamma = display->gamma;
-	unsigned long *gamma_curves = NULL;
+	int vmem_size;
 
-	/* sanity check */
-	if (display->gamma_num * display->gamma_len >
-			FBTFT_GAMMA_MAX_VALUES_TOTAL) {
-		dev_err(dev, "FBTFT_GAMMA_MAX_VALUES_TOTAL=%d is exceeded\n",
-			FBTFT_GAMMA_MAX_VALUES_TOTAL);
-		return NULL;
-	}
-
-	/* defaults */
-	if (!fps)
-		fps = 20;
-	if (!bpp)
-		bpp = 16;
-
-	if (!pdata) {
-		dev_err(dev, "platform data is missing\n");
-		return NULL;
-	}
-
-	/* override driver values? */
-	if (pdata->fps)
-		fps = pdata->fps;
-	if (pdata->txbuflen)
-		txbuflen = pdata->txbuflen;
-	if (pdata->display.init_sequence)
-		init_sequence = pdata->display.init_sequence;
-	if (pdata->gamma)
-		gamma = pdata->gamma;
-	if (pdata->display.backlight)
-		display->backlight = pdata->display.backlight;
-	if (pdata->display.width)
-		display->width = pdata->display.width;
-	if (pdata->display.height)
-		display->height = pdata->display.height;
-	if (pdata->display.buswidth)
-		display->buswidth = pdata->display.buswidth;
-	if (pdata->display.regwidth)
-		display->regwidth = pdata->display.regwidth;
-
-	switch (pdata->rotate) {
+	switch (rotate) {
 	case 90:
 	case 270:
 		width =  display->height;
@@ -603,7 +548,7 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 		height = display->height;
 	}
 
-	vmem_size = display->width * display->height * bpp / 8;
+	vmem_size = width * height * display->bpp / 8;
 	vmem = vzalloc(vmem_size);
 	if (!vmem)
 		goto alloc_fail;
@@ -616,23 +561,12 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 	if (!fbdefio)
 		goto alloc_fail;
 
-	buf = devm_kzalloc(dev, 128, GFP_KERNEL);
-	if (!buf)
-		goto alloc_fail;
-
-	if (display->gamma_num && display->gamma_len) {
-		gamma_curves = devm_kcalloc(dev,
-					    display->gamma_num *
-					    display->gamma_len,
-					    sizeof(gamma_curves[0]),
-					    GFP_KERNEL);
-		if (!gamma_curves)
-			goto alloc_fail;
-	}
-
-	info = framebuffer_alloc(sizeof(struct fbtft_par), dev);
+	info = framebuffer_alloc(0, dev);
 	if (!info)
 		goto alloc_fail;
+
+	info->par = par;
+	par->info = info;
 
 	info->screen_buffer = vmem;
 	info->fbops = fbops;
@@ -647,7 +581,7 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 	fbops->fb_setcolreg =      fbtft_fb_setcolreg;
 	fbops->fb_blank     =      fbtft_fb_blank;
 
-	fbdefio->delay =           HZ/fps;
+	fbdefio->delay =           HZ/display->fps;
 	fbdefio->deferred_io =     fbtft_deferred_io;
 	fb_deferred_io_init(info);
 
@@ -657,16 +591,16 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 	info->fix.xpanstep =	   0;
 	info->fix.ypanstep =	   0;
 	info->fix.ywrapstep =	   0;
-	info->fix.line_length =    width * bpp / 8;
+	info->fix.line_length =    width * display->bpp / 8;
 	info->fix.accel =          FB_ACCEL_NONE;
 	info->fix.smem_len =       vmem_size;
 
-	info->var.rotate =         pdata->rotate;
+	info->var.rotate =         rotate;
 	info->var.xres =           width;
 	info->var.yres =           height;
 	info->var.xres_virtual =   info->var.xres;
 	info->var.yres_virtual =   info->var.yres;
-	info->var.bits_per_pixel = bpp;
+	info->var.bits_per_pixel = display->bpp;
 	info->var.nonstd =         1;
 
 	/* RGB565 */
@@ -681,72 +615,7 @@ struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
 
 	info->flags =              FBINFO_FLAG_DEFAULT | FBINFO_VIRTFB;
 
-	par = info->par;
-	par->info = info;
-	par->pdata = pdata;
-	par->buf = buf;
-	spin_lock_init(&par->dirty_lock);
-	par->bgr = pdata->bgr;
-	par->startbyte = pdata->startbyte;
-	par->init_sequence = init_sequence;
-	par->gamma.curves = gamma_curves;
-	par->gamma.num_curves = display->gamma_num;
-	par->gamma.num_values = display->gamma_len;
-	mutex_init(&par->gamma.lock);
 	info->pseudo_palette = par->pseudo_palette;
-
-	if (par->gamma.curves && gamma) {
-		if (fbtft_gamma_parse_str(par,
-			par->gamma.curves, gamma, strlen(gamma)))
-			goto alloc_fail;
-	}
-
-	/* Transmit buffer */
-	if (txbuflen == -1)
-		txbuflen = vmem_size + 2; /* add in case startbyte is used */
-	if (txbuflen >= vmem_size + 2)
-		txbuflen = 0;
-
-#ifdef __LITTLE_ENDIAN
-	if ((!txbuflen) && (bpp > 8))
-		txbuflen = PAGE_SIZE; /* need buffer for byteswapping */
-#endif
-
-	if (txbuflen > 0) {
-		txbuf = devm_kzalloc(par->info->device, txbuflen, GFP_KERNEL);
-		if (!txbuf)
-			goto alloc_fail;
-		par->txbuf.buf = txbuf;
-		par->txbuf.len = txbuflen;
-	}
-
-	/* Initialize gpios to disabled */
-	par->gpio.reset = -1;
-	par->gpio.dc = -1;
-	par->gpio.rd = -1;
-	par->gpio.wr = -1;
-	par->gpio.cs = -1;
-	for (i = 0; i < 16; i++) {
-		par->gpio.db[i] = -1;
-		par->gpio.led[i] = -1;
-	}
-
-	/* default fbtft operations */
-	par->fbtftops.write = fbtft_write_spi;
-	par->fbtftops.read = fbtft_read_spi;
-	par->fbtftops.write_vmem = fbtft_write_vmem16_bus8;
-	par->fbtftops.write_register = fbtft_write_reg8_bus8;
-	par->fbtftops.set_addr_win = fbtft_set_addr_win;
-	par->fbtftops.reset = fbtft_reset;
-	if (display->backlight)
-		par->fbtftops.register_backlight = fbtft_register_backlight;
-
-	/* use driver provided functions */
-	fbtft_merge_fbtftops(&par->fbtftops, &display->fbtftops);
-
-	/* Satisfy fb_ra8875 and fb_ssd1331 */
-	if (drm_debug & DRM_UT_DRIVER)
-		par->debug = DEBUG_WRITE_REGISTER;
 
 	return info;
 
@@ -755,7 +624,6 @@ alloc_fail:
 
 	return NULL;
 }
-EXPORT_SYMBOL(fbtft_framebuffer_alloc);
 
 /**
  * fbtft_framebuffer_release - frees up all memory used by the framebuffer
@@ -763,13 +631,12 @@ EXPORT_SYMBOL(fbtft_framebuffer_alloc);
  * @info: frame buffer info structure
  *
  */
-void fbtft_framebuffer_release(struct fb_info *info)
+static void fbtft_framebuffer_release(struct fb_info *info)
 {
 	fb_deferred_io_cleanup(info);
 	vfree(info->screen_buffer);
 	framebuffer_release(info);
 }
-EXPORT_SYMBOL(fbtft_framebuffer_release);
 
 /**
  *	fbtft_register_framebuffer - registers a tft frame buffer device
@@ -784,7 +651,7 @@ EXPORT_SYMBOL(fbtft_framebuffer_release);
  *	Returns negative errno on error, or zero for success.
  *
  */
-int fbtft_register_framebuffer(struct fb_info *fb_info)
+static int fbtft_register_framebuffer(struct fb_info *fb_info)
 {
 	int ret;
 	char text1[50] = "";
@@ -866,7 +733,6 @@ reg_fail:
 
 	return ret;
 }
-EXPORT_SYMBOL(fbtft_register_framebuffer);
 
 /**
  *	fbtft_unregister_framebuffer - releases a tft frame buffer device
@@ -877,7 +743,7 @@ EXPORT_SYMBOL(fbtft_register_framebuffer);
  *	Unregisters frame buffer device.
  *
  */
-int fbtft_unregister_framebuffer(struct fb_info *fb_info)
+static int fbtft_unregister_framebuffer(struct fb_info *fb_info)
 {
 	struct fbtft_par *par = fb_info->par;
 
@@ -886,7 +752,6 @@ int fbtft_unregister_framebuffer(struct fb_info *fb_info)
 	fbtft_sysfs_exit(par);
 	return unregister_framebuffer(fb_info);
 }
-EXPORT_SYMBOL(fbtft_unregister_framebuffer);
 
 #ifdef CONFIG_OF
 /**
@@ -967,6 +832,11 @@ static int fbtft_init_display_dt(struct fbtft_par *par)
 
 	return 0;
 }
+#else
+static int fbtft_init_display_dt(struct fbtft_par *par)
+{
+	return -EINVAL;
+}
 #endif
 
 /**
@@ -977,7 +847,7 @@ static int fbtft_init_display_dt(struct fbtft_par *par)
  *
  * Return: 0 if successful, negative if error
  */
-int fbtft_init_display(struct fbtft_par *par)
+static int fbtft_init_display(struct fbtft_par *par)
 {
 	int buf[64];
 	char msg[128];
@@ -1085,63 +955,24 @@ int fbtft_init_display(struct fbtft_par *par)
 		"%s: something is wrong. Shouldn't get here.\n", __func__);
 	return -EINVAL;
 }
-EXPORT_SYMBOL(fbtft_init_display);
 
-#ifdef CONFIG_OF
-/* returns 0 if the property is not present */
-static u32 fbtft_of_value(struct device_node *node, const char *propname)
+static int fbtft_property_unsigned(struct device *dev, const char *propname,
+				   unsigned int *val)
 {
+	u32 val32;
 	int ret;
-	u32 val = 0;
 
-	ret = of_property_read_u32(node, propname, &val);
-	if (ret == 0)
-		pr_info("%s: %s = %u\n", __func__, propname, val);
+	if (!device_property_present(dev, propname))
+		return 0;
 
-	return val;
+	ret = device_property_read_u32(dev, propname, &val32);
+	if (ret)
+		return ret;
+
+	*val = val32;
+
+	return 0;
 }
-
-static struct fbtft_platform_data *fbtft_probe_dt(struct device *dev)
-{
-	struct device_node *node = dev->of_node;
-	struct fbtft_platform_data *pdata;
-
-	if (!node) {
-		dev_err(dev, "Missing platform data or DT\n");
-		return ERR_PTR(-EINVAL);
-	}
-
-	pdata = devm_kzalloc(dev, sizeof(*pdata), GFP_KERNEL);
-	if (!pdata)
-		return ERR_PTR(-ENOMEM);
-
-	pdata->display.width = fbtft_of_value(node, "width");
-	pdata->display.height = fbtft_of_value(node, "height");
-	pdata->display.regwidth = fbtft_of_value(node, "regwidth");
-	pdata->display.buswidth = fbtft_of_value(node, "buswidth");
-	pdata->display.backlight = fbtft_of_value(node, "backlight");
-	pdata->display.bpp = fbtft_of_value(node, "bpp");
-	pdata->rotate = fbtft_of_value(node, "rotate");
-	pdata->bgr = of_property_read_bool(node, "bgr");
-	pdata->fps = fbtft_of_value(node, "fps");
-	pdata->txbuflen = fbtft_of_value(node, "txbuflen");
-	pdata->startbyte = fbtft_of_value(node, "startbyte");
-	of_property_read_string(node, "gamma", (const char **)&pdata->gamma);
-
-	if (of_find_property(node, "led-gpios", NULL))
-		pdata->display.backlight = 1;
-	if (of_find_property(node, "init", NULL))
-		pdata->display.fbtftops.init_display = fbtft_init_display_dt;
-
-	return pdata;
-}
-#else
-static struct fbtft_platform_data *fbtft_probe_dt(struct device *dev)
-{
-	dev_err(dev, "Missing platform data\n");
-	return ERR_PTR(-EINVAL);
-}
-#endif
 
 /**
  * fbtft_probe_common() - Generic device probe() helper function
@@ -1158,38 +989,179 @@ static struct fbtft_platform_data *fbtft_probe_dt(struct device *dev)
 int fbtft_probe_common(struct fbtft_display *display,
 			struct spi_device *sdev, struct platform_device *pdev)
 {
-	struct device *dev;
-	struct fb_info *info;
+	unsigned int startbyte = 0, rotate = 0;
+	unsigned long *gamma_curves = NULL;
+	unsigned int txbuflen = 0;
+	unsigned int vmem_size;
 	struct fbtft_par *par;
-	struct fbtft_platform_data *pdata;
-	int ret;
+	struct fb_info *info;
+	struct device *dev;
+	int ret, i;
+
+	DRM_DEBUG_DRIVER("\n");
 
 	if (sdev)
 		dev = &sdev->dev;
 	else
 		dev = &pdev->dev;
 
-	DRM_DEBUG_DRIVER("\n");
-
-	pdata = dev->platform_data;
-	if (!pdata) {
-		pdata = fbtft_probe_dt(dev);
-		if (IS_ERR(pdata))
-			return PTR_ERR(pdata);
+	if (display->gamma_num * display->gamma_len >
+			FBTFT_GAMMA_MAX_VALUES_TOTAL) {
+		dev_err(dev, "FBTFT_GAMMA_MAX_VALUES_TOTAL=%d is exceeded\n",
+			FBTFT_GAMMA_MAX_VALUES_TOTAL);
+		return -EINVAL;
 	}
 
-	info = fbtft_framebuffer_alloc(display, dev, pdata);
-	if (!info)
+	par = devm_kzalloc(dev, sizeof(*par), GFP_KERNEL);
+	if (!par)
 		return -ENOMEM;
 
-	par = info->par;
+	par->buf = devm_kzalloc(dev, 128, GFP_KERNEL);
+	if (!par->buf)
+		return -ENOMEM;
+
 	par->spi = sdev;
 	par->pdev = pdev;
 
-	if (display->buswidth == 0) {
+	par->display = *display;
+	display = &par->display;
+
+	if (!display->fps)
+		display->fps = 20;
+	if (!display->bpp)
+		display->bpp = 16;
+
+	ret = fbtft_property_unsigned(dev, "width", &display->width);
+	if (ret)
+		return ret;
+
+	ret = fbtft_property_unsigned(dev, "height", &display->height);
+	if (ret)
+		return ret;
+
+	ret = fbtft_property_unsigned(dev, "regwidth", &display->regwidth);
+	if (ret)
+		return ret;
+
+	ret = fbtft_property_unsigned(dev, "buswidth", &display->buswidth);
+	if (ret)
+		return ret;
+
+	ret = fbtft_property_unsigned(dev, "backlight", &display->backlight);
+	if (ret)
+		return ret;
+
+	ret = fbtft_property_unsigned(dev, "bpp", &display->bpp);
+	if (ret)
+		return ret;
+
+	ret = fbtft_property_unsigned(dev, "rotate", &rotate);
+	if (ret)
+		return ret;
+
+	par->bgr = device_property_present(dev, "bgr");
+
+	ret = fbtft_property_unsigned(dev, "txbuflen", &txbuflen);
+	if (ret)
+		return ret;
+
+	ret = fbtft_property_unsigned(dev, "startbyte", &startbyte);
+	if (ret)
+		return ret;
+
+	par->startbyte = startbyte;
+
+	if (device_property_present(dev, "gamma")) {
+		ret = device_property_read_string(dev, "gamma", (const char **)&display->gamma);
+		if (ret)
+			return ret;
+	}
+
+	if (of_find_property(dev->of_node, "led-gpios", NULL))
+		display->backlight = 1;
+
+	if (!display->buswidth) {
 		dev_err(dev, "buswidth is not set\n");
 		return -EINVAL;
 	}
+
+	/* Needed by fb_uc1611 and fb_ssd1351 */
+	par->pdata = devm_kzalloc(dev, sizeof(*par->pdata), GFP_KERNEL);
+	if (!par->pdata)
+		return -ENOMEM;
+
+	par->pdata->display = *display;
+
+	spin_lock_init(&par->dirty_lock);
+	par->init_sequence = display->init_sequence;
+
+	if (display->gamma_num && display->gamma_len) {
+		gamma_curves = devm_kcalloc(dev,
+					    display->gamma_num *
+					    display->gamma_len,
+					    sizeof(gamma_curves[0]),
+					    GFP_KERNEL);
+		if (!gamma_curves)
+			return -ENOMEM;
+	}
+
+	mutex_init(&par->gamma.lock);
+	par->gamma.curves = gamma_curves;
+	par->gamma.num_curves = display->gamma_num;
+	par->gamma.num_values = display->gamma_len;
+	if (par->gamma.curves && display->gamma) {
+		if (fbtft_gamma_parse_str(par, par->gamma.curves,
+		    display->gamma, strlen(display->gamma)))
+			return -ENOMEM;
+	}
+
+	/* Initialize gpios to disabled */
+	par->gpio.reset = -1;
+	par->gpio.dc = -1;
+	par->gpio.rd = -1;
+	par->gpio.wr = -1;
+	par->gpio.cs = -1;
+	for (i = 0; i < 16; i++) {
+		par->gpio.db[i] = -1;
+		par->gpio.led[i] = -1;
+	}
+
+	/* Satisfy fb_ra8875 and fb_ssd1331 */
+	if (drm_debug & DRM_UT_DRIVER)
+		par->debug = DEBUG_WRITE_REGISTER;
+
+	vmem_size = display->width * display->height * display->bpp / 8;
+
+	/* special case used in fb_uc1611 */
+	if (!txbuflen && display->txbuflen == -1)
+		txbuflen = vmem_size + 2; /* add in case startbyte is used */
+
+	/* Transmit buffer */
+	if (!txbuflen)
+		txbuflen = display->txbuflen;
+	if (txbuflen > vmem_size + 2)
+		txbuflen = vmem_size + 2;
+
+#ifdef __LITTLE_ENDIAN
+	if (!txbuflen && (display->bpp > 8))
+		txbuflen = PAGE_SIZE; /* need buffer for byteswapping */
+#endif
+
+	if (txbuflen) {
+		par->txbuf.len = txbuflen;
+		par->txbuf.buf = devm_kzalloc(dev, txbuflen, GFP_KERNEL);
+		if (!par->txbuf.buf)
+			return -ENOMEM;
+	}
+
+	par->fbtftops.write = fbtft_write_spi;
+	par->fbtftops.read = fbtft_read_spi;
+	par->fbtftops.write_vmem = fbtft_write_vmem16_bus8;
+	par->fbtftops.write_register = fbtft_write_reg8_bus8;
+	par->fbtftops.set_addr_win = fbtft_set_addr_win;
+	par->fbtftops.reset = fbtft_reset;
+	if (display->backlight)
+		par->fbtftops.register_backlight = fbtft_register_backlight;
 
 	/* write register functions */
 	if (display->regwidth == 8 && display->buswidth == 8) {
@@ -1228,29 +1200,28 @@ int fbtft_probe_common(struct fbtft_display *display,
 		if (par->spi->master->bits_per_word_mask & SPI_BPW_MASK(9)) {
 			par->spi->bits_per_word = 9;
 		} else {
-			dev_warn(&par->spi->dev,
+			dev_warn(dev,
 				"9-bit SPI not available, emulating using 8-bit.\n");
+			par->fbtftops.write = fbtft_write_spi_emulate_9;
 			/* allocate buffer with room for dc bits */
-			par->extra = devm_kzalloc(par->info->device,
+			par->extra = devm_kzalloc(dev,
 				par->txbuf.len + (par->txbuf.len / 8) + 8,
 				GFP_KERNEL);
-			if (!par->extra) {
-				ret = -ENOMEM;
-				goto out_release;
-			}
-			par->fbtftops.write = fbtft_write_spi_emulate_9;
+			if (!par->extra)
+				return -ENOMEM;
 		}
 	}
 
-	/* make sure we still use the driver provided functions */
 	fbtft_merge_fbtftops(&par->fbtftops, &display->fbtftops);
 
-	/* use init_sequence if provided */
-	if (par->init_sequence)
+	if (of_find_property(dev->of_node, "init", NULL))
+		display->fbtftops.init_display = fbtft_init_display_dt;
+	else if (par->init_sequence)
 		par->fbtftops.init_display = fbtft_init_display;
 
-	/* use platform_data provided functions above all */
-	fbtft_merge_fbtftops(&par->fbtftops, &pdata->display.fbtftops);
+	info = fbtft_framebuffer_alloc(par, display, dev, rotate);
+	if (!info)
+		return -ENOMEM;
 
 	ret = fbtft_register_framebuffer(info);
 	if (ret < 0)

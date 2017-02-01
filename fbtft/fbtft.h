@@ -121,28 +121,9 @@ struct fbtft_display {
 	int gamma_len;
 };
 
-/**
- * struct fbtft_platform_data - Passes display specific data to the driver
- * @display: Display properties
- * @gpios: Pointer to an array of pinname to gpio mappings
- * @rotate: Display rotation angle
- * @bgr: LCD Controller BGR bit
- * @fps: Frames per second (this will go away, use @fps in @fbtft_display)
- * @txbuflen: Size of transmit buffer
- * @startbyte: When set, enables use of Startbyte in transfers
- * @gamma: String representation of Gamma curve(s)
- * @extra: A way to pass extra info
- */
+/* Needed by fb_uc1611 and fb_ssd1351 */
 struct fbtft_platform_data {
 	struct fbtft_display display;
-	const struct fbtft_gpio *gpios;
-	unsigned int rotate;
-	bool bgr;
-	unsigned int fps;
-	int txbuflen;
-	u8 startbyte;
-	char *gamma;
-	void *extra;
 };
 
 /**
@@ -187,13 +168,14 @@ struct fbtft_platform_data {
 struct fbtft_par {
 	struct spi_device *spi;
 	struct platform_device *pdev;
+	struct fbtft_display display;
 	struct fb_info *info;
 	struct fbtft_platform_data *pdata;
 	u16 *ssbuf;
 	u32 pseudo_palette[16];
 	struct {
 		void *buf;
-		size_t len;
+		unsigned int len;
 	} txbuf;
 	u8 *buf;
 	u8 startbyte;
@@ -233,15 +215,8 @@ struct fbtft_par {
 /* fbtft-core.c */
 void fbtft_dbg_hex(const struct device *dev, int groupsize,
 		   void *buf, size_t len, const char *fmt, ...);
-struct fb_info *fbtft_framebuffer_alloc(struct fbtft_display *display,
-					struct device *dev,
-					struct fbtft_platform_data *pdata);
-void fbtft_framebuffer_release(struct fb_info *info);
-int fbtft_register_framebuffer(struct fb_info *fb_info);
-int fbtft_unregister_framebuffer(struct fb_info *fb_info);
 void fbtft_register_backlight(struct fbtft_par *par);
 void fbtft_unregister_backlight(struct fbtft_par *par);
-int fbtft_init_display(struct fbtft_par *par);
 int fbtft_probe_common(struct fbtft_display *display, struct spi_device *sdev,
 		       struct platform_device *pdev);
 int fbtft_remove_common(struct device *dev, struct fb_info *info);
