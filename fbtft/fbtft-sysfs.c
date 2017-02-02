@@ -146,11 +146,11 @@ static struct device_attribute gamma_device_attrs[] = {
 void fbtft_sysfs_init(struct fbtft_par *par)
 {
 	if (par->gamma.curves && par->fbtftops.set_gamma)
-		device_create_file(par->info->dev, &gamma_device_attrs[0]);
+		device_create_file(par->info->device, &gamma_device_attrs[0]);
 }
 
 void fbtft_sysfs_exit(struct fbtft_par *par)
 {
 	if (par->gamma.curves && par->fbtftops.set_gamma)
-		device_remove_file(par->info->dev, &gamma_device_attrs[0]);
+		device_remove_file(par->info->device, &gamma_device_attrs[0]);
 }

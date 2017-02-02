@@ -16,6 +16,7 @@
 #define __LINUX_FBTFT_H
 
 #include "../include/drm/tinydrm/tinydrm.h"
+#include "../include/drm/tinydrm/tinydrm-helpers.h"
 
 #include <linux/fb.h>
 #include <linux/spinlock.h>
@@ -87,24 +88,6 @@ struct fbtft_ops {
 	int (*set_gamma)(struct fbtft_par *par, unsigned long *curves);
 };
 
-/**
- * struct fbtft_display - Describes the display properties
- * @width: Width of display in pixels
- * @height: Height of display in pixels
- * @regwidth: LCD Controller Register width in bits
- * @buswidth: Display interface bus width in bits
- * @backlight: Backlight type.
- * @fbtftops: FBTFT operations provided by driver or device (platform_data)
- * @bpp: Bits per pixel
- * @fps: Frames per second
- * @txbuflen: Size of transmit buffer
- * @init_sequence: Pointer to LCD initialization array
- * @gamma: String representation of Gamma curve(s)
- * @gamma_num: Number of Gamma curves
- * @gamma_len: Number of values per Gamma curve
- *
- * This structure is not stored by FBTFT except for init_sequence.
- */
 struct fbtft_display {
 	unsigned int width;
 	unsigned int height;
@@ -126,50 +109,31 @@ struct fbtft_platform_data {
 	struct fbtft_display display;
 };
 
-/**
- * struct fbtft_par - Main FBTFT data structure
- *
- * This structure holds all relevant data to operate the display
- *
- * See sourcefile for documentation since nested structs is not
- * supported by kernel-doc.
- *
- */
-/* @spi: Set if it is a SPI device
- * @pdev: Set if it is a platform device
- * @info: Pointer to framebuffer fb_info structure
- * @pdata: Pointer to platform data
- * @ssbuf: Not used
- * @pseudo_palette: Used by fb_set_colreg()
- * @txbuf.buf: Transmit buffer
- * @txbuf.len: Transmit buffer length
- * @buf: Small buffer used when writing init data over SPI
- * @startbyte: Used by some controllers when in SPI mode.
- *             Format: 6 bit Device id + RS bit + RW bit
- * @fbtftops: FBTFT operations provided by driver or device (platform_data)
- * @dirty_lock: Protects dirty_lines_start and dirty_lines_end
- * @dirty_lines_start: Where to begin updating display
- * @dirty_lines_end: Where to end updating display
- * @gpio.reset: GPIO used to reset display
- * @gpio.dc: Data/Command signal, also known as RS
- * @gpio.rd: Read latching signal
- * @gpio.wr: Write latching signal
- * @gpio.cs: LCD Chip Select with parallel interface bus
- * @gpio.db[16]: Parallel databus
- * @gpio.led[16]: Led control signals
- * @init_sequence: Pointer to LCD initialization array
- * @gamma.lock: Mutex for Gamma curve locking
- * @gamma.curves: Pointer to Gamma curve array
- * @gamma.num_values: Number of values per Gamma curve
- * @gamma.num_curves: Number of Gamma curves
- * @bgr: BGR mode/\n
- * @extra: Extra info needed by driver
- */
+struct fbtft_fb_var_screeninfo {
+	u32 xres;
+	u32 yres;
+	u32 rotate;
+};
+
+struct fbtft_fb_fix_screeninfo {
+	u32 line_length;
+};
+
+struct fbtft_fb_info {
+	struct device *device;
+	struct fbtft_par *par;
+	void *screen_buffer;
+	struct backlight_device *bl_dev;
+	struct fbtft_fb_var_screeninfo var;
+	struct fbtft_fb_fix_screeninfo fix;
+};
+
 struct fbtft_par {
+	struct tinydrm_device tinydrm;
 	struct spi_device *spi;
 	struct platform_device *pdev;
 	struct fbtft_display display;
-	struct fb_info *info;
+	struct fbtft_fb_info *info;
 	struct fbtft_platform_data *pdata;
 	u16 *ssbuf;
 	u32 pseudo_palette[16];
@@ -219,7 +183,7 @@ void fbtft_register_backlight(struct fbtft_par *par);
 void fbtft_unregister_backlight(struct fbtft_par *par);
 int fbtft_probe_common(struct fbtft_display *display, struct spi_device *sdev,
 		       struct platform_device *pdev);
-int fbtft_remove_common(struct device *dev, struct fb_info *info);
+int fbtft_remove_common(struct device *dev, struct fbtft_par *par);
 
 /* fbtft-io.c */
 int fbtft_write_spi(struct fbtft_par *par, void *buf, size_t len);
@@ -254,9 +218,9 @@ static int fbtft_driver_probe_spi(struct spi_device *spi)                  \
 									   \
 static int fbtft_driver_remove_spi(struct spi_device *spi)                 \
 {                                                                          \
-	struct fb_info *info = spi_get_drvdata(spi);                       \
+	struct fbtft_par *par = spi_get_drvdata(spi);                      \
 									   \
-	return fbtft_remove_common(&spi->dev, info);                       \
+	return fbtft_remove_common(&spi->dev, par);                        \
 }                                                                          \
 									   \
 static int fbtft_driver_probe_pdev(struct platform_device *pdev)           \
@@ -266,9 +230,9 @@ static int fbtft_driver_probe_pdev(struct platform_device *pdev)           \
 									   \
 static int fbtft_driver_remove_pdev(struct platform_device *pdev)          \
 {                                                                          \
-	struct fb_info *info = platform_get_drvdata(pdev);                 \
+	struct fbtft_par *par = platform_get_drvdata(pdev);                \
 									   \
-	return fbtft_remove_common(&pdev->dev, info);                      \
+	return fbtft_remove_common(&pdev->dev, par);                       \
 }                                                                          \
 									   \
 static const struct of_device_id dt_ids[] = {                              \
