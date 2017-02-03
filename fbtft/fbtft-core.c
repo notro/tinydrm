@@ -282,34 +282,6 @@ static void fbtft_update_display(struct fbtft_par *par, unsigned int start_line,
 			__func__);
 }
 
-static void fbtft_merge_fbtftops(struct fbtft_ops *dst, struct fbtft_ops *src)
-{
-	if (src->write)
-		dst->write = src->write;
-	if (src->read)
-		dst->read = src->read;
-	if (src->write_vmem)
-		dst->write_vmem = src->write_vmem;
-	if (src->write_register)
-		dst->write_register = src->write_register;
-	if (src->set_addr_win)
-		dst->set_addr_win = src->set_addr_win;
-	if (src->reset)
-		dst->reset = src->reset;
-	if (src->init_display)
-		dst->init_display = src->init_display;
-	if (src->blank)
-		dst->blank = src->blank;
-	if (src->register_backlight)
-		dst->register_backlight = src->register_backlight;
-	if (src->unregister_backlight)
-		dst->unregister_backlight = src->unregister_backlight;
-	if (src->set_var)
-		dst->set_var = src->set_var;
-	if (src->set_gamma)
-		dst->set_gamma = src->set_gamma;
-}
-
 static int fbtft_verify_gpios(struct fbtft_par *par)
 {
 	int i;
@@ -837,65 +809,66 @@ int fbtft_probe_common(struct fbtft_display *display,
 			return -ENOMEM;
 	}
 
-	par->fbtftops.write = fbtft_write_spi;
-	par->fbtftops.read = fbtft_read_spi;
-	par->fbtftops.write_vmem = fbtft_write_vmem16_bus8;
-	par->fbtftops.write_register = fbtft_write_reg8_bus8;
-	par->fbtftops.set_addr_win = fbtft_set_addr_win;
-	par->fbtftops.reset = fbtft_reset;
-	if (display->backlight)
+	par->fbtftops = display->fbtftops;
+
+	if (!par->fbtftops.reset)
+		par->fbtftops.reset = fbtft_reset;
+
+	if (!par->fbtftops.register_backlight && display->backlight)
 		par->fbtftops.register_backlight = fbtft_register_backlight;
 
-	/* write register functions */
-	if (display->regwidth == 8 && display->buswidth == 8) {
-		par->fbtftops.write_register = fbtft_write_reg8_bus8;
-	} else
-	if (display->regwidth == 8 && display->buswidth == 9 && par->spi) {
-		par->fbtftops.write_register = fbtft_write_reg8_bus9;
-	} else if (display->regwidth == 16 && display->buswidth == 8) {
-		par->fbtftops.write_register = fbtft_write_reg16_bus8;
-	} else if (display->regwidth == 16 && display->buswidth == 16) {
-		par->fbtftops.write_register = fbtft_write_reg16_bus16;
-	} else {
-		dev_warn(dev,
-			"no default functions for regwidth=%d and buswidth=%d\n",
-			display->regwidth, display->buswidth);
+	if (!par->fbtftops.set_addr_win)
+		par->fbtftops.set_addr_win = fbtft_set_addr_win;
+
+	if (!par->fbtftops.write_register) {
+		if (display->regwidth == 8 && display->buswidth == 8)
+			par->fbtftops.write_register = fbtft_write_reg8_bus8;
+		else if (display->regwidth == 8 && display->buswidth == 9)
+			par->fbtftops.write_register = fbtft_write_reg8_bus9;
+		else if (display->regwidth == 16 && display->buswidth == 8)
+			par->fbtftops.write_register = fbtft_write_reg16_bus8;
+		else if (display->regwidth == 16 && display->buswidth == 16)
+			par->fbtftops.write_register = fbtft_write_reg16_bus16;
+		else
+			return -EINVAL;
 	}
 
-	/* write_vmem() functions */
-	if (display->buswidth == 8)
-		par->fbtftops.write_vmem = fbtft_write_vmem16_bus8;
-	else if (display->buswidth == 9)
-		par->fbtftops.write_vmem = fbtft_write_vmem16_bus9;
-	else if (display->buswidth == 16)
-		par->fbtftops.write_vmem = fbtft_write_vmem16_bus16;
+	if (!par->fbtftops.write_vmem) {
+		if (display->buswidth == 8)
+			par->fbtftops.write_vmem = fbtft_write_vmem16_bus8;
+		else if (display->buswidth == 9)
+			par->fbtftops.write_vmem = fbtft_write_vmem16_bus9;
+		else if (display->buswidth == 16)
+			par->fbtftops.write_vmem = fbtft_write_vmem16_bus16;
+		else
+			return -EINVAL;
+	}
 
-	/* GPIO write() functions */
-	if (par->pdev) {
+	if (!par->fbtftops.write && par->spi) {
+		par->fbtftops.write = fbtft_write_spi;
+		if (display->buswidth == 9) {
+			if (par->spi->master->bits_per_word_mask & SPI_BPW_MASK(9)) {
+				par->spi->bits_per_word = 9;
+			} else {
+				size_t sz = par->txbuf.len +
+					    (par->txbuf.len / 8) + 8;
+
+				dev_warn(dev, "9-bit SPI not available, emulating using 8-bit.\n");
+				par->fbtftops.write = fbtft_write_spi_emulate_9;
+				/* allocate buffer with room for dc bits */
+				par->extra = devm_kzalloc(dev, sz, GFP_KERNEL);
+				if (!par->extra)
+					return -ENOMEM;
+			}
+		}
+	} else if (!par->fbtftops.write) {
 		if (display->buswidth == 8)
 			par->fbtftops.write = fbtft_write_gpio8_wr;
 		else if (display->buswidth == 16)
 			par->fbtftops.write = fbtft_write_gpio16_wr;
 	}
 
-	/* 9-bit SPI setup */
-	if (par->spi && display->buswidth == 9) {
-		if (par->spi->master->bits_per_word_mask & SPI_BPW_MASK(9)) {
-			par->spi->bits_per_word = 9;
-		} else {
-			dev_warn(dev,
-				"9-bit SPI not available, emulating using 8-bit.\n");
-			par->fbtftops.write = fbtft_write_spi_emulate_9;
-			/* allocate buffer with room for dc bits */
-			par->extra = devm_kzalloc(dev,
-				par->txbuf.len + (par->txbuf.len / 8) + 8,
-				GFP_KERNEL);
-			if (!par->extra)
-				return -ENOMEM;
-		}
-	}
-
-	fbtft_merge_fbtftops(&par->fbtftops, &display->fbtftops);
+	par->fbtftops.read = fbtft_read_spi;
 
 	if (of_find_property(dev->of_node, "init", NULL))
 		display->fbtftops.init_display = fbtft_init_display_dt;
