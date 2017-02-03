@@ -226,13 +226,6 @@ int fbtft_write_vmem16_bus9(struct fbtft_par *par, size_t offset, size_t len)
 }
 EXPORT_SYMBOL(fbtft_write_vmem16_bus9);
 
-int fbtft_write_vmem8_bus8(struct fbtft_par *par, size_t offset, size_t len)
-{
-	dev_err(par->info->device, "%s: function not implemented\n", __func__);
-	return -1;
-}
-EXPORT_SYMBOL(fbtft_write_vmem8_bus8);
-
 /* 16 bit pixel over 16-bit databus */
 int fbtft_write_vmem16_bus16(struct fbtft_par *par, size_t offset, size_t len)
 {

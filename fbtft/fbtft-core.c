@@ -16,24 +16,17 @@
  * GNU General Public License for more details.
  */
 
-#include <linux/module.h>
-#include <linux/kernel.h>
-#include <linux/errno.h>
-#include <linux/string.h>
-#include <linux/mm.h>
-#include <linux/vmalloc.h>
-#include <linux/slab.h>
-#include <linux/init.h>
-#include <linux/fb.h>
-#include <linux/gpio.h>
-#include <linux/spi/spi.h>
-#include <linux/delay.h>
-#include <linux/uaccess.h>
 #include <linux/backlight.h>
-#include <linux/platform_device.h>
-#include <linux/spinlock.h>
+#include <linux/delay.h>
+#include <linux/errno.h>
+#include <linux/gpio.h>
+#include <linux/kernel.h>
+#include <linux/module.h>
 #include <linux/of.h>
 #include <linux/of_gpio.h>
+#include <linux/platform_device.h>
+#include <linux/spi/spi.h>
+#include <linux/string.h>
 #include <video/mipi_display.h>
 
 #include "fbtft.h"
@@ -241,45 +234,6 @@ static void fbtft_reset(struct fbtft_par *par)
 	usleep_range(20, 40);
 	gpio_set_value_cansleep(par->gpio.reset, 1);
 	msleep(120);
-}
-
-static void fbtft_update_display(struct fbtft_par *par, unsigned int start_line,
-				 unsigned int end_line)
-{
-	size_t offset, len;
-	int ret = 0;
-
-	/* Sanity checks */
-	if (start_line > end_line) {
-		dev_warn(par->info->device,
-			 "%s: start_line=%u is larger than end_line=%u. Shouldn't happen, will do full display update\n",
-			 __func__, start_line, end_line);
-		start_line = 0;
-		end_line = par->info->var.yres - 1;
-	}
-	if (start_line > par->info->var.yres - 1 ||
-	    end_line > par->info->var.yres - 1) {
-		dev_warn(par->info->device,
-			"%s: start_line=%u or end_line=%u is larger than max=%d. Shouldn't happen, will do full display update\n",
-			 __func__, start_line,
-			 end_line, par->info->var.yres - 1);
-		start_line = 0;
-		end_line = par->info->var.yres - 1;
-	}
-
-	DRM_DEBUG("start_line=%u, end_line=%u\n", start_line, end_line);
-
-	if (par->fbtftops.set_addr_win)
-		par->fbtftops.set_addr_win(par, 0, start_line,
-				par->info->var.xres - 1, end_line);
-
-	offset = start_line * par->info->fix.line_length;
-	len = (end_line - start_line + 1) * par->info->fix.line_length;
-	ret = par->fbtftops.write_vmem(par, offset, len);
-	if (ret < 0)
-		dev_err(par->info->device,
-			"%s: write_vmem failed to update display buffer\n",
-			__func__);
 }
 
 static int fbtft_verify_gpios(struct fbtft_par *par)
@@ -516,22 +470,43 @@ static int fbtft_init_display(struct fbtft_par *par)
 	return -EINVAL;
 }
 
-static int fbtft_property_unsigned(struct device *dev, const char *propname,
-				   unsigned int *val)
+static void fbtft_update_display(struct fbtft_par *par, unsigned int start_line,
+				 unsigned int end_line)
 {
-	u32 val32;
-	int ret;
+	size_t offset, len;
+	int ret = 0;
 
-	if (!device_property_present(dev, propname))
-		return 0;
+	/* Sanity checks */
+	if (start_line > end_line) {
+		dev_warn(par->info->device,
+			 "%s: start_line=%u is larger than end_line=%u. Shouldn't happen, will do full display update\n",
+			 __func__, start_line, end_line);
+		start_line = 0;
+		end_line = par->info->var.yres - 1;
+	}
+	if (start_line > par->info->var.yres - 1 ||
+	    end_line > par->info->var.yres - 1) {
+		dev_warn(par->info->device,
+			"%s: start_line=%u or end_line=%u is larger than max=%d. Shouldn't happen, will do full display update\n",
+			 __func__, start_line,
+			 end_line, par->info->var.yres - 1);
+		start_line = 0;
+		end_line = par->info->var.yres - 1;
+	}
 
-	ret = device_property_read_u32(dev, propname, &val32);
-	if (ret)
-		return ret;
+	DRM_DEBUG("start_line=%u, end_line=%u\n", start_line, end_line);
 
-	*val = val32;
+	if (par->fbtftops.set_addr_win)
+		par->fbtftops.set_addr_win(par, 0, start_line,
+				par->info->var.xres - 1, end_line);
 
-	return 0;
+	offset = start_line * par->info->fix.line_length;
+	len = (end_line - start_line + 1) * par->info->fix.line_length;
+	ret = par->fbtftops.write_vmem(par, offset, len);
+	if (ret < 0)
+		dev_err(par->info->device,
+			"%s: write_vmem failed to update display buffer\n",
+			__func__);
 }
 
 static int fbtft_fb_dirty(struct drm_framebuffer *fb,
@@ -639,6 +614,24 @@ static struct drm_driver fbtft_driver = {
 	.major			= 1,
 	.minor			= 0,
 };
+
+static int fbtft_property_unsigned(struct device *dev, const char *propname,
+				   unsigned int *val)
+{
+	u32 val32;
+	int ret;
+
+	if (!device_property_present(dev, propname))
+		return 0;
+
+	ret = device_property_read_u32(dev, propname, &val32);
+	if (ret)
+		return ret;
+
+	*val = val32;
+
+	return 0;
+}
 
 int fbtft_probe_common(struct fbtft_display *display,
 			struct spi_device *sdev, struct platform_device *pdev)
@@ -941,11 +934,6 @@ int fbtft_probe_common(struct fbtft_display *display,
 		return -EINVAL;
 	}
 
-	if (par->spi)
-		spi_set_drvdata(par->spi, par);
-	else if (par->pdev)
-		platform_set_drvdata(par->pdev, par);
-
 	ret = fbtft_request_gpios(par);
 	if (ret < 0)
 		return ret;
@@ -978,6 +966,11 @@ int fbtft_probe_common(struct fbtft_display *display,
 	ret = devm_tinydrm_register(tdev);
 	if (ret)
 		return ret;
+
+	if (par->spi)
+		spi_set_drvdata(par->spi, par);
+	else if (par->pdev)
+		platform_set_drvdata(par->pdev, par);
 
 	if (par->spi)
 		DRM_DEBUG_DRIVER("Initialized %s:%s %ux%u @%uMHz on minor %d\n",
