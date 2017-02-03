@@ -213,18 +213,6 @@ void fbtft_unregister_backlight(struct fbtft_par *par) { };
 EXPORT_SYMBOL(fbtft_register_backlight);
 EXPORT_SYMBOL(fbtft_unregister_backlight);
 
-static void fbtft_set_addr_win(struct fbtft_par *par, int xs, int ys, int xe,
-			       int ye)
-{
-	write_reg(par, MIPI_DCS_SET_COLUMN_ADDRESS,
-		  (xs >> 8) & 0xFF, xs & 0xFF, (xe >> 8) & 0xFF, xe & 0xFF);
-
-	write_reg(par, MIPI_DCS_SET_PAGE_ADDRESS,
-		  (ys >> 8) & 0xFF, ys & 0xFF, (ye >> 8) & 0xFF, ye & 0xFF);
-
-	write_reg(par, MIPI_DCS_WRITE_MEMORY_START);
-}
-
 static void fbtft_reset(struct fbtft_par *par)
 {
 	if (par->gpio.reset == -1)
@@ -470,43 +458,28 @@ static int fbtft_init_display(struct fbtft_par *par)
 	return -EINVAL;
 }
 
-static void fbtft_update_display(struct fbtft_par *par, unsigned int start_line,
-				 unsigned int end_line)
+static void fbtft_set_addr_win(struct fbtft_par *par, int xs, int ys, int xe,
+			       int ye)
 {
-	size_t offset, len;
-	int ret = 0;
+	write_reg(par, MIPI_DCS_SET_COLUMN_ADDRESS,
+		  (xs >> 8) & 0xFF, xs & 0xFF, (xe >> 8) & 0xFF, xe & 0xFF);
 
-	/* Sanity checks */
-	if (start_line > end_line) {
-		dev_warn(par->info->device,
-			 "%s: start_line=%u is larger than end_line=%u. Shouldn't happen, will do full display update\n",
-			 __func__, start_line, end_line);
-		start_line = 0;
-		end_line = par->info->var.yres - 1;
-	}
-	if (start_line > par->info->var.yres - 1 ||
-	    end_line > par->info->var.yres - 1) {
-		dev_warn(par->info->device,
-			"%s: start_line=%u or end_line=%u is larger than max=%d. Shouldn't happen, will do full display update\n",
-			 __func__, start_line,
-			 end_line, par->info->var.yres - 1);
-		start_line = 0;
-		end_line = par->info->var.yres - 1;
-	}
+	write_reg(par, MIPI_DCS_SET_PAGE_ADDRESS,
+		  (ys >> 8) & 0xFF, ys & 0xFF, (ye >> 8) & 0xFF, ye & 0xFF);
 
-	DRM_DEBUG("start_line=%u, end_line=%u\n", start_line, end_line);
+	write_reg(par, MIPI_DCS_WRITE_MEMORY_START);
+}
 
-	if (par->fbtftops.set_addr_win)
-		par->fbtftops.set_addr_win(par, 0, start_line,
-				par->info->var.xres - 1, end_line);
+static int fbtft_update_display(struct fbtft_par *par, unsigned int start_line,
+				unsigned int end_line)
+{
+	size_t offset = start_line * par->info->fix.line_length;
+	size_t len = (end_line - start_line + 1) * par->info->fix.line_length;
 
-	offset = start_line * par->info->fix.line_length;
-	len = (end_line - start_line + 1) * par->info->fix.line_length;
-	ret = par->fbtftops.write_vmem(par, offset, len);
-	if (ret < 0)
-		dev_err(par->info->device,
-			"%s: write_vmem failed to update display buffer\n",
-			__func__);
+	par->fbtftops.set_addr_win(par, 0, start_line,
+				   par->info->var.xres - 1, end_line);
+
+	return par->fbtftops.write_vmem(par, offset, len);
 }
 
 static int fbtft_fb_dirty(struct drm_framebuffer *fb,
@@ -518,6 +491,7 @@ static int fbtft_fb_dirty(struct drm_framebuffer *fb,
 	struct drm_gem_cma_object *cma_obj = drm_fb_cma_get_gem_obj(fb, 0);
 	struct tinydrm_device *tdev = fb->dev->dev_private;
 	struct fbtft_par *par = fbtft_par_from_tinydrm(tdev);
+	bool mipi = !par->fbtftops.set_addr_win;
 	struct drm_clip_rect fullclip = {
 		.x1 = 0,
 		.x2 = fb->width,
@@ -536,22 +510,49 @@ static int fbtft_fb_dirty(struct drm_framebuffer *fb,
 	tinydrm_merge_clips(&clip, clips, num_clips, flags,
 			    fb->width, fb->height);
 
-	clip.x1 = 0;
-	clip.x2 = fb->width;
+	/*
+	 * MIPI is the default controller type supported by fbtft and it can
+	 * handle clips that are not full width.
+	 */
+	if (!mipi) {
+		clip.x1 = 0;
+		clip.x2 = fb->width;
+	}
 
 	DRM_DEBUG("Flushing [FB:%d] x1=%u, x2=%u, y1=%u, y2=%u\n", fb->base.id,
 		  clip.x1, clip.x2, clip.y1, clip.y2);
 
+	/*
+	 * tinydrm framebuffers are backed by write-combined memory with
+	 * uncached reads. For simplicity copy the entire buffer to memory
+	 * that has cacheable reads. We have to copy everything because of the
+	 * way .write_mem() is implemented with offset into the buffer.
+	 * This puts a penalty on displays connected to a DMA capable SPI
+	 * controller that supports 16-bit words, since in that case the buffer
+	 * will be passed straight through without being read by the CPU.
+	 *
+	 * Since MIPI controllers are the fbtft default, we can easily copy
+	 * just the clip part of the buffer.
+	 */
 	switch (fb->format->format) {
 	case DRM_FORMAT_RGB565:
-		tinydrm_memcpy(par->info->screen_buffer, cma_obj->vaddr, fb, &fullclip);
+		tinydrm_memcpy(par->info->screen_buffer, cma_obj->vaddr, fb,
+			       mipi ? &clip : &fullclip);
 		break;
 	case DRM_FORMAT_XRGB8888:
-		tinydrm_xrgb8888_to_rgb565(par->info->screen_buffer, cma_obj->vaddr, fb, &fullclip, false);
+		tinydrm_xrgb8888_to_rgb565(par->info->screen_buffer,
+					   cma_obj->vaddr, fb,
+					   mipi ? &clip : &fullclip, false);
 		break;
 	}
 
-	fbtft_update_display(par, clip.y1, clip.y2 - 1);
+	if (mipi) {
+		fbtft_set_addr_win(par, clip.x1, clip.y1, clip.x2 - 1, clip.y2 - 1);
+		ret = par->fbtftops.write_vmem(par, 0, (clip.x2 - clip.x1) *
+					       (clip.y2 - clip.y1) * 2);
+	} else {
+		ret = fbtft_update_display(par, clip.y1, clip.y2 - 1);
+	}
 
 out_unlock:
 	mutex_unlock(&tdev->dirty_lock);
@@ -809,9 +810,6 @@ int fbtft_probe_common(struct fbtft_display *display,
 
 	if (!par->fbtftops.register_backlight && display->backlight)
 		par->fbtftops.register_backlight = fbtft_register_backlight;
-
-	if (!par->fbtftops.set_addr_win)
-		par->fbtftops.set_addr_win = fbtft_set_addr_win;
 
 	if (!par->fbtftops.write_register) {
 		if (display->regwidth == 8 && display->buswidth == 8)
