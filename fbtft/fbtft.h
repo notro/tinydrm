@@ -202,12 +202,6 @@ void fbtft_write_reg8_bus9(struct fbtft_par *par, int len, ...);
 void fbtft_write_reg16_bus8(struct fbtft_par *par, int len, ...);
 void fbtft_write_reg16_bus16(struct fbtft_par *par, int len, ...);
 
-/* fbtft-sysfs.c */
-void fbtft_sysfs_init(struct fbtft_par *par);
-void fbtft_sysfs_exit(struct fbtft_par *par);
-int fbtft_gamma_parse_str(struct fbtft_par *par, unsigned long *curves,
-			  const char *str, int size);
-
 #define FBTFT_REGISTER_DRIVER(_name, _compatible, _display)                \
 									   \
 static int fbtft_driver_probe_spi(struct spi_device *spi)                  \

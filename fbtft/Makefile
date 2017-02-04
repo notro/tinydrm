@@ -1,6 +1,6 @@
 # Core module
+fbtft-y                                  += fbtft-core.o fbtft-bus.o fbtft-io.o
 obj-$(CONFIG_TINYDRM_FB_TFT)             += fbtft.o
-fbtft-y                          += fbtft-core.o fbtft-sysfs.o fbtft-bus.o fbtft-io.o
 
 # drivers
 obj-$(CONFIG_TINYDRM_FB_TFT_BD663474)    += fb_bd663474.o

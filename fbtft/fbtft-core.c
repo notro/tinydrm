@@ -136,6 +136,93 @@ static int fbtft_request_gpios(struct fbtft_par *par)
 	return 0;
 }
 
+static int get_next_ulong(char **str_p, unsigned long *val, char *sep, int base)
+{
+	char *p_val;
+
+	if (!str_p || !(*str_p))
+		return -EINVAL;
+
+	p_val = strsep(str_p, sep);
+
+	if (!p_val)
+		return -EINVAL;
+
+	return kstrtoul(p_val, base, val);
+}
+
+static int fbtft_gamma_parse_str(struct fbtft_par *par, unsigned long *curves,
+				 const char *str, int size)
+{
+	char *str_p, *curve_p = NULL;
+	char *tmp;
+	unsigned long val = 0;
+	int ret = 0;
+	int curve_counter, value_counter;
+
+	pr_debug("%s() str=\n", __func__);
+
+	if (!str || !curves)
+		return -EINVAL;
+
+	pr_debug("%s\n", str);
+
+	tmp = kmemdup(str, size + 1, GFP_KERNEL);
+	if (!tmp)
+		return -ENOMEM;
+
+	/* replace optional separators */
+	str_p = tmp;
+	while (*str_p) {
+		if (*str_p == ',')
+			*str_p = ' ';
+		if (*str_p == ';')
+			*str_p = '\n';
+		str_p++;
+	}
+
+	str_p = strim(tmp);
+
+	curve_counter = 0;
+	while (str_p) {
+		if (curve_counter == par->gamma.num_curves) {
+			dev_err(par->info->device, "Gamma: Too many curves\n");
+			ret = -EINVAL;
+			goto out;
+		}
+		curve_p = strsep(&str_p, "\n");
+		value_counter = 0;
+		while (curve_p) {
+			if (value_counter == par->gamma.num_values) {
+				dev_err(par->info->device,
+					"Gamma: Too many values\n");
+				ret = -EINVAL;
+				goto out;
+			}
+			ret = get_next_ulong(&curve_p, &val, " ", 16);
+			if (ret)
+				goto out;
+			curves[curve_counter * par->gamma.num_values + value_counter] = val;
+			value_counter++;
+		}
+		if (value_counter != par->gamma.num_values) {
+			dev_err(par->info->device, "Gamma: Too few values\n");
+			ret = -EINVAL;
+			goto out;
+		}
+		curve_counter++;
+	}
+	if (curve_counter != par->gamma.num_curves) {
+		dev_err(par->info->device, "Gamma: Too few curves\n");
+		ret = -EINVAL;
+		goto out;
+	}
+
+out:
+	kfree(tmp);
+	return ret;
+}
+
 #ifdef CONFIG_FB_BACKLIGHT
 static int fbtft_backlight_update_status(struct backlight_device *bl)
 {
