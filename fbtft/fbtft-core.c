@@ -631,7 +631,8 @@ static int fbtft_fb_dirty(struct drm_framebuffer *fb,
 	}
 
 	if (mipi) {
-		fbtft_set_addr_win(par, clip.x1, clip.y1, clip.x2 - 1, clip.y2 - 1);
+		fbtft_set_addr_win(par, clip.x1, clip.y1,
+				   clip.x2 - 1, clip.y2 - 1);
 		ret = par->fbtftops.write_vmem(par, 0, (clip.x2 - clip.x1) *
 					       (clip.y2 - clip.y1) * 2);
 	} else {
@@ -718,11 +719,23 @@ static int fbtft_property_unsigned(struct device *dev, const char *propname,
 	return 0;
 }
 
+static void fbtft_setmode(struct drm_display_mode *mode, int width, int height)
+{
+	struct drm_display_mode setmode = {
+		TINYDRM_MODE(width, height, 0, 0),
+	};
+
+	*mode = setmode;
+}
+
 int fbtft_probe_common(struct fbtft_display *display,
 			struct spi_device *sdev, struct platform_device *pdev)
 {
 	unsigned int startbyte = 0, rotate = 0;
+	struct drm_display_mode fbtft_mode;
 	unsigned long *gamma_curves = NULL;
+	struct tinydrm_device *tdev;
+	struct drm_driver *driver;
 	unsigned int txbuflen = 0;
 	unsigned int vmem_size;
 	struct fbtft_par *par;
@@ -741,6 +754,15 @@ int fbtft_probe_common(struct fbtft_display *display,
 		dev_err(dev, "FBTFT_GAMMA_MAX_VALUES_TOTAL=%d is exceeded\n",
 			FBTFT_GAMMA_MAX_VALUES_TOTAL);
 		return -EINVAL;
+	}
+
+	/* spi needs this */
+	if (!dev->coherent_dma_mask) {
+		ret = dma_coerce_mask_and_coherent(dev, DMA_BIT_MASK(32));
+		if (ret) {
+			dev_warn(dev, "Failed to set dma mask %d\n", ret);
+			return ret;
+		}
 	}
 
 	par = devm_kzalloc(dev, sizeof(*par), GFP_KERNEL);
@@ -950,23 +972,12 @@ int fbtft_probe_common(struct fbtft_display *display,
 	else if (par->init_sequence)
 		par->fbtftops.init_display = fbtft_init_display;
 
-
-
-{
-	struct tinydrm_device *tdev = &par->tinydrm;
-	const struct drm_display_mode fbtft_mode = {
-		TINYDRM_MODE(display->width, display->height, 0, 0),
-	};
-	struct drm_driver *driver;
-
-	/* spi needs this */
-	if (!dev->coherent_dma_mask) {
-		ret = dma_coerce_mask_and_coherent(dev, DMA_BIT_MASK(32));
-		if (ret) {
-			dev_warn(dev, "Failed to set dma mask %d\n", ret);
-			return ret;
-		}
+	if (!par->fbtftops.init_display) {
+		dev_err(dev, "missing fbtftops.init_display()\n");
+		return -EINVAL;
 	}
+
+	tdev = &par->tinydrm;
 
 	par->info = devm_kzalloc(dev, sizeof(*par->info), GFP_KERNEL);
 	if (!par->info)
@@ -989,6 +1000,7 @@ int fbtft_probe_common(struct fbtft_display *display,
 		return -ENOMEM;
 
 	driver->desc = driver->name;
+	fbtft_setmode(&fbtft_mode, display->width, display->height);
 
 	ret = devm_tinydrm_init(dev, tdev, &fbtft_fb_funcs, driver);
 	if (ret)
@@ -1010,11 +1022,6 @@ int fbtft_probe_common(struct fbtft_display *display,
 	tdev->drm->mode_config.preferred_depth = 16;
 
 	drm_mode_config_reset(tdev->drm);
-
-	if (!par->fbtftops.init_display) {
-		dev_err(dev, "missing fbtftops.init_display()\n");
-		return -EINVAL;
-	}
 
 	ret = fbtft_request_gpios(par);
 	if (ret < 0)
@@ -1043,8 +1050,6 @@ int fbtft_probe_common(struct fbtft_display *display,
 	if (par->fbtftops.register_backlight)
 		par->fbtftops.register_backlight(par);
 
-//	fbtft_sysfs_init(par);
-
 	ret = devm_tinydrm_register(tdev);
 	if (ret)
 		return ret;
@@ -1066,9 +1071,6 @@ int fbtft_probe_common(struct fbtft_display *display,
 				 par->info->var.xres, par->info->var.yres,
 				 tdev->drm->primary->index);
 
-}
-
-
 	return 0;
 }
 EXPORT_SYMBOL(fbtft_probe_common);
@@ -1079,7 +1081,6 @@ int fbtft_remove_common(struct device *dev, struct fbtft_par *par)
 
 	if (par->fbtftops.unregister_backlight)
 		par->fbtftops.unregister_backlight(par);
-//	fbtft_sysfs_exit(par);
 
 	return 0;
 }
