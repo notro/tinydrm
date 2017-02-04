@@ -179,11 +179,21 @@ struct fbtft_par {
 /* fbtft-core.c */
 void fbtft_dbg_hex(const struct device *dev, int groupsize,
 		   void *buf, size_t len, const char *fmt, ...);
-void fbtft_register_backlight(struct fbtft_par *par);
-void fbtft_unregister_backlight(struct fbtft_par *par);
 int fbtft_probe_common(struct fbtft_display *display, struct spi_device *sdev,
 		       struct platform_device *pdev);
 int fbtft_remove_common(struct device *dev, struct fbtft_par *par);
+
+#ifdef CONFIG_BACKLIGHT_CLASS_DEVICE
+void fbtft_register_backlight(struct fbtft_par *par);
+void fbtft_unregister_backlight(struct fbtft_par *par);
+#else
+static inline void fbtft_register_backlight(struct fbtft_par *par)
+{
+}
+static inline void fbtft_unregister_backlight(struct fbtft_par *par)
+{
+}
+#endif
 
 /* fbtft-io.c */
 int fbtft_write_spi(struct fbtft_par *par, void *buf, size_t len);
