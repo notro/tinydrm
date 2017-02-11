@@ -181,7 +181,6 @@ void tinydrm_xrgb8888_to_rgb565(u16 *dst, void *vaddr,
 }
 EXPORT_SYMBOL(tinydrm_xrgb8888_to_rgb565);
 
-#ifdef CONFIG_BACKLIGHT_CLASS_DEVICE
 /**
  * tinydrm_of_find_backlight - Find backlight device in device-tree
  * @dev: Device
@@ -276,9 +275,8 @@ int tinydrm_disable_backlight(struct backlight_device *backlight)
 	return ret;
 }
 EXPORT_SYMBOL(tinydrm_disable_backlight);
-#endif
 
-#ifdef CONFIG_SPI
+#if IS_ENABLED(CONFIG_SPI)
 
 /**
  * tinydrm_spi_max_transfer_size - Determine max SPI transfer size

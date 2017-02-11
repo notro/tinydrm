@@ -443,7 +443,7 @@ bool mipi_dbi_display_is_on(struct mipi_dbi *mipi)
 }
 EXPORT_SYMBOL(mipi_dbi_display_is_on);
 
-#ifdef CONFIG_SPI
+#if IS_ENABLED(CONFIG_SPI)
 
 /*
  * Many controllers have a max speed of 10MHz, but can be pushed way beyond
