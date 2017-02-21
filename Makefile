@@ -10,3 +10,5 @@ obj-$(CONFIG_TINYDRM_MIPI_DBI)		+= mipi-dbi.o
 # Displays
 obj-$(CONFIG_TINYDRM_MI0283QT)		+= mi0283qt.o
 obj-$(CONFIG_TINYDRM_ADAFRUIT_TFT)	+= adafruit-tft.o
+
+obj-m += el320-240-36-hb-spi.o
