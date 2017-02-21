@@ -121,55 +121,62 @@ int fbtft_read_spi(struct fbtft_par *par, void *buf, size_t len)
 }
 EXPORT_SYMBOL(fbtft_read_spi);
 
-/*
- * Optimized use of gpiolib is twice as fast as no optimization
- * only one driver can use the optimized version at a time
- */
+static void tinydrm_i80_write_value(struct gpio_descs *db,
+				    struct gpio_desc *wr, u32 value,
+				    u32 *prev_value)
+{
+	int i, values[32];
+
+
+if (prev_value && *prev_value == value) {
+	gpiod_set_value_cansleep(wr, 0);
+	gpiod_set_value_cansleep(wr, 0);
+	gpiod_set_value_cansleep(wr, 1);
+
+} else {
+	for (i = 0; i < db->ndescs; i++, value >>= 1)
+		values[i] = value & 1;
+
+	gpiod_set_value_cansleep(wr, 0);
+	gpiod_set_array_value_cansleep(db->ndescs, db->desc, values);
+	gpiod_set_value_cansleep(wr, 1);
+
+
+}
+	if (prev_value)
+		*prev_value = value;
+}
+
+static
+void tinydrm_i80_write_buf(struct gpio_descs *db, struct gpio_desc *wr,
+			   void *buf, size_t len)
+{
+	unsigned int width = db->ndescs;
+	size_t i;
+
+	if (width == 8) {
+		u8 *buf8 = buf;
+		u32 prev_val = ~*buf8;
+
+		for (i = 0; i < len; i++)
+			tinydrm_i80_write_value(db, wr, *buf8++, NULL);
+	} else if (width == 16) {
+		u16 *buf16 = buf;
+		u32 prev_val = ~*buf16;
+
+		for (i = 0; i < (len / 2); i++)
+			tinydrm_i80_write_value(db, wr, *buf16++, NULL);
+	} else {
+		WARN_ON_ONCE(1);
+	}
+}
+
 int fbtft_write_gpio8_wr(struct fbtft_par *par, void *buf, size_t len)
 {
-	u8 data;
-	int i;
-#ifndef DO_NOT_OPTIMIZE_FBTFT_WRITE_GPIO
-	static u8 prev_data;
-#endif
-
 	fbtft_par_dbg_hex(DEBUG_WRITE, par, par->info->device, u8, buf, len,
 		"%s(len=%d): ", __func__, len);
 
-	while (len--) {
-		data = *(u8 *)buf;
-
-		/* Start writing by pulling down /WR */
-		gpio_set_value(par->gpio.wr, 0);
-
-		/* Set data */
-#ifndef DO_NOT_OPTIMIZE_FBTFT_WRITE_GPIO
-		if (data == prev_data) {
-			gpio_set_value(par->gpio.wr, 0); /* used as delay */
-		} else {
-			for (i = 0; i < 8; i++) {
-				if ((data & 1) != (prev_data & 1))
-					gpio_set_value(par->gpio.db[i],
-								data & 1);
-				data >>= 1;
-				prev_data >>= 1;
-			}
-		}
-#else
-		for (i = 0; i < 8; i++) {
-			gpio_set_value(par->gpio.db[i], data & 1);
-			data >>= 1;
-		}
-#endif
-
-		/* Pullup /WR */
-		gpio_set_value(par->gpio.wr, 1);
-
-#ifndef DO_NOT_OPTIMIZE_FBTFT_WRITE_GPIO
-		prev_data = *(u8 *)buf;
-#endif
-		buf++;
-	}
+	tinydrm_i80_write_buf(par->gpio.db, par->gpio.wr, buf, len);
 
 	return 0;
 }
@@ -177,6 +184,7 @@ EXPORT_SYMBOL(fbtft_write_gpio8_wr);
 
 int fbtft_write_gpio16_wr(struct fbtft_par *par, void *buf, size_t len)
 {
+#if 0
 	u16 data;
 	int i;
 #ifndef DO_NOT_OPTIMIZE_FBTFT_WRITE_GPIO
@@ -221,7 +229,7 @@ int fbtft_write_gpio16_wr(struct fbtft_par *par, void *buf, size_t len)
 		buf += 2;
 		len -= 2;
 	}
-
+#endif
 	return 0;
 }
 EXPORT_SYMBOL(fbtft_write_gpio16_wr);

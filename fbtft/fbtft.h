@@ -150,10 +150,10 @@ struct fbtft_par {
 	struct {
 		int reset;
 		int dc;
-		int rd;
-		int wr;
 		int cs;
-		int db[16];
+		struct gpio_desc *rd;
+		struct gpio_desc *wr;
+		struct gpio_descs *db;
 		int led[16];
 	} gpio;
 	s16 *init_sequence;

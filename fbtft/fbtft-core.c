@@ -94,7 +94,7 @@ static int fbtft_request_one_gpio(struct fbtft_par *par,
 
 static int fbtft_request_gpios(struct fbtft_par *par)
 {
-	int i, ret;
+	int i, gpio, ret;
 
 	ret = fbtft_request_one_gpio(par, "reset", 0, &par->gpio.reset,
 				     GPIOD_OUT_LOW);
@@ -106,27 +106,34 @@ static int fbtft_request_gpios(struct fbtft_par *par)
 	if (ret)
 		return ret;
 
-	ret = fbtft_request_one_gpio(par, "rd", 0, &par->gpio.rd,
+	ret = fbtft_request_one_gpio(par, "rd", 0, &gpio,
 				     GPIOD_OUT_HIGH);
 	if (ret)
 		return ret;
 
-	ret = fbtft_request_one_gpio(par, "wr", 0, &par->gpio.wr,
+	par->gpio.rd = gpio_to_desc(gpio);
+
+	ret = fbtft_request_one_gpio(par, "wr", 0, &gpio,
 				     GPIOD_OUT_HIGH);
 	if (ret)
 		return ret;
+
+	par->gpio.wr = gpio_to_desc(gpio);
 
 	ret = fbtft_request_one_gpio(par, "cs", 0, &par->gpio.cs,
 				     GPIOD_OUT_HIGH);
 	if (ret)
 		return ret;
 
-	for (i = 0; i < 16; i++) {
-		ret = fbtft_request_one_gpio(par, "db", i, &par->gpio.db[i],
-					     GPIOD_OUT_LOW);
-		if (ret)
+	par->gpio.db = devm_gpiod_get_array(par->info->device, "db",
+					    GPIOD_OUT_LOW);
+	if (IS_ERR(par->gpio.db)) {
+		ret = PTR_ERR(par->gpio.db);
+		if (ret != -ENOENT)
 			return ret;
+	}
 
+	for (i = 0; i < 16; i++) {
 		ret = fbtft_request_one_gpio(par, "led", i, &par->gpio.led[i],
 					     GPIOD_OUT_LOW);
 		if (ret)
@@ -310,7 +317,7 @@ static void fbtft_reset(struct fbtft_par *par)
 
 static int fbtft_verify_gpios(struct fbtft_par *par)
 {
-	int i;
+	struct device *dev = par->info->device;
 
 	fbtft_par_dbg(DEBUG_VERIFY_GPIOS, par, "%s()\n", __func__);
 
@@ -324,16 +331,20 @@ static int fbtft_verify_gpios(struct fbtft_par *par)
 	if (!par->pdev)
 		return 0;
 
-	if (par->gpio.wr < 0) {
-		dev_err(par->info->device, "Missing 'wr' gpio. Aborting.\n");
+	if (!par->gpio.wr) {
+		dev_err(dev, "Missing 'wr' gpio. Aborting.\n");
 		return -EINVAL;
 	}
-	for (i = 0; i < par->display.buswidth; i++) {
-		if (par->gpio.db[i] < 0) {
-			dev_err(par->info->device,
-				"Missing 'db%02d' gpio. Aborting.\n", i);
-			return -EINVAL;
-		}
+
+	if (!par->gpio.db) {
+		dev_err(dev, "Missing 'db' gpios.\n");
+		return -EINVAL;
+	}
+
+	if (par->gpio.db->ndescs != 8 && par->gpio.db->ndescs != 16) {
+		dev_err(dev, "Only 8 and 16-bit bus supported (not %u).\n",
+			par->gpio.db->ndescs);
+		return -EINVAL;
 	}
 
 	return 0;
@@ -873,11 +884,8 @@ int fbtft_probe_common(struct fbtft_display *display,
 	/* Initialize gpios to disabled */
 	par->gpio.reset = -1;
 	par->gpio.dc = -1;
-	par->gpio.rd = -1;
-	par->gpio.wr = -1;
 	par->gpio.cs = -1;
 	for (i = 0; i < 16; i++) {
-		par->gpio.db[i] = -1;
 		par->gpio.led[i] = -1;
 	}
 

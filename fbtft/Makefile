@@ -1,6 +1,12 @@
+ccflags-y += -I$(src)/../include
+
 # Core module
 fbtft-y                                  += fbtft-core.o fbtft-bus.o fbtft-io.o
+fbtft-y += tinydrm-helpers2.o tinydrm-panel.o tinydrm-regmap.o tinydrm-fbtft.o tinydrm-ili9325.o
 obj-$(CONFIG_TINYDRM_FB_TFT)             += fbtft.o
+
+# converted
+obj-$(CONFIG_TINYDRM_FB_TFT_ILI9325)     += fb_ili9325.o
 
 # drivers
 obj-$(CONFIG_TINYDRM_FB_TFT_BD663474)    += fb_bd663474.o
@@ -9,8 +15,6 @@ obj-$(CONFIG_TINYDRM_FB_TFT_HX8347D)     += fb_hx8347d.o
 obj-$(CONFIG_TINYDRM_FB_TFT_HX8353D)     += fb_hx8353d.o
 obj-$(CONFIG_TINYDRM_FB_TFT_HX8357D)     += fb_hx8357d.o
 obj-$(CONFIG_TINYDRM_FB_TFT_ILI9163)     += fb_ili9163.o
-obj-$(CONFIG_TINYDRM_FB_TFT_ILI9320)     += fb_ili9320.o
-obj-$(CONFIG_TINYDRM_FB_TFT_ILI9325)     += fb_ili9325.o
 obj-$(CONFIG_TINYDRM_FB_TFT_ILI9340)     += fb_ili9340.o
 obj-$(CONFIG_TINYDRM_FB_TFT_ILI9341)     += fb_ili9341.o
 obj-$(CONFIG_TINYDRM_FB_TFT_ILI9481)     += fb_ili9481.o

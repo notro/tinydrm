@@ -1,0 +1,250 @@
+#!/usr/bin/env python
+
+#
+# Copyright (C) 2017 Noralf Tronnes
+#
+# MIT License
+#
+
+import os
+import fcntl
+import sys
+import errno
+import argparse
+
+class Message:
+    def __init__(self, facility, level, seqnr, time, text, keys = {}):
+        self.facility = facility
+        self.level = level
+        self.seqnr = seqnr
+        self.time = time
+        self.text = text
+        self.keys = keys
+
+    def __repr__(self):
+    	return "%d,%d,%d,%d %s %s" % (self.facility, self.level, self.seqnr, self.time, self.keys, self.text)
+
+    def __str__(self):
+    	return "[%d:%06d] %s" % (self.time / 1000000, self.time % 1000000, self.text)
+
+
+debug_level = 0
+
+def debug(level, text):
+    if level <= debug_level:
+        print(text)
+
+def write_file(fn, s):
+    debug(2, "%s <= '%s'" %(fn, s))
+    with open(fn, 'w') as f:
+        f.write(s)
+
+def write_file_bool(fn, val):
+    if val:
+    	write_file(fn, '1')
+    else:
+    	write_file(fn, '0')
+
+def read_file(fn):
+    with open(fn, 'rb') as f:
+        s = f.read()
+    debug(2, "%s => %s" %(fn, repr(s)))
+    return s
+
+def read_file_bool(fn):
+    val = read_file(fn).strip()
+    if val == '0':
+    	return False
+    elif val == '1':
+    	return True
+    else:
+    	raise
+
+def trace_events_set(name, val):
+    write_file_bool(os.path.join(basedir, 'events', name, 'enable'), val)
+
+def trace_events_get(name, val):
+    return read_file_bool(os.path.join(basedir, 'events', name, 'enable'), val)
+
+
+def parse_kmsg(kmsg):
+    """
+        Format:
+                facility_level,seqnr,time,flags;text\n
+                  key=value
+
+		Example:
+		7,160,424069,-;pci_root PNP0A03:00: host bridge window [io  0x0000-0x0cf7] (ignored)
+		 SUBSYSTEM=acpi
+		 DEVICE=+acpi:PNP0A03:00
+		6,339,5140900,-;NET: Registered protocol family 10
+		30,340,5690716,-;udevd[80]: starting version 181
+
+
+    """
+
+    (header, sep, body) = kmsg.partition(';')
+
+    header = header.split(',')
+    facility = int(header[0]) >> 3
+    level =    int(header[0]) & 0b111
+    seqnr =    int(header[1])
+    time =     int(header[2])
+
+    (text, sep, keypairs) = body.partition('\n')
+    text = text.replace('\\x0a', '\n')
+
+    keys = {}
+    if (keypairs):
+        keypairs = keypairs.split('\n')
+        for kv in keypairs:
+            (key, sep, value) = kv.partition('=')
+            if key:
+            	keys[key.strip()] = value
+
+    return Message(facility, level, seqnr, time, text, keys)
+
+
+def get_kmsg():
+    kmsgs = []
+    f = open('/dev/kmsg', 'r')
+    fd = os.dup(f.fileno())
+    f.close()
+    fl = fcntl.fcntl(fd, fcntl.F_GETFL)
+    fcntl.fcntl(fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
+    os.lseek(fd, 0, 3) # SEEK_DATA, dmesg -C
+
+    while True:
+    	try:
+            s = os.read(fd, 4096)
+        except OSError as e:
+            if e.errno == errno.EAGAIN:
+                break
+            else:
+                raise
+        kmsgs.append(parse_kmsg(s))
+
+    os.close(fd)
+
+    return kmsgs
+
+
+
+def parse_trace(line):
+    (header, sep, text) = line.partition(':')
+    time = int(header.split(' ')[-1].replace('.', ''))
+
+    return Message(0, 0, 0, time, text.strip())
+
+def get_trace(path):
+    t = []
+    with open(os.path.join(path, 'trace')) as f:
+        lines = f.readlines()
+
+    for l in lines:
+    	if not l.startswith('#'):
+    	    t.append(parse_trace(l))
+
+    return t
+
+
+def get_indent(text):
+    if 'regmap_reg_' in text:
+    	return 4
+    if 'tinydrm_spi_transfer' in text:
+    	return 8
+    if '    tr(' in text:
+    	return 8
+    return 0
+
+def show():
+    kmsg = get_kmsg()
+    trace = get_trace(basedir)
+    comb = sorted(kmsg + trace, key=lambda m: m.time)
+    for c in comb:
+        print("[%d:%06d] %s%s" % (c.time / 1000000, c.time % 1000000, " " * get_indent(c.text), c.text))
+
+
+drm_debug = 0
+
+def start():
+    global drm_debug
+
+    if (not basedir) or (read_file(os.path.join(basedir, 'set_event')) != '' ):
+        raise RuntimeError('Trace event is already set')
+
+    # clear buffer
+    write_file(os.path.join(basedir, 'trace'), '')
+
+    trace_events_set('regmap/regmap_reg_write', True)
+    trace_events_set('regmap/regmap_reg_read', True)
+
+    print("drm_debug = %d" % drm_debug)
+    drm_debug = int(read_file("/sys/module/drm/parameters/debug"))
+    print("drm_debug = %d" % drm_debug)
+    write_file("/sys/module/drm/parameters/debug", "0xf")
+
+
+def stop():
+    if not basedir:
+        print("Tracing not available")
+        return
+
+    trace_events_set('regmap/regmap_reg_write', True)
+    trace_events_set('regmap/regmap_reg_read', True)
+    # clear events
+    write_file(os.path.join(basedir, 'set_event'), '')
+
+    write_file("/sys/module/drm/parameters/debug", "%d" % drm_debug)
+
+
+def run(cmd):
+    debug(1, "Run: '%s'" % cmd)
+    os.system(cmd)
+
+
+def probe(name):
+    run("modprobe -r %s" % name)
+    run("dmesg -C")
+    start()
+    run("modprobe %s" % name)
+    stop()
+    show()
+
+
+
+
+
+if os.path.isdir('/debug/tracing'):
+    basedir = '/debug/tracing'
+elif os.path.isdir('/sys/kernel/debug/tracing'):
+    basedir = '/sys/kernel/debug/tracing'
+else:
+    basedir = ''
+
+
+parser = argparse.ArgumentParser(description="tinydrm trace events helper")
+
+parser.add_argument('--verbose', '-v', action='count')
+parser.add_argument('action', nargs='?', default='show', help='Actions: show, start, stop, probe')
+parser.add_argument('argument', nargs='?', default='', help='Optional action argument')
+
+args = parser.parse_args()
+
+debug_level = args.verbose
+
+if args.action == "start":
+    start()
+elif args.action == "show":
+    show()
+elif args.action == "probe":
+    if not args.argument:
+    	print('Missing module argument')
+    	exit(1)
+    probe(args.argument)
+else:
+    print("Unknown command: %s\n" % args.action)
+    parser.print_help()
+    exit(1)
+
+
