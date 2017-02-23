@@ -222,12 +222,23 @@ static void tinydrm_mono8_to_mono(u8 *mono, u8 *mono8, u32 width, u32 height)
 
 /* is this 01h or 80h ? datasheet says both */
 #define WRITE_COMPLETE_DISPLAY_DATA	0x01
+#define CLEAR_SCREEN			0x11
+#define LUMINANCE_30_PERCENT		0x84
 
 struct el320_240_36_hb {
 	struct tinydrm_device tinydrm;
+	struct backlight_device *backlight;
 	struct spi_device *spi;
+	bool next_full;
+	bool blanked;
 	void *tx_buf;
 };
+
+static inline struct el320_240_36_hb *
+priv_from_tinydrm(struct tinydrm_device *tdev)
+{
+	return container_of(tdev, struct el320_240_36_hb, tinydrm);
+}
 
 static int el320_240_36_hb_fb_dirty(struct drm_framebuffer *fb,
 			     struct drm_file *file_priv,
@@ -236,7 +247,7 @@ static int el320_240_36_hb_fb_dirty(struct drm_framebuffer *fb,
 			     unsigned int num_clips)
 {
 	struct tinydrm_device *tdev = fb->dev->dev_private;
-	struct el320_240_36_hb *priv = container_of(tdev, struct el320_240_36_hb, tinydrm);
+	struct el320_240_36_hb *priv = priv_from_tinydrm(tdev);
 	struct spi_transfer tr_data[2] = { };
 	struct drm_clip_rect clip;
 	int ret = 0;
@@ -244,9 +255,17 @@ static int el320_240_36_hb_fb_dirty(struct drm_framebuffer *fb,
 
 	mutex_lock(&tdev->dirty_lock);
 
+	if (priv->blanked)
+		goto out_unlock;
+
 	/* fbdev can flush even when we're not interested */
 	if (tdev->pipe.plane.fb != fb)
 		goto out_unlock;
+
+	if (priv->next_full) {
+		priv->next_full = false;
+		clips = NULL;
+	}
 
 //	tinydrm_merge_clips(&clip, clips, num_clips, flags,
 //				   fb->width, fb->height);
@@ -324,19 +343,72 @@ static const struct drm_framebuffer_funcs el320_240_36_hb_fb_funcs = {
 	.dirty		= el320_240_36_hb_fb_dirty,
 };
 
+static int el320_240_36_hb_bl_write(struct el320_240_36_hb *priv, u8 cmd)
+{
+	u8 *cmd_buf;
+	int ret;
+
+	cmd_buf = kmalloc(1, GFP_KERNEL);
+	if (!cmd_buf)
+		return -ENOMEM;
+
+	*cmd_buf = cmd;
+	ret = spi_write(priv->spi, cmd_buf, 1);
+	kfree(cmd_buf);
+
+	return ret;
+}
+
+static int el320_240_36_hb_bl_update_status(struct backlight_device *bl)
+{
+	struct el320_240_36_hb *priv = bl_get_data(bl);
+	int brightness = bl->props.brightness;
+	u8 cmd;
+
+	if (bl->props.power != FB_BLANK_UNBLANK ||
+	    bl->props.fb_blank != FB_BLANK_UNBLANK ||
+	    bl->props.state & (BL_CORE_SUSPENDED | BL_CORE_FBBLANK))
+		brightness = 0;
+
+	if (!brightness) {
+		priv->next_full = true;
+		priv->blanked = true;
+		cmd = CLEAR_SCREEN;
+	} else {
+		priv->blanked = false;
+		cmd = LUMINANCE_30_PERCENT - brightness + 1;
+	}
+
+	DRM_DEBUG_DRIVER("brightness=%d, cmd=0x%02x\n", brightness, cmd);
+
+	return el320_240_36_hb_bl_write(priv, cmd);
+}
+
+static int el320_240_36_hb_bl_get_brightness(struct backlight_device *bl)
+{
+	return bl->props.brightness;
+}
+
+static const struct backlight_ops el320_240_36_hb_bl_ops = {
+	.get_brightness	= el320_240_36_hb_bl_get_brightness,
+	.update_status	= el320_240_36_hb_bl_update_status,
+};
+
 static void el320_240_36_hb_pipe_enable(struct drm_simple_display_pipe *pipe,
 					struct drm_crtc_state *crtc_state)
 {
-//	struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
+	struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
+	struct el320_240_36_hb *priv = priv_from_tinydrm(tdev);
 
-	DRM_DEBUG_KMS("\n");
+	tinydrm_enable_backlight(priv->backlight);
 }
 
 static void el320_240_36_hb_pipe_disable(struct drm_simple_display_pipe *pipe)
 {
-//	struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
+	struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
+	struct el320_240_36_hb *priv = priv_from_tinydrm(tdev);
 
-	DRM_DEBUG_KMS("\n");
+	tinydrm_disable_backlight(priv->backlight);
 }
 
 static const struct drm_simple_display_pipe_funcs el320_240_36_hb_pipe_funcs = {
@@ -381,9 +453,15 @@ MODULE_DEVICE_TABLE(spi, el320_240_36_hb_id);
 
 static int el320_240_36_hb_probe(struct spi_device *spi)
 {
+	struct backlight_properties bl_props = {
+		.type = BACKLIGHT_RAW,
+		.max_brightness = 4,
+		.brightness = 4,
+	};
 	struct device *dev = &spi->dev;
-	struct tinydrm_device *tdev;
 	struct el320_240_36_hb *priv;
+	struct backlight_device *bl;
+	struct tinydrm_device *tdev;
 	int ret;
 
 	/* The SPI device is used to allocate dma memory */
@@ -403,7 +481,14 @@ static int el320_240_36_hb_probe(struct spi_device *spi)
 	if (!priv->tx_buf)
 		return -ENOMEM;
 
+	bl = devm_backlight_device_register(dev, dev_driver_string(dev), dev,
+					    priv, &el320_240_36_hb_bl_ops,
+					    &bl_props);
+	if (IS_ERR(bl))
+		return PTR_ERR(bl);
+
 	priv->spi = spi;
+	priv->backlight = bl;
 	tdev = &priv->tinydrm;
 
 	ret = devm_tinydrm_init(dev, tdev, &el320_240_36_hb_fb_funcs,
