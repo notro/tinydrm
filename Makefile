@@ -1,14 +1,10 @@
-ccflags-y += -I$(src)/include
+KDIR ?= /lib/modules/`uname -r`/build
 
-obj-$(CONFIG_DRM_TINYDRM)		+= core/
+default:
+	$(MAKE) -C $(KDIR) M=$$PWD
 
-obj-$(CONFIG_TINYDRM_FB_TFT)		+= fbtft/
+install:
+	$(MAKE) -C $(KDIR) M=$$PWD modules_install
 
-# Controllers
-obj-$(CONFIG_TINYDRM_MIPI_DBI)		+= mipi-dbi.o
-
-# Displays
-obj-$(CONFIG_TINYDRM_MI0283QT)		+= mi0283qt.o
-obj-$(CONFIG_TINYDRM_ADAFRUIT_TFT)	+= adafruit-tft.o
-
-obj-m += el320-240-36-hb-spi.o
+clean:
+	$(MAKE) -C $(KDIR) M=$$PWD clean
