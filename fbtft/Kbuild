@@ -1,12 +1,8 @@
-ccflags-y += -I../include
+ccflags-y += -I$(src)/../include
 
 # Core module
 fbtft-y	+= fbtft-core.o fbtft-bus.o fbtft-io.o
-fbtft-y	+= tinydrm-helpers2.o tinydrm-panel.o tinydrm-regmap.o tinydrm-fbtft.o tinydrm-ili9325.o
 obj-m	+= fbtft.o
-
-# Converted
-obj-m	+= fb_ili9325.o
 
 # Drivers
 obj-m	+= fb_bd663474.o

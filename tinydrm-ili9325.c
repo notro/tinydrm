@@ -13,14 +13,7 @@
 
 #include <drm/drm_gem_cma_helper.h>
 #include <drm/drm_fb_cma_helper.h>
-
-struct drm_framebuffer;
-#include <drm/tinydrm/tinydrm.h>
-#include <drm/tinydrm/tinydrm-helpers.h>
-#include "tinydrm-helpers2.h"
-
-#include "tinydrm-ili9325.h"
-#include "tinydrm-regmap.h"
+#include <drm/tinydrm/tinydrm-ili9325.h>
 
 static int tinydrm_ili9325_fb_dirty(struct drm_framebuffer *fb,
 			     struct drm_file *file_priv,

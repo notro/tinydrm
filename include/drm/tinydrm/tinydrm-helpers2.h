@@ -10,6 +10,20 @@
 #ifndef __LINUX_TINYDRM_HELPERS_ADD_H
 #define __LINUX_TINYDRM_HELPERS_ADD_H
 
+/*
+
+In file included from /home/pi/tinydrm/tinydrm/include/drm/tinydrm/tinydrm-helpers2.h:13:0,
+                 from /home/pi/tinydrm/tinydrm/include/drm/tinydrm/tinydrm-ili9325.h:13,
+                 from /home/pi/tinydrm/tinydrm/fb_ili9325.c:28:
+./include/drm/tinydrm/tinydrm-helpers.h:40:14: warning: ‘struct drm_framebuffer’ declared inside parameter list [enabled by default]
+       struct drm_clip_rect *clip);
+              ^
+./include/drm/tinydrm/tinydrm-helpers.h:40:14: warning: its scope is only this definition or declaration, which is probably not what you want [enabled by default]
+
+
+*/
+struct drm_framebuffer;
+
 #include <drm/tinydrm/tinydrm-helpers.h>
 
 struct gpio_desc;

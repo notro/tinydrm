@@ -25,13 +25,9 @@
 #include <linux/regmap.h>
 #include <linux/spi/spi.h>
 
-struct drm_framebuffer;
-#include <drm/tinydrm/tinydrm-helpers.h>
+#include <drm/tinydrm/tinydrm-ili9325.h>
 
 #include "tinydrm-fbtft.h"
-#include "tinydrm-ili9325.h"
-#include "tinydrm-regmap.h"
-#include "tinydrm-panel.h"
 
 #define FB_ILI9325_DEFAULT_GAMMA	"0F 00 7 2 0 0 6 5 4 1\n" \
 					"04 16 2 7 6 3 2 1 7 7"

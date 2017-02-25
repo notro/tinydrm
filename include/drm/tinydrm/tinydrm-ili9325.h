@@ -10,10 +10,9 @@
 #ifndef __LINUX_TINYDRM_ILI9325_H
 #define __LINUX_TINYDRM_ILI9325_H
 
-#include <drm/tinydrm/tinydrm-helpers.h>
-#include "tinydrm-helpers2.h"
-
-#include "tinydrm-panel.h"
+#include <drm/tinydrm/tinydrm-helpers2.h>
+#include <drm/tinydrm/tinydrm-panel.h>
+#include <drm/tinydrm/tinydrm-regmap.h>
 
 int tinydrm_ili9325_init(struct device *dev, struct tinydrm_panel *panel,
 			 const struct tinydrm_panel_funcs *funcs,

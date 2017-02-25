@@ -13,11 +13,7 @@
 
 #include <drm/drm_gem_cma_helper.h>
 #include <drm/drm_fb_cma_helper.h>
-
-//drivers/gpu/drm/tinydrm/fbtft/../include/drm/tinydrm/tinydrm-helpers.h:40:14: warning: ‘struct drm_framebuffer’ declared inside parameter list [enabled by default]
-struct drm_framebuffer;
-#include <drm/tinydrm/tinydrm-helpers.h>
-#include "tinydrm-helpers2.h"
+#include <drm/tinydrm/tinydrm-helpers2.h>
 
 /*
 

@@ -13,11 +13,8 @@
 #include <linux/regmap.h>
 
 #include <drm/drmP.h>
-
-struct drm_framebuffer;
 #include <drm/tinydrm/tinydrm-helpers.h>
-
-#include "tinydrm-regmap.h"
+#include <drm/tinydrm/tinydrm-regmap.h>
 
 /**
  * DOC: overview
