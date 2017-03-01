@@ -77,6 +77,15 @@ struct tinydrm_panel_funcs {
 	 * Drivers can use callback to power down the controller/display.
 	 */
 	int (*unprepare)(struct tinydrm_panel *panel);
+
+	/**
+	 * @flush:
+	 *
+	 * Flush framebuffer to controller/display.
+	 * This function is called when the framebuffer is flushed.
+	 */
+	int (*flush)(struct tinydrm_panel *panel, struct drm_framebuffer *fb,
+		     struct drm_clip_rect *rect);
 };
 
 /**
@@ -116,10 +125,13 @@ to_tinydrm_panel(struct tinydrm_device *tdev)
 int tinydrm_panel_init(struct device *dev, struct tinydrm_panel *panel,
 			const struct tinydrm_panel_funcs *funcs,
 			const uint32_t *formats, unsigned int format_count,
-			const struct drm_framebuffer_funcs *fb_funcs,
 		  	struct drm_driver *driver,
 		  	const struct drm_display_mode *mode,
 		  	unsigned int rotation);
+
+void *tinydrm_panel_rgb565_buf(struct tinydrm_panel *panel,
+			       struct drm_framebuffer *fb,
+			       struct drm_clip_rect *rect);
 
 extern const struct dev_pm_ops tinydrm_panel_pm_ops;
 void tinydrm_panel_spi_shutdown(struct spi_device *spi);

@@ -14,6 +14,10 @@
 #include <drm/tinydrm/tinydrm-panel.h>
 #include <drm/tinydrm/tinydrm-regmap.h>
 
+int tinydrm_ili9325_flush(struct tinydrm_panel *panel,
+			  struct drm_framebuffer *fb,
+			  struct drm_clip_rect *rect);
+
 int tinydrm_ili9325_init(struct device *dev, struct tinydrm_panel *panel,
 			 const struct tinydrm_panel_funcs *funcs,
 			 struct regmap *reg, struct drm_driver *driver,

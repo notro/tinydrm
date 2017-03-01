@@ -257,6 +257,7 @@ set_rotation:
 
 static const struct tinydrm_panel_funcs fb_ili9325_funcs = {
 	.prepare = fb_ili9325_prepare,
+	.flush = tinydrm_ili9325_flush,
 };
 
 static int fb_ili9320_prepare(struct tinydrm_panel *panel)
@@ -406,6 +407,7 @@ set_rotation:
 
 static const struct tinydrm_panel_funcs fb_ili9320_funcs = {
 	.prepare = fb_ili9320_prepare,
+	.flush = tinydrm_ili9325_flush,
 };
 
 static const struct drm_display_mode fb_ili9325_mode = {

@@ -91,14 +91,56 @@ static const struct drm_simple_display_pipe_funcs tinydrm_panel_pipe_funcs = {
 	.prepare_fb = tinydrm_display_pipe_prepare_fb,
 };
 
+static int tinydrm_panel_fb_dirty(struct drm_framebuffer *fb,
+				  struct drm_file *file_priv,
+				  unsigned int flags, unsigned int color,
+				  struct drm_clip_rect *clips,
+				  unsigned int num_clips)
+{
+	struct tinydrm_device *tdev = fb->dev->dev_private;
+	struct tinydrm_panel *panel = to_tinydrm_panel(tdev);
+	struct drm_clip_rect rect;
+	int ret = 0;
+
+	if (!panel->funcs || !panel->funcs->flush)
+		return 0;
+
+	mutex_lock(&tdev->dirty_lock);
+
+	/* fbdev can flush even when we're not interested */
+	if (tdev->pipe.plane.fb != fb)
+		goto out_unlock;
+
+	tinydrm_merge_clips(&rect, clips, num_clips, flags,
+			    fb->width, fb->height);
+
+	ret = panel->funcs->flush(panel, fb, &rect);
+
+out_unlock:
+	mutex_unlock(&tdev->dirty_lock);
+
+	if (ret)
+		dev_err_once(fb->dev->dev, "Failed to update display %d\n",
+			     ret);
+
+	return ret;
+}
+
+static const struct drm_framebuffer_funcs tinydrm_panel_fb_funcs = {
+	.destroy	= drm_fb_cma_destroy,
+	.create_handle	= drm_fb_cma_create_handle,
+	.dirty		= tinydrm_panel_fb_dirty,
+};
+
 /**
- * tinydrm_panel_init - initialization XXXX
+ * tinydrm_panel_init - Initialize &tinydrm_panel
  * @dev: Parent device
  * @panel: &tinydrm_panel structure to initialize
  * @funcs: Callbacks for the panel (optional)
- * @formats: Array of supported formats (DRM_FORMAT\_\*)
+ * @formats: Array of supported formats (DRM_FORMAT\_\*). The first format is
+ *           considered the default format and &tinydrm_panel->tx_buf is
+ *           allocated a buffer that can hold a framebuffer with that format.
  * @format_count: Number of elements in @formats
- * @fb_funcs: Framebuffer functions
  * @driver: DRM driver
  * @mode: Display mode
  * @rotation: Initial rotation in degrees Counter Clock Wise
@@ -113,27 +155,25 @@ static const struct drm_simple_display_pipe_funcs tinydrm_panel_pipe_funcs = {
  * Zero on success, negative error code on failure.
  */
 int tinydrm_panel_init(struct device *dev, struct tinydrm_panel *panel,
-			const struct tinydrm_panel_funcs *funcs,
-			const uint32_t *formats, unsigned int format_count,
-			const struct drm_framebuffer_funcs *fb_funcs,
-		  	struct drm_driver *driver,
-		  	const struct drm_display_mode *mode,
-		  	unsigned int rotation)
+		       const struct tinydrm_panel_funcs *funcs,
+		       const uint32_t *formats, unsigned int format_count,
+		       struct drm_driver *driver,
+		       const struct drm_display_mode *mode,
+		       unsigned int rotation)
 {
-
-
-size_t bufsize = mode->vdisplay * mode->hdisplay * sizeof(u16);
-
-
 	struct tinydrm_device *tdev = &panel->tinydrm;
 	const struct drm_format_info *format_info;
+	size_t bufsize;
 	int ret;
+
+	format_info = drm_format_info(formats[0]);
+	bufsize = mode->vdisplay * mode->hdisplay * format_info->cpp[0];
 
 	panel->tx_buf = devm_kmalloc(dev, bufsize, GFP_KERNEL);
 	if (!panel->tx_buf)
 		return -ENOMEM;
 
-	ret = devm_tinydrm_init(dev, tdev, fb_funcs, driver);
+	ret = devm_tinydrm_init(dev, tdev, &tinydrm_panel_fb_funcs, driver);
 	if (ret)
 		return ret;
 
@@ -144,7 +184,6 @@ size_t bufsize = mode->vdisplay * mode->hdisplay * sizeof(u16);
 	if (ret)
 		return ret;
 
-	format_info = drm_format_info(formats[0]);
 	tdev->drm->mode_config.preferred_depth = format_info->depth;
 
 	panel->rotation = rotation;
@@ -158,6 +197,49 @@ size_t bufsize = mode->vdisplay * mode->hdisplay * sizeof(u16);
 	return 0;
 }
 EXPORT_SYMBOL(tinydrm_panel_init);
+
+/**
+ * tinydrm_panel_rgb565_buf - Return RGB565 buffer to scanout
+ * @panel: tinydrm panel
+ * @fb: DRM framebuffer
+ * @rect: Clip rectangle area to copy
+ *
+ * This function returns the RGB565 framebuffer rectangle to scanout.
+ * It converts XRGB8888 to RGB565 if necessary.
+ * If copying isn't necessary (RGB565 full rect, no swap), then the backing cma buffer is returned.
+ *
+ * Returns:
+ * Buffer to scanout on success, ERR_PTR on failure.
+ */
+void *tinydrm_panel_rgb565_buf(struct tinydrm_panel *panel,
+			       struct drm_framebuffer *fb,
+			       struct drm_clip_rect *rect)
+{
+	struct drm_gem_cma_object *cma_obj = drm_fb_cma_get_gem_obj(fb, 0);
+	bool swap = panel->swap_bytes;
+	bool full;
+	void *buf;
+	int ret;
+
+	full = (rect->x2 - rect->x1) == fb->width &&
+	       (rect->y2 - rect->y1) == fb->height;
+
+	DRM_DEBUG("Flushing [FB:%d] x1=%u, x2=%u, y1=%u, y2=%u, swap=%u\n",
+		  fb->base.id, rect->x1, rect->x2, rect->y1, rect->y2, swap);
+
+	if (panel->always_tx_buf || swap || !full ||
+	    fb->format->format == DRM_FORMAT_XRGB8888) {
+		buf = panel->tx_buf;
+		ret = tinydrm_rgb565_buf_copy(buf, fb, rect, swap);
+		if (ret)
+			return ERR_PTR(ret);
+	} else {
+		buf = cma_obj->vaddr;
+	}
+
+	return buf;
+}
+EXPORT_SYMBOL(tinydrm_panel_rgb565_buf);
 
 static int __maybe_unused tinydrm_panel_pm_suspend(struct device *dev)
 {
