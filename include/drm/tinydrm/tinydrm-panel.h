@@ -116,6 +116,8 @@ int tinydrm_panel_init(struct device *dev, struct tinydrm_panel *panel,
 		  	const struct drm_display_mode *mode,
 		  	unsigned int rotation);
 
+extern const struct dev_pm_ops tinydrm_panel_pm_ops;
+
 bool tinydrm_regmap_raw_swap_bytes(struct regmap *reg);
 
 #ifdef CONFIG_DEBUG_FS

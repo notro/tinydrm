@@ -157,6 +157,37 @@ size_t bufsize = mode->vdisplay * mode->hdisplay * sizeof(u16);
 }
 EXPORT_SYMBOL(tinydrm_panel_init);
 
+static int __maybe_unused tinydrm_panel_pm_suspend(struct device *dev)
+{
+	struct tinydrm_panel *panel = dev_get_drvdata(dev);
+	int ret;
+
+	ret = tinydrm_suspend(&panel->tinydrm);
+	if (ret)
+		return ret;
+
+	/* fb isn't set to NULL by suspend, so do unprepare() explicitly */
+	if (panel->funcs && panel->funcs->unprepare)
+		return panel->funcs->unprepare(panel);
+
+	return 0;
+}
+
+static int __maybe_unused tinydrm_panel_pm_resume(struct device *dev)
+{
+	struct tinydrm_panel *panel = dev_get_drvdata(dev);
+
+	/* fb is NULL on resume, so prepare() will be called in pipe_update */
+
+	return tinydrm_resume(&panel->tinydrm);
+}
+
+const struct dev_pm_ops tinydrm_panel_pm_ops = {
+	SET_SYSTEM_SLEEP_PM_OPS(tinydrm_panel_pm_suspend,
+				tinydrm_panel_pm_resume)
+};
+EXPORT_SYMBOL(tinydrm_panel_pm_ops);
+
 /**
  * tinydrm_regmap_raw_swap_bytes - Does a raw write require swapping bytes?
  * @reg: Regmap
