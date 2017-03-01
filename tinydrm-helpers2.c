@@ -96,3 +96,5 @@ void tinydrm_hw_reset(struct gpio_desc *reset, unsigned int assert_ms,
 		msleep(settle_ms);
 }
 EXPORT_SYMBOL(tinydrm_hw_reset);
+
+MODULE_LICENSE("GPL");

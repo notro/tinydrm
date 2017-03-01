@@ -10,6 +10,16 @@
 #ifndef __LINUX_TINYDRM_PANEL_H
 #define __LINUX_TINYDRM_PANEL_H
 
+/*
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+
+	FIXME
+
+	select REGMAP
+
+XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+*/
+
 #include <drm/tinydrm/tinydrm.h>
 
 struct tinydrm_panel;
@@ -105,6 +115,8 @@ int tinydrm_panel_init(struct device *dev, struct tinydrm_panel *panel,
 		  	struct drm_driver *driver,
 		  	const struct drm_display_mode *mode,
 		  	unsigned int rotation);
+
+bool tinydrm_regmap_raw_swap_bytes(struct regmap *reg);
 
 #ifdef CONFIG_DEBUG_FS
 int tinydrm_panel_debugfs_init(struct drm_minor *minor);
