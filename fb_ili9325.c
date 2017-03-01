@@ -463,16 +463,6 @@ fb_ili9325_probe_common(struct device *dev, struct regmap *reg,
 	return panel;
 }
 
-#if 0
-static void fb_ili9325_shutdown(struct spi_device *spi)
-{
-	struct tinydrm_regmap *treg = to_tinydrm_regmap(tdev);
-
-	tinydrm_shutdown(&treg->tinydrm);
-}
-
-#endif
-
 static const struct of_device_id fb_ili9325_of_match[] = {
 	{ .compatible = "ilitek,ili9320", .data = &fb_ili9320_funcs },
 	{ .compatible = "ilitek,ili9325", .data = &fb_ili9325_funcs },
@@ -601,6 +591,7 @@ static struct spi_driver fb_ili9325_spi_driver = {
 	},
 	.id_table = fb_ili9325_spi_ids,
 	.probe = fb_ili9325_probe_spi,
+	.shutdown = tinydrm_panel_spi_shutdown,
 };
 
 static const struct platform_device_id fb_ili9325_platform_ids[] = {
@@ -619,6 +610,7 @@ static struct platform_driver fb_ili9325_platform_driver = {
 	},
 	.id_table = fb_ili9325_platform_ids,
 	.probe = fb_ili9325_probe_pdev,
+	.shutdown = tinydrm_panel_platform_shutdown,
 };
 
 static int __init fb_ili9325_module_init(void)

@@ -22,7 +22,12 @@ XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 
 #include <drm/tinydrm/tinydrm.h>
 
+struct backlight_device;
+struct platform_device;
 struct tinydrm_panel;
+struct dev_pm_ops;
+struct spi_device;
+struct regulator;
 struct gpio_desc;
 struct regmap;
 
@@ -117,6 +122,8 @@ int tinydrm_panel_init(struct device *dev, struct tinydrm_panel *panel,
 		  	unsigned int rotation);
 
 extern const struct dev_pm_ops tinydrm_panel_pm_ops;
+void tinydrm_panel_spi_shutdown(struct spi_device *spi);
+void tinydrm_panel_platform_shutdown(struct platform_device *pdev);
 
 bool tinydrm_regmap_raw_swap_bytes(struct regmap *reg);
 

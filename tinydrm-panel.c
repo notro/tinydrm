@@ -10,7 +10,9 @@
 #include <linux/debugfs.h>
 #include <linux/device.h>
 #include <linux/dma-buf.h>
+#include <linux/platform_device.h>
 #include <linux/regmap.h>
+#include <linux/spi/spi.h>
 
 #include <drm/drm_gem_cma_helper.h>
 #include <drm/drm_fb_cma_helper.h>
@@ -187,6 +189,38 @@ const struct dev_pm_ops tinydrm_panel_pm_ops = {
 				tinydrm_panel_pm_resume)
 };
 EXPORT_SYMBOL(tinydrm_panel_pm_ops);
+
+/**
+ * tinydrm_panel_spi_shutdown - tinydrm-panel SPI shutdown helper
+ * @spi: SPI device
+ *
+ * tinydrm-panel drivers can use this as their shutdown callback to turn off
+ * the display on machine shutdown and reboot. Use spi_set_drvdata() or
+ * similar to set &tinydrm_panel as driver data.
+ */
+void tinydrm_panel_spi_shutdown(struct spi_device *spi)
+{
+	struct tinydrm_panel *panel = spi_get_drvdata(spi);
+
+	tinydrm_shutdown(&panel->tinydrm);
+}
+EXPORT_SYMBOL(tinydrm_panel_spi_shutdown);
+
+/**
+ * tinydrm_panel_platform_shutdown - tinydrm-panel platform driver shutdown helper
+ * @pdev: Platform device
+ *
+ * tinydrm-panel drivers can use this as their shutdown callback to turn off
+ * the display on machine shutdown and reboot. Use platform_set_drvdata() or
+ * similar to set &tinydrm_panel as driver data.
+ */
+void tinydrm_panel_platform_shutdown(struct platform_device *pdev)
+{
+	struct tinydrm_panel *panel = platform_get_drvdata(pdev);
+
+	tinydrm_shutdown(&panel->tinydrm);
+}
+EXPORT_SYMBOL(tinydrm_panel_platform_shutdown);
 
 /**
  * tinydrm_regmap_raw_swap_bytes - Does a raw write require swapping bytes?
