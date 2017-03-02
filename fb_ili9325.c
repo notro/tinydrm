@@ -25,6 +25,7 @@
 #include <linux/regmap.h>
 #include <linux/spi/spi.h>
 
+#include <drm/tinydrm/tinydrm-regmap-i80.h>
 #include <drm/tinydrm/tinydrm-ili9325.h>
 
 #include "tinydrm-fbtft.h"

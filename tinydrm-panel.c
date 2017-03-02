@@ -18,7 +18,6 @@
 #include <drm/drm_fb_cma_helper.h>
 #include <drm/drm_fourcc.h>
 #include <drm/tinydrm/tinydrm-helpers2.h>
-#include <drm/tinydrm/tinydrm-regmap.h>
 #include <drm/tinydrm/tinydrm-panel.h>
 
 /**

@@ -13,7 +13,7 @@
 
 #include <drm/drmP.h>
 #include <drm/tinydrm/tinydrm-helpers.h>
-#include <drm/tinydrm/tinydrm-regmap.h>
+#include <drm/tinydrm/tinydrm-regmap-i80.h>
 
 /**
  * DOC: overview
