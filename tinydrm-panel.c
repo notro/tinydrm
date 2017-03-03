@@ -12,6 +12,7 @@
 #include <linux/dma-buf.h>
 #include <linux/platform_device.h>
 #include <linux/regmap.h>
+#include <linux/regulator/consumer.h>
 #include <linux/spi/spi.h>
 
 #include <drm/drm_gem_cma_helper.h>
@@ -26,28 +27,58 @@
  * This library provides helpers for
  */
 
+static int tinydrm_panel_prepare(struct tinydrm_panel *panel)
+{
+DRM_DEBUG_KMS("\n");
+	if (panel->funcs && panel->funcs->prepare)
+		return panel->funcs->prepare(panel);
 
+	if (panel->regulator)
+		return regulator_enable(panel->regulator);
 
+	return 0;
+}
+
+static int tinydrm_panel_enable(struct tinydrm_panel *panel)
+{
+DRM_DEBUG_KMS("\n");
+	if (panel->funcs && panel->funcs->enable)
+		return panel->funcs->enable(panel);
+
+	return tinydrm_enable_backlight(panel->backlight);
+}
+
+static int tinydrm_panel_disable(struct tinydrm_panel *panel)
+{
+DRM_DEBUG_KMS("\n");
+	if (panel->funcs && panel->funcs->disable)
+		return panel->funcs->disable(panel);
+
+	return tinydrm_disable_backlight(panel->backlight);
+}
+
+static int tinydrm_panel_unprepare(struct tinydrm_panel *panel)
+{
+DRM_DEBUG_KMS("\n");
+	if (panel->funcs && panel->funcs->unprepare)
+		return panel->funcs->unprepare(panel);
+
+	if (panel->regulator)
+		return regulator_disable(panel->regulator);
+
+	return 0;
+}
 
 static void tinydrm_panel_pipe_enable(struct drm_simple_display_pipe *pipe,
 				      struct drm_crtc_state *crtc_state)
 {
 	struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
 	struct tinydrm_panel *panel = to_tinydrm_panel(tdev);
-//struct drm_framebuffer *fb = pipe->plane.fb;
+	struct drm_framebuffer *fb = pipe->plane.fb;
 
-	DRM_DEBUG_KMS("\n");
-
-
-//panel->enabled = true;
-//if (fb)
-//	fb->funcs->dirty(fb, NULL, 0, 0, NULL, 0);
-
-
-	if (panel->funcs && panel->funcs->enable)
-		panel->funcs->enable(panel);
-	else
-		tinydrm_enable_backlight(panel->backlight);
+	panel->enabled = true;
+	fb->funcs->dirty(fb, NULL, 0, 0, NULL, 0);
+	tinydrm_panel_enable(panel);
 }
 
 static void tinydrm_panel_pipe_disable(struct drm_simple_display_pipe *pipe)
@@ -55,14 +86,8 @@ static void tinydrm_panel_pipe_disable(struct drm_simple_display_pipe *pipe)
 	struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
 	struct tinydrm_panel *panel = to_tinydrm_panel(tdev);
 
-	DRM_DEBUG_KMS("\n");
-
-//panel->enabled = false;
-
-	if (panel->funcs && panel->funcs->disable)
-		panel->funcs->enable(panel);
-	else
-		tinydrm_disable_backlight(panel->backlight);
+	panel->enabled = false;
+	tinydrm_panel_disable(panel);
 }
 
 static void tinydrm_panel_pipe_update(struct drm_simple_display_pipe *pipe,
@@ -72,15 +97,15 @@ static void tinydrm_panel_pipe_update(struct drm_simple_display_pipe *pipe,
 	struct tinydrm_panel *panel = to_tinydrm_panel(tdev);
 	struct drm_framebuffer *fb = pipe->plane.state->fb;
 
-	/* fb is set, not changed */
-	if (fb && !old_state->fb && panel->funcs && panel->funcs->prepare)
-		panel->funcs->prepare(panel);
+	/* fb is set (not changed) */
+	if (fb && !old_state->fb)
+		tinydrm_panel_prepare(panel);
 
 	tinydrm_display_pipe_update(pipe, old_state);
 
 	/* fb is unset */
-	if (!fb && panel->funcs && panel->funcs->unprepare)
-		panel->funcs->unprepare(panel);
+	if (!fb)
+		tinydrm_panel_unprepare(panel);
 }
 
 static const struct drm_simple_display_pipe_funcs tinydrm_panel_pipe_funcs = {
@@ -105,6 +130,9 @@ static int tinydrm_panel_fb_dirty(struct drm_framebuffer *fb,
 		return 0;
 
 	mutex_lock(&tdev->dirty_lock);
+
+	if (!panel->enabled)
+		goto out_unlock;
 
 	/* fbdev can flush even when we're not interested */
 	if (tdev->pipe.plane.fb != fb)
@@ -201,11 +229,12 @@ EXPORT_SYMBOL(tinydrm_panel_init);
  * tinydrm_panel_rgb565_buf - Return RGB565 buffer to scanout
  * @panel: tinydrm panel
  * @fb: DRM framebuffer
- * @rect: Clip rectangle area to copy
+ * @rect: Clip rectangle area to scanout
  *
  * This function returns the RGB565 framebuffer rectangle to scanout.
  * It converts XRGB8888 to RGB565 if necessary.
- * If copying isn't necessary (RGB565 full rect, no swap), then the backing cma buffer is returned.
+ * If copying isn't necessary (RGB565 full rect, no swap), then the backing
+ * CMA buffer is returned.
  *
  * Returns:
  * Buffer to scanout on success, ERR_PTR on failure.
@@ -249,9 +278,8 @@ static int __maybe_unused tinydrm_panel_pm_suspend(struct device *dev)
 	if (ret)
 		return ret;
 
-	/* fb isn't set to NULL by suspend, so do unprepare() explicitly */
-	if (panel->funcs && panel->funcs->unprepare)
-		return panel->funcs->unprepare(panel);
+	/* fb isn't set to NULL by suspend, do .unprepare() explicitly */
+	tinydrm_panel_unprepare(panel);
 
 	return 0;
 }
@@ -260,7 +288,7 @@ static int __maybe_unused tinydrm_panel_pm_resume(struct device *dev)
 {
 	struct tinydrm_panel *panel = dev_get_drvdata(dev);
 
-	/* fb is NULL on resume, so prepare() will be called in pipe_update */
+	/* fb is NULL on resume, .prepare() will be called in pipe_update */
 
 	return tinydrm_resume(&panel->tinydrm);
 }

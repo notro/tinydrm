@@ -41,9 +41,12 @@ struct tinydrm_panel_funcs {
 	 * @prepare:
 	 *
 	 * Prepare controller/display.
+	 *
 	 * This function is called before framebuffer flushing starts.
 	 * Drivers can use callback to power on and configure the
 	 * controller/display.
+	 * If this is not set and &tinydrm_panel->regulator is set,
+	 * the regulator is enabled.
 	 */
 	int (*prepare)(struct tinydrm_panel *panel);
 
@@ -51,6 +54,7 @@ struct tinydrm_panel_funcs {
 	 * @enable:
 	 *
 	 * Enable display.
+	 *
 	 * This function is called when the display pipeline is enabled.
 	 * Drivers can use this callback to turn on the display.
 	 * If this is not set and &tinydrm_panel->backlight is set,
@@ -62,6 +66,7 @@ struct tinydrm_panel_funcs {
 	 * @disable:
 	 *
 	 * Disable display.
+	 *
 	 * This function is called when the display pipeline is disabled.
 	 * Drivers can use this callback to turn off the display.
 	 * If this is not set and &tinydrm_panel->backlight is set,
@@ -73,8 +78,11 @@ struct tinydrm_panel_funcs {
 	 * @unprepare:
 	 *
 	 * Unprepare controller/display.
-	 * This function is called when no framebuffer is set on the plane.
+	 *
+	 * This function is called when framebuffer is unset on the plane.
 	 * Drivers can use callback to power down the controller/display.
+	 * If this is not set and &tinydrm_panel->regulator is set,
+	 * the regulator is disabled.
 	 */
 	int (*unprepare)(struct tinydrm_panel *panel);
 
@@ -82,7 +90,12 @@ struct tinydrm_panel_funcs {
 	 * @flush:
 	 *
 	 * Flush framebuffer to controller/display.
-	 * This function is called when the framebuffer is flushed.
+	 *
+	 * This function is called when the framebuffer is flushed. This
+	 * happens when userspace calls ioctl DRM_IOCTL_MODE_DIRTYFB, when the
+	 * framebuffer is changed on the plane and when the pipeline is
+	 * enabled. No flushing happens during the time the pipeline is
+	 * disabled.
 	 */
 	int (*flush)(struct tinydrm_panel *panel, struct drm_framebuffer *fb,
 		     struct drm_clip_rect *rect);
@@ -92,8 +105,8 @@ struct tinydrm_panel_funcs {
  * tinydrm_panel - tinydrm panel device
  * @tinydrm: Base &tinydrm_device
  * @funcs: tinydrm panel functions (optional)
- * @reg: Register map
-// * @enabled: Pipeline is enabled
+ * @reg: Register map (optional)
+ * @enabled: Pipeline is enabled
  * @tx_buf: Transmit buffer
  * @swap_bytes: Swap pixel data bytes
  * @always_tx_buf: Always use @tx_buf
@@ -106,7 +119,7 @@ struct tinydrm_panel {
 	struct tinydrm_device tinydrm;
 	const struct tinydrm_panel_funcs *funcs;
 	struct regmap *reg;
-//	bool enabled;
+	bool enabled;
 	void *tx_buf;
 	bool swap_bytes;
 	bool always_tx_buf;
