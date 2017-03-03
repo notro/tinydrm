@@ -10,6 +10,7 @@
 #include <linux/debugfs.h>
 #include <linux/device.h>
 #include <linux/dma-buf.h>
+#include <linux/i2c.h>
 #include <linux/platform_device.h>
 #include <linux/regmap.h>
 #include <linux/regulator/consumer.h>
@@ -314,6 +315,22 @@ void tinydrm_panel_spi_shutdown(struct spi_device *spi)
 	tinydrm_shutdown(&panel->tinydrm);
 }
 EXPORT_SYMBOL(tinydrm_panel_spi_shutdown);
+
+/**
+ * tinydrm_panel_i2c_shutdown - tinydrm-panel I2C shutdown helper
+ * @i2c: I2C client device
+ *
+ * tinydrm-panel drivers can use this as their shutdown callback to turn off
+ * the display on machine shutdown and reboot. Use i2c_set_clientdata() or
+ * similar to set &tinydrm_panel as driver data.
+ */
+void tinydrm_panel_i2c_shutdown(struct i2c_client *i2c)
+{
+	struct tinydrm_panel *panel = i2c_get_clientdata(i2c);
+
+	tinydrm_shutdown(&panel->tinydrm);
+}
+EXPORT_SYMBOL(tinydrm_panel_i2c_shutdown);
 
 /**
  * tinydrm_panel_platform_shutdown - tinydrm-panel platform driver shutdown helper

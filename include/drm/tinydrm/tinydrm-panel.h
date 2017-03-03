@@ -148,6 +148,7 @@ void *tinydrm_panel_rgb565_buf(struct tinydrm_panel *panel,
 
 extern const struct dev_pm_ops tinydrm_panel_pm_ops;
 void tinydrm_panel_spi_shutdown(struct spi_device *spi);
+void tinydrm_panel_i2c_shutdown(struct i2c_client *i2c);
 void tinydrm_panel_platform_shutdown(struct platform_device *pdev);
 
 bool tinydrm_regmap_raw_swap_bytes(struct regmap *reg);
