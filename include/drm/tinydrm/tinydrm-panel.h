@@ -43,7 +43,7 @@ struct tinydrm_panel_funcs {
 	 * Prepare controller/display.
 	 *
 	 * This function is called before framebuffer flushing starts.
-	 * Drivers can use callback to power on and configure the
+	 * Drivers can use this callback to power on and configure the
 	 * controller/display.
 	 * If this is not set and &tinydrm_panel->regulator is set,
 	 * the regulator is enabled.
@@ -80,7 +80,7 @@ struct tinydrm_panel_funcs {
 	 * Unprepare controller/display.
 	 *
 	 * This function is called when framebuffer is unset on the plane.
-	 * Drivers can use callback to power down the controller/display.
+	 * Drivers can use this callback to power down the controller/display.
 	 * If this is not set and &tinydrm_panel->regulator is set,
 	 * the regulator is disabled.
 	 */
@@ -94,8 +94,9 @@ struct tinydrm_panel_funcs {
 	 * This function is called when the framebuffer is flushed. This
 	 * happens when userspace calls ioctl DRM_IOCTL_MODE_DIRTYFB, when the
 	 * framebuffer is changed on the plane and when the pipeline is
-	 * enabled. No flushing happens during the time the pipeline is
-	 * disabled.
+	 * enabled. If multiple clip rectangles are passed in, they are merged
+	 * into one rectangle and passed to @flush. No flushing happens
+	 * during the time the pipeline is disabled.
 	 */
 	int (*flush)(struct tinydrm_panel *panel, struct drm_framebuffer *fb,
 		     struct drm_clip_rect *rect);

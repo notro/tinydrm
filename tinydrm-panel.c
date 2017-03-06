@@ -25,12 +25,18 @@
 /**
  * DOC: overview
  *
- * This library provides helpers for
+ * This library provides helpers for displays/panels that can be operated
+ * using a simple vtable.
+ *
+ * Many controllers are operated through a register making &regmap a useful
+ * abstraction for the register interface code. This helper is geared towards
+ * such controllers. Often controllers also support more than one bus, and
+ * should for instance a controller be connected in a non-standard way
+ * (e.g. memory mapped), then only the regmap needs to be changed.
  */
 
 static int tinydrm_panel_prepare(struct tinydrm_panel *panel)
 {
-DRM_DEBUG_KMS("\n");
 	if (panel->funcs && panel->funcs->prepare)
 		return panel->funcs->prepare(panel);
 
@@ -42,7 +48,6 @@ DRM_DEBUG_KMS("\n");
 
 static int tinydrm_panel_enable(struct tinydrm_panel *panel)
 {
-DRM_DEBUG_KMS("\n");
 	if (panel->funcs && panel->funcs->enable)
 		return panel->funcs->enable(panel);
 
@@ -51,7 +56,6 @@ DRM_DEBUG_KMS("\n");
 
 static int tinydrm_panel_disable(struct tinydrm_panel *panel)
 {
-DRM_DEBUG_KMS("\n");
 	if (panel->funcs && panel->funcs->disable)
 		return panel->funcs->disable(panel);
 
@@ -60,7 +64,6 @@ DRM_DEBUG_KMS("\n");
 
 static int tinydrm_panel_unprepare(struct tinydrm_panel *panel)
 {
-DRM_DEBUG_KMS("\n");
 	if (panel->funcs && panel->funcs->unprepare)
 		return panel->funcs->unprepare(panel);
 
@@ -294,6 +297,13 @@ static int __maybe_unused tinydrm_panel_pm_resume(struct device *dev)
 	return tinydrm_resume(&panel->tinydrm);
 }
 
+/**
+ * tinydrm_panel_pm_ops - tinydrm_panel simple PM operations
+ *
+ * Suspend and resume PM operations set with SET_SYSTEM_SLEEP_PM_OPS().
+ * tinydrm_panel drivers can use this as their &device_driver->pm operations.
+ * Use dev_set_drvdata() or similar to set &tinydrm_panel as driver data.
+ */
 const struct dev_pm_ops tinydrm_panel_pm_ops = {
 	SET_SYSTEM_SLEEP_PM_OPS(tinydrm_panel_pm_suspend,
 				tinydrm_panel_pm_resume)
@@ -301,10 +311,10 @@ const struct dev_pm_ops tinydrm_panel_pm_ops = {
 EXPORT_SYMBOL(tinydrm_panel_pm_ops);
 
 /**
- * tinydrm_panel_spi_shutdown - tinydrm-panel SPI shutdown helper
+ * tinydrm_panel_spi_shutdown - tinydrm_panel SPI shutdown helper
  * @spi: SPI device
  *
- * tinydrm-panel drivers can use this as their shutdown callback to turn off
+ * tinydrm_panel drivers can use this as their shutdown callback to turn off
  * the display on machine shutdown and reboot. Use spi_set_drvdata() or
  * similar to set &tinydrm_panel as driver data.
  */
@@ -317,10 +327,10 @@ void tinydrm_panel_spi_shutdown(struct spi_device *spi)
 EXPORT_SYMBOL(tinydrm_panel_spi_shutdown);
 
 /**
- * tinydrm_panel_i2c_shutdown - tinydrm-panel I2C shutdown helper
+ * tinydrm_panel_i2c_shutdown - tinydrm_panel I2C shutdown helper
  * @i2c: I2C client device
  *
- * tinydrm-panel drivers can use this as their shutdown callback to turn off
+ * tinydrm_panel drivers can use this as their shutdown callback to turn off
  * the display on machine shutdown and reboot. Use i2c_set_clientdata() or
  * similar to set &tinydrm_panel as driver data.
  */
@@ -333,10 +343,10 @@ void tinydrm_panel_i2c_shutdown(struct i2c_client *i2c)
 EXPORT_SYMBOL(tinydrm_panel_i2c_shutdown);
 
 /**
- * tinydrm_panel_platform_shutdown - tinydrm-panel platform driver shutdown helper
+ * tinydrm_panel_platform_shutdown - tinydrm_panel platform driver shutdown helper
  * @pdev: Platform device
  *
- * tinydrm-panel drivers can use this as their shutdown callback to turn off
+ * tinydrm_panel drivers can use this as their shutdown callback to turn off
  * the display on machine shutdown and reboot. Use platform_set_drvdata() or
  * similar to set &tinydrm_panel as driver data.
  */
