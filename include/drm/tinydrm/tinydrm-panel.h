@@ -103,7 +103,7 @@ struct tinydrm_panel_funcs {
 };
 
 /**
- * tinydrm_panel - tinydrm panel device
+ * struct tinydrm_panel - tinydrm panel device
  * @tinydrm: Base &tinydrm_device
  * @funcs: tinydrm panel functions (optional)
  * @reg: Register map (optional)
@@ -147,7 +147,8 @@ void *tinydrm_panel_rgb565_buf(struct tinydrm_panel *panel,
 			       struct drm_framebuffer *fb,
 			       struct drm_clip_rect *rect);
 
-extern const struct dev_pm_ops tinydrm_panel_pm_ops;
+int tinydrm_panel_pm_suspend(struct device *dev);
+int tinydrm_panel_pm_resume(struct device *dev);
 void tinydrm_panel_spi_shutdown(struct spi_device *spi);
 void tinydrm_panel_i2c_shutdown(struct i2c_client *i2c);
 void tinydrm_panel_platform_shutdown(struct platform_device *pdev);

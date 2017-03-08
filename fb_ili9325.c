@@ -578,6 +578,11 @@ static int fb_ili9325_probe_pdev(struct platform_device *pdev)
 	return 0;
 }
 
+static const struct dev_pm_ops fb_ili9325_pm_ops = {
+	SET_SYSTEM_SLEEP_PM_OPS(tinydrm_panel_pm_suspend,
+				tinydrm_panel_pm_resume)
+};
+
 static const struct spi_device_id fb_ili9325_spi_ids[] = {
 	{ "fb_ili9320", (unsigned long)&fb_ili9320_funcs },
 	{ "fb_ili9325", (unsigned long)&fb_ili9325_funcs },
@@ -590,7 +595,7 @@ static struct spi_driver fb_ili9325_spi_driver = {
 		.name   = "fb_ili9325",
 		.owner  = THIS_MODULE,
 		.of_match_table = of_match_ptr(fb_ili9325_of_match),
-		.pm = &tinydrm_panel_pm_ops,
+		.pm = &fb_ili9325_pm_ops,
 	},
 	.id_table = fb_ili9325_spi_ids,
 	.probe = fb_ili9325_probe_spi,
@@ -609,7 +614,7 @@ static struct platform_driver fb_ili9325_platform_driver = {
 		.name   = "fb_ili9325",
 		.owner  = THIS_MODULE,
 		.of_match_table = of_match_ptr(fb_ili9325_of_match),
-		.pm = &tinydrm_panel_pm_ops,
+		.pm = &fb_ili9325_pm_ops,
 	},
 	.id_table = fb_ili9325_platform_ids,
 	.probe = fb_ili9325_probe_pdev,

@@ -273,7 +273,14 @@ void *tinydrm_panel_rgb565_buf(struct tinydrm_panel *panel,
 }
 EXPORT_SYMBOL(tinydrm_panel_rgb565_buf);
 
-static int __maybe_unused tinydrm_panel_pm_suspend(struct device *dev)
+/**
+ * tinydrm_panel_pm_suspend - tinydrm_panel PM suspend helper
+ * @dev: Device
+ *
+ * tinydrm_panel drivers can use this in their &device_driver->pm operations.
+ * Use dev_set_drvdata() or similar to set &tinydrm_panel as driver data.
+ */
+int tinydrm_panel_pm_suspend(struct device *dev)
 {
 	struct tinydrm_panel *panel = dev_get_drvdata(dev);
 	int ret;
@@ -287,8 +294,16 @@ static int __maybe_unused tinydrm_panel_pm_suspend(struct device *dev)
 
 	return 0;
 }
+EXPORT_SYMBOL(tinydrm_panel_pm_suspend);
 
-static int __maybe_unused tinydrm_panel_pm_resume(struct device *dev)
+/**
+ * tinydrm_panel_pm_resume - tinydrm_panel PM resume helper
+ * @dev: Device
+ *
+ * tinydrm_panel drivers can use this in their &device_driver->pm operations.
+ * Use dev_set_drvdata() or similar to set &tinydrm_panel as driver data.
+ */
+int tinydrm_panel_pm_resume(struct device *dev)
 {
 	struct tinydrm_panel *panel = dev_get_drvdata(dev);
 
@@ -296,19 +311,7 @@ static int __maybe_unused tinydrm_panel_pm_resume(struct device *dev)
 
 	return tinydrm_resume(&panel->tinydrm);
 }
-
-/**
- * tinydrm_panel_pm_ops - tinydrm_panel simple PM operations
- *
- * Suspend and resume PM operations set with SET_SYSTEM_SLEEP_PM_OPS().
- * tinydrm_panel drivers can use this as their &device_driver->pm operations.
- * Use dev_set_drvdata() or similar to set &tinydrm_panel as driver data.
- */
-const struct dev_pm_ops tinydrm_panel_pm_ops = {
-	SET_SYSTEM_SLEEP_PM_OPS(tinydrm_panel_pm_suspend,
-				tinydrm_panel_pm_resume)
-};
-EXPORT_SYMBOL(tinydrm_panel_pm_ops);
+EXPORT_SYMBOL(tinydrm_panel_pm_resume);
 
 /**
  * tinydrm_panel_spi_shutdown - tinydrm_panel SPI shutdown helper
