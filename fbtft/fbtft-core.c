@@ -976,7 +976,7 @@ int fbtft_probe_common(struct fbtft_display *display,
 	par->fbtftops.read = fbtft_read_spi;
 
 	if (of_find_property(dev->of_node, "init", NULL))
-		display->fbtftops.init_display = fbtft_init_display_dt;
+		par->fbtftops.init_display = fbtft_init_display_dt;
 	else if (par->init_sequence)
 		par->fbtftops.init_display = fbtft_init_display;
 
