@@ -7,20 +7,48 @@
  * (at your option) any later version.
  */
 
+#include <linux/debugfs.h>
 #include <linux/device.h>
 #include <linux/gpio/consumer.h>
 #include <linux/regmap.h>
 
 #include <drm/drmP.h>
 #include <drm/tinydrm/tinydrm-helpers.h>
-#include <drm/tinydrm/tinydrm-regmap-i80.h>
+#include <drm/tinydrm/tinydrm-regmap.h>
 
 /**
  * DOC: overview
  *
- * This library provides helpers for MIPI Display Bus Interface (DBI)
- * compatible display controllers.
  */
+
+/**
+ * tinydrm_regmap_raw_swap_bytes - Does a raw write require swapping bytes?
+ * @reg: Regmap
+ *
+ * If the bus doesn't support the full regwidth, it has to break up the word.
+ * Additionally if the bus and machine doesn't match endian wise, this requires
+ * byteswapping the buffer when using regmap_raw_write().
+ *
+ * Returns:
+ * True if byte swapping is needed, otherwise false
+ */
+bool tinydrm_regmap_raw_swap_bytes(struct regmap *reg)
+{
+	int val_bytes = regmap_get_val_bytes(reg);
+	unsigned int bus_val;
+	u16 val16 = 0x00ff;
+
+	if (val_bytes == 1)
+		return false;
+
+	if (WARN_ON_ONCE(val_bytes != 2))
+		return false;
+
+	regmap_parse_val(reg, &val16, &bus_val);
+
+	return val16 != bus_val;
+}
+EXPORT_SYMBOL(tinydrm_regmap_raw_swap_bytes);
 
 struct tinydrm_regmap_i80 {
 	struct device *dev;
@@ -160,3 +188,114 @@ struct regmap *tinydrm_i80_init(struct device *dev, unsigned int reg_width,
 	return i80->reg;
 }
 EXPORT_SYMBOL(tinydrm_i80_init);
+
+#ifdef CONFIG_DEBUG_FS
+
+static int
+tinydrm_kstrtoul_array_from_user(const char __user *s, size_t count,
+				 unsigned int base,
+				 unsigned long *vals, size_t num_vals)
+{
+	char *buf, *pos, *token;
+	int ret, i = 0;
+
+	buf = memdup_user_nul(s, count);
+	if (IS_ERR(buf))
+		return PTR_ERR(buf);
+
+	pos = buf;
+	while (pos) {
+		if (i == num_vals) {
+			ret = -E2BIG;
+			goto err_free;
+		}
+
+		token = strsep(&pos, " ");
+		if (!token) {
+			ret = -EINVAL;
+			goto err_free;
+		}
+
+		ret = kstrtoul(token, base, vals++);
+		if (ret < 0)
+			goto err_free;
+		i++;
+	}
+
+err_free:
+	kfree(buf);
+
+	return ret ? ret : i;
+}
+
+static ssize_t tinydrm_regmap_debugfs_reg_write(struct file *file,
+					        const char __user *user_buf,
+					        size_t count, loff_t *ppos)
+{
+	struct seq_file *m = file->private_data;
+	struct regmap *reg = m->private;
+	unsigned long vals[2];
+	int ret;
+
+	ret = tinydrm_kstrtoul_array_from_user(user_buf, count, 16, vals, 2);
+	if (ret <= 0)
+		return ret;
+
+	if (ret != 2)
+		return -EINVAL;
+
+	ret = regmap_write(reg, vals[0], vals[1]);
+
+	return ret < 0 ? ret : count;
+}
+
+static int tinydrm_regmap_debugfs_reg_show(struct seq_file *m, void *d)
+{
+	struct regmap *reg = m->private;
+	int max_reg = regmap_get_max_register(reg);
+	int val_bytes = regmap_get_val_bytes(reg);
+	unsigned int val;
+	int regnr, ret;
+
+	for (regnr = 0; regnr < max_reg; regnr++) {
+		seq_printf(m, "%.*x: ", val_bytes * 2, regnr);
+		ret = regmap_read(reg, regnr, &val);
+		if (ret)
+			seq_puts(m, "XX\n");
+		else
+			seq_printf(m, "%.*x\n", val_bytes * 2, val);
+	}
+
+	return 0;
+}
+
+static int tinydrm_regmap_debugfs_reg_open(struct inode *inode,
+					   struct file *file)
+{
+	return single_open(file, tinydrm_regmap_debugfs_reg_show,
+			   inode->i_private);
+}
+
+static const struct file_operations tinydrm_regmap_debugfs_reg_fops = {
+	.owner = THIS_MODULE,
+	.open = tinydrm_regmap_debugfs_reg_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+	.write = tinydrm_regmap_debugfs_reg_write,
+};
+
+int tinydrm_regmap_debugfs_init(struct regmap *reg, struct dentry *parent)
+{
+	umode_t mode = S_IFREG | S_IWUSR;
+
+	if (regmap_get_max_register(reg))
+		mode |= S_IRUGO;
+
+	debugfs_create_file("registers", mode, parent, reg,
+			    &tinydrm_regmap_debugfs_reg_fops);
+	return 0;
+}
+EXPORT_SYMBOL(tinydrm_regmap_debugfs_init);
+
+#endif

@@ -1,6 +1,6 @@
 ccflags-y := -I$(src)/include
 
-tinydrm2-y	+= tinydrm-helpers2.o tinydrm-panel.o tinydrm-regmap-i80.o tinydrm-fbtft.o tinydrm-ili9325.o
+tinydrm2-y	+= tinydrm-helpers2.o tinydrm-regmap.o tinydrm-fbtft.o tinydrm-ili9325.o
 obj-m		+= tinydrm2.o
 
 obj-m	+= fb_ili9325.o

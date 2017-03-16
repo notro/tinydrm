@@ -30,6 +30,7 @@ struct gpio_desc;
 
 int tinydrm_rgb565_buf_copy(void *dst, struct drm_framebuffer *fb,
 			    struct drm_clip_rect *clip, bool swap);
+
 void tinydrm_hw_reset(struct gpio_desc *reset, unsigned int assert_ms,
 		      unsigned int settle_ms);
 

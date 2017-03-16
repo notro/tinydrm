@@ -1,5 +1,5 @@
 /*
- * FB driver for the ILI9325 LCD Controller
+ * FB driver for the ILI9325 LCD ili9325
  *
  * Copyright (C) 2013 Noralf Tronnes
  *
@@ -25,8 +25,8 @@
 #include <linux/regmap.h>
 #include <linux/spi/spi.h>
 
-#include <drm/tinydrm/tinydrm-regmap-i80.h>
 #include <drm/tinydrm/tinydrm-ili9325.h>
+#include <drm/tinydrm/tinydrm-regmap.h>
 
 #include "tinydrm-fbtft.h"
 
@@ -98,10 +98,10 @@ MODULE_PARM_DESC(vcm, "Set the internal VcomH voltage (ili9325)");
  * VCOMH - VCOML < 6.0   =>  4.79 < 6.0
  */
 
-static void tinydrm_ili9325_set_rotation(struct tinydrm_panel *panel)
+static void tinydrm_ili9325_set_rotation(struct tinydrm_ili9325 *ili9325)
 {
-	struct device *dev = panel->tinydrm.drm->dev;
-	struct regmap *reg = panel->reg;
+	struct device *dev = ili9325->tinydrm.drm->dev;
+	struct regmap *reg = ili9325->reg;
 	bool bgr;
 
 	if (no_rotation)
@@ -109,7 +109,7 @@ static void tinydrm_ili9325_set_rotation(struct tinydrm_panel *panel)
 
 	bgr = device_property_read_bool(dev, "bgr");
 
-	switch (panel->rotation) {
+	switch (ili9325->rotation) {
 	/* AM: GRAM update direction */
 	case 0:
 		regmap_write(reg, 0x0003, 0x0030 | (bgr << 12));
@@ -131,9 +131,10 @@ static void tinydrm_ili9325_set_rotation(struct tinydrm_panel *panel)
  *  VRP0 VRP1 RP0 RP1 KP0 KP1 KP2 KP3 KP4 KP5
  *  VRN0 VRN1 RN0 RN1 KN0 KN1 KN2 KN3 KN4 KN5
  */
-static void tinydrm_ili9325_set_gamma(struct tinydrm_panel *panel, u16 *curves)
+static void tinydrm_ili9325_set_gamma(struct tinydrm_ili9325 *ili9325,
+				      u16 *curves)
 {
-	struct regmap *reg = panel->reg;
+	struct regmap *reg = ili9325->reg;
 	u16 vrp[2] = { curves[0] & 0x1f, curves[1] & 0x1f };
 	u16 rp[2] = { curves[2] & 0x07, curves[3] & 0x07 };
 	u16 kp[6];
@@ -160,29 +161,37 @@ static void tinydrm_ili9325_set_gamma(struct tinydrm_panel *panel, u16 *curves)
 	regmap_write(reg, 0x003D, vrn[1] << 8 | vrn[0]);
 }
 
-static int fb_ili9325_prepare(struct tinydrm_panel *panel)
+static void fb_ili9325_pipe_enable(struct drm_simple_display_pipe *pipe,
+				   struct drm_crtc_state *crtc_state)
 {
-	struct device *dev = panel->tinydrm.drm->dev;
-	struct regmap *reg = panel->reg;
+	struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
+	struct tinydrm_ili9325 *ili9325 = tinydrm_to_ili9325(tdev);
+	struct drm_framebuffer *fb = pipe->plane.fb;
+	struct regmap *reg = ili9325->reg;
+	struct device *dev = tdev->drm->dev;
 	u16 gamma_curves[2 * 10];
 	unsigned int devcode;
 	int ret;
 
 	ret = tinydrm_fbtft_get_gamma(dev, gamma_curves,
 				      FB_ILI9325_DEFAULT_GAMMA, 2, 10);
-	if (ret)
-		return ret;
+	if (ret) {
+		dev_err(dev, "Failed to get gamma\n");
+		return;
+	}
 
-	tinydrm_ili9325_reset(panel);
+	tinydrm_ili9325_reset(ili9325);
 
 	if (!regmap_read(reg, 0x0000, &devcode))
 		DRM_DEBUG_DRIVER("devcode=%x\n", devcode);
 
 	ret = tinydrm_fbtft_init(dev, reg);
-	if (!ret)
+	if (!ret) {
 		goto set_rotation;
-	else if (ret != -ENOENT)
-		return ret;
+	} else if (ret != -ENOENT) {
+		dev_err(dev, "tinydrm_fbtft_init failed\n");
+		return;
+	}
 
 	bt &= 0x07;
 	vc &= 0x07;
@@ -193,8 +202,10 @@ static int fb_ili9325_prepare(struct tinydrm_panel *panel)
 	/* Initialization sequence from ILI9325 Application Notes */
 
 	ret = regmap_write(reg, 0x00E3, 0x3008); /* Set internal timing */
-	if (ret)
-		return ret;
+	if (ret) {
+		dev_err(dev, "Failed to write register\n");
+		return;
+	}
 
 	regmap_write(reg, 0x00E7, 0x0012); /* Set internal timing */
 	regmap_write(reg, 0x00EF, 0x1231); /* Set internal timing */
@@ -250,40 +261,61 @@ static int fb_ili9325_prepare(struct tinydrm_panel *panel)
 	regmap_write(reg, 0x0007, 0x0133); /* 262K color and display ON */
 
 set_rotation:
-	tinydrm_ili9325_set_rotation(panel);
-	tinydrm_ili9325_set_gamma(panel, gamma_curves);
+	tinydrm_ili9325_set_rotation(ili9325);
+	tinydrm_ili9325_set_gamma(ili9325, gamma_curves);
 
-	return 0;
+	ili9325->enabled = true;
+	fb->funcs->dirty(fb, NULL, 0, 0, NULL, 0);
+
+	tinydrm_enable_backlight(ili9325->backlight);
 }
 
-static const struct tinydrm_panel_funcs fb_ili9325_funcs = {
-	.prepare = fb_ili9325_prepare,
-	.flush = tinydrm_ili9325_flush,
+static void fb_ili9325_pipe_disable(struct drm_simple_display_pipe *pipe)
+{
+	struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
+	struct tinydrm_ili9325 *ili9325 = tinydrm_to_ili9325(tdev);
+
+	ili9325->enabled = false;
+}
+
+static const struct drm_simple_display_pipe_funcs fb_ili9325_funcs = {
+	.enable =  fb_ili9325_pipe_enable,
+	.disable = fb_ili9325_pipe_disable,
+	.update = tinydrm_display_pipe_update,
+	.prepare_fb = tinydrm_display_pipe_prepare_fb,
 };
 
-static int fb_ili9320_prepare(struct tinydrm_panel *panel)
+static void fb_ili9320_pipe_enable(struct drm_simple_display_pipe *pipe,
+				   struct drm_crtc_state *crtc_state)
 {
-	struct device *dev = panel->tinydrm.drm->dev;
-	struct regmap *reg = panel->reg;
+	struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
+	struct tinydrm_ili9325 *ili9325 = tinydrm_to_ili9325(tdev);
+	struct drm_framebuffer *fb = pipe->plane.fb;
+	struct regmap *reg = ili9325->reg;
+	struct device *dev = tdev->drm->dev;
 	u16 gamma_curves[2 * 10];
 	unsigned int devcode;
 	int ret;
 
 	ret = tinydrm_fbtft_get_gamma(dev, gamma_curves,
 				      FB_ILI9320_DEFAULT_GAMMA, 2, 10);
-	if (ret)
-		return ret;
+	if (ret) {
+		dev_err(dev, "Failed to get gamma\n");
+		return;
+	}
 
-	tinydrm_ili9325_reset(panel);
+	tinydrm_ili9325_reset(ili9325);
 
 	if (!regmap_read(reg, 0x0000, &devcode))
 		DRM_DEBUG_DRIVER("devcode=%x\n", devcode);
 
 	ret = tinydrm_fbtft_init(dev, reg);
-	if (!ret)
+	if (!ret) {
 		goto set_rotation;
-	else if (ret != -ENOENT)
-		return ret;
+	} else if (ret != -ENOENT) {
+		dev_err(dev, "tinydrm_fbtft_init failed\n");
+		return;
+	}
 
 	/* Initialization sequence from ILI9320 Application Notes */
 
@@ -400,15 +432,20 @@ static int fb_ili9320_prepare(struct tinydrm_panel *panel)
 	regmap_write(reg, 0x0007, 0x0173); /* 262K color and display ON */
 
 set_rotation:
-	tinydrm_ili9325_set_rotation(panel);
-	tinydrm_ili9325_set_gamma(panel, gamma_curves);
+	tinydrm_ili9325_set_rotation(ili9325);
+	tinydrm_ili9325_set_gamma(ili9325, gamma_curves);
 
-	return 0;
+	ili9325->enabled = true;
+	fb->funcs->dirty(fb, NULL, 0, 0, NULL, 0);
+
+	tinydrm_enable_backlight(ili9325->backlight);
 }
 
-static const struct tinydrm_panel_funcs fb_ili9320_funcs = {
-	.prepare = fb_ili9320_prepare,
-	.flush = tinydrm_ili9325_flush,
+static const struct drm_simple_display_pipe_funcs fb_ili9320_funcs = {
+	.enable =  fb_ili9320_pipe_enable,
+	.disable = fb_ili9325_pipe_disable,
+	.update = tinydrm_display_pipe_update,
+	.prepare_fb = tinydrm_display_pipe_prepare_fb,
 };
 
 static const struct drm_display_mode fb_ili9325_mode = {
@@ -420,7 +457,7 @@ static struct drm_driver fb_ili9325_driver = {
 				  DRIVER_ATOMIC,
 	TINYDRM_GEM_DRIVER_OPS,
 	.lastclose		= tinydrm_lastclose,
-	.debugfs_init		= tinydrm_panel_debugfs_init,
+	.debugfs_init		= tinydrm_ili9325_debugfs_init,
 	.name			= "fb_ili9325",
 	.desc			= "fb_ili9325",
 	.date			= "20170207",
@@ -428,43 +465,53 @@ static struct drm_driver fb_ili9325_driver = {
 	.minor			= 0,
 };
 
-static struct tinydrm_panel *
+static struct tinydrm_ili9325 *
 fb_ili9325_probe_common(struct device *dev, struct regmap *reg,
-			const struct tinydrm_panel_funcs *funcs)
+			const struct drm_simple_display_pipe_funcs *funcs)
 {
+	struct tinydrm_ili9325 *ili9325;
 	struct tinydrm_device *tdev;
-	struct tinydrm_panel *panel;
 	u32 rotation = 0;
 	int ret;
 
-	panel = devm_kzalloc(dev, sizeof(*panel), GFP_KERNEL);
-	if (!panel)
+	ili9325 = devm_kzalloc(dev, sizeof(*ili9325), GFP_KERNEL);
+	if (!ili9325)
 		return ERR_PTR(-ENOMEM);
 
-	panel->reset = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_HIGH);
-	if (IS_ERR(panel->reset)) {
+	ili9325->reset = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_HIGH);
+	if (IS_ERR(ili9325->reset)) {
 		dev_err(dev, "Failed to get gpio 'reset'\n");
-		return ERR_CAST(panel->reset);
+		return ERR_CAST(ili9325->reset);
 	}
 
-	panel->backlight = tinydrm_fbtft_get_backlight(dev);
-	if (IS_ERR(panel->backlight))
-		return ERR_CAST(panel->backlight);
+	ili9325->backlight = tinydrm_fbtft_get_backlight(dev);
+	if (IS_ERR(ili9325->backlight))
+		return ERR_CAST(ili9325->backlight);
 
 	tinydrm_fbtft_get_rotation(dev, &rotation);
 
-	ret = tinydrm_ili9325_init(dev, panel, funcs, reg, &fb_ili9325_driver,
+	ret = tinydrm_ili9325_init(dev, ili9325, funcs, reg, &fb_ili9325_driver,
 				   &fb_ili9325_mode, rotation);
 	if (ret)
 		return ERR_PTR(ret);
 
-	tdev = &panel->tinydrm;
+	tdev = &ili9325->tinydrm;
 	ret = devm_tinydrm_register(tdev);
 	if (ret)
 		return ERR_PTR(ret);
 
-	return panel;
+	return ili9325;
 }
+
+#if 0
+static void fb_ili9325_shutdown(struct spi_device *spi)
+{
+	struct tinydrm_regmap *treg = to_tinydrm_regmap(tdev);
+
+	tinydrm_shutdown(&treg->tinydrm);
+}
+
+#endif
 
 static const struct of_device_id fb_ili9325_of_match[] = {
 	{ .compatible = "ilitek,ili9320", .data = &fb_ili9320_funcs },
@@ -475,11 +522,11 @@ MODULE_DEVICE_TABLE(of, fb_ili9325_of_match);
 
 static int fb_ili9325_probe_spi(struct spi_device *spi)
 {
-	const struct tinydrm_panel_funcs *funcs;
+	const struct drm_simple_display_pipe_funcs *funcs;
 	const struct spi_device_id *spi_id;
 	const struct of_device_id *match;
+	struct tinydrm_ili9325 *ili9325;
 	struct device *dev = &spi->dev;
-	struct tinydrm_panel *panel;
 	struct regmap *reg;
 	int ret;
 
@@ -488,7 +535,7 @@ static int fb_ili9325_probe_spi(struct spi_device *spi)
 		funcs = match->data;
 	} else {
 		spi_id = spi_get_device_id(spi);
-		funcs = (const struct tinydrm_panel_funcs *)spi_id->driver_data;
+		funcs = (const struct drm_simple_display_pipe_funcs *)spi_id->driver_data;
 	}
 
 	/* The SPI device is used to allocate dma memory */
@@ -504,27 +551,27 @@ static int fb_ili9325_probe_spi(struct spi_device *spi)
 	if (IS_ERR(reg))
 		return PTR_ERR(reg);
 
-	panel = fb_ili9325_probe_common(dev, reg, funcs);
-	if (IS_ERR(panel))
-		return PTR_ERR(panel);
+	ili9325 = fb_ili9325_probe_common(dev, reg, funcs);
+	if (IS_ERR(ili9325))
+		return PTR_ERR(ili9325);
 
-	spi_set_drvdata(spi, panel);
+	spi_set_drvdata(spi, ili9325->tinydrm.drm);
 
 	DRM_DEV_DEBUG_DRIVER(dev, "Initialized @%uMHz on minor %d\n",
 			     spi->max_speed_hz / 1000000,
-			     panel->tinydrm.drm->primary->index);
+			     ili9325->tinydrm.drm->primary->index);
 
 	return 0;
 }
 
 static int fb_ili9325_probe_pdev(struct platform_device *pdev)
 {
+	const struct drm_simple_display_pipe_funcs *funcs;
 	const struct platform_device_id *pdev_id;
-	const struct tinydrm_panel_funcs *funcs;
 	const struct of_device_id *match;
 	struct device *dev = &pdev->dev;
+	struct tinydrm_ili9325 *ili9325;
 	struct gpio_desc *cs, *dc, *wr;
-	struct tinydrm_panel *panel;
 	struct gpio_descs *db;
 	struct regmap *reg;
 
@@ -533,7 +580,7 @@ static int fb_ili9325_probe_pdev(struct platform_device *pdev)
 		funcs = match->data;
 	} else {
 		pdev_id = platform_get_device_id(pdev);
-		funcs = (const struct tinydrm_panel_funcs *)pdev_id->driver_data;
+		funcs = (const struct drm_simple_display_pipe_funcs *)pdev_id->driver_data;
 	}
 
 	cs = devm_gpiod_get_optional(dev, "cs", GPIOD_OUT_HIGH);
@@ -564,24 +611,17 @@ static int fb_ili9325_probe_pdev(struct platform_device *pdev)
 	if (IS_ERR(reg))
 		return PTR_ERR(reg);
 
-	panel = fb_ili9325_probe_common(dev, reg, funcs);
-	if (IS_ERR(panel))
-		return PTR_ERR(panel);
+	ili9325 = fb_ili9325_probe_common(dev, reg, funcs);
+	if (IS_ERR(ili9325))
+		return PTR_ERR(ili9325);
 
-	panel->always_tx_buf = true;
-
-	platform_set_drvdata(pdev, panel);
+	platform_set_drvdata(pdev, ili9325->tinydrm.drm);
 
 	DRM_DEV_DEBUG_DRIVER(dev, "Initialized on minor %d\n",
-			     panel->tinydrm.drm->primary->index);
+			     ili9325->tinydrm.drm->primary->index);
 
 	return 0;
 }
-
-static const struct dev_pm_ops fb_ili9325_pm_ops = {
-	SET_SYSTEM_SLEEP_PM_OPS(tinydrm_panel_pm_suspend,
-				tinydrm_panel_pm_resume)
-};
 
 static const struct spi_device_id fb_ili9325_spi_ids[] = {
 	{ "fb_ili9320", (unsigned long)&fb_ili9320_funcs },
@@ -595,11 +635,9 @@ static struct spi_driver fb_ili9325_spi_driver = {
 		.name   = "fb_ili9325",
 		.owner  = THIS_MODULE,
 		.of_match_table = of_match_ptr(fb_ili9325_of_match),
-		.pm = &fb_ili9325_pm_ops,
 	},
 	.id_table = fb_ili9325_spi_ids,
 	.probe = fb_ili9325_probe_spi,
-	.shutdown = tinydrm_panel_spi_shutdown,
 };
 
 static const struct platform_device_id fb_ili9325_platform_ids[] = {
@@ -614,11 +652,9 @@ static struct platform_driver fb_ili9325_platform_driver = {
 		.name   = "fb_ili9325",
 		.owner  = THIS_MODULE,
 		.of_match_table = of_match_ptr(fb_ili9325_of_match),
-		.pm = &fb_ili9325_pm_ops,
 	},
 	.id_table = fb_ili9325_platform_ids,
 	.probe = fb_ili9325_probe_pdev,
-	.shutdown = tinydrm_panel_platform_shutdown,
 };
 
 static int __init fb_ili9325_module_init(void)
@@ -644,6 +680,6 @@ MODULE_ALIAS("platform:ili9320");
 MODULE_ALIAS("spi:ili9325");
 MODULE_ALIAS("platform:ili9325");
 
-MODULE_DESCRIPTION("DRM driver for the ILI9325 LCD Controller");
+MODULE_DESCRIPTION("DRM driver for the ILI9325 LCD ili9325");
 MODULE_AUTHOR("Noralf Trønnes");
 MODULE_LICENSE("GPL");

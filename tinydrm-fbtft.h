@@ -10,7 +10,7 @@
 #ifndef __LINUX_TINYDRM_FBTFT_H
 #define __LINUX_TINYDRM_FBTFT_H
 
-#include <drm/tinydrm/tinydrm-panel.h>
+#include <drm/tinydrm/tinydrm.h>
 
 int tinydrm_fbtft_init(struct device *dev, struct regmap *reg);
 int tinydrm_fbtft_get_gamma(struct device *dev, u16 *curves,

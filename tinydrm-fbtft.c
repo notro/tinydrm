@@ -15,8 +15,8 @@
 #include <linux/slab.h>
 #include <linux/string.h>
 
+#include <drm/tinydrm/tinydrm.h>
 #include <drm/tinydrm/tinydrm-helpers2.h>
-#include <drm/tinydrm/tinydrm-panel.h>
 
 #define FBTFT_INIT_CMD		BIT(24)
 #define FBTFT_INIT_DELAY	BIT(25)

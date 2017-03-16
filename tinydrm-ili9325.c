@@ -14,21 +14,52 @@
 #include <drm/drm_gem_cma_helper.h>
 #include <drm/drm_fb_cma_helper.h>
 #include <drm/tinydrm/tinydrm-ili9325.h>
+#include <drm/tinydrm/tinydrm-regmap.h>
 
-
-int tinydrm_ili9325_flush(struct tinydrm_panel *panel,
-			  struct drm_framebuffer *fb,
-			  struct drm_clip_rect *rect)
+static int tinydrm_ili9325_fb_dirty(struct drm_framebuffer *fb,
+			     struct drm_file *file_priv,
+			     unsigned int flags, unsigned int color,
+			     struct drm_clip_rect *clips,
+			     unsigned int num_clips)
 {
+	struct drm_gem_cma_object *cma_obj = drm_fb_cma_get_gem_obj(fb, 0);
+	struct tinydrm_device *tdev = fb->dev->dev_private;
+	struct tinydrm_ili9325 *ili9325 = tinydrm_to_ili9325(tdev);
+	struct regmap *reg = ili9325->reg;
+	bool swap = ili9325->swap_bytes;
+	struct drm_clip_rect clip;
 	u16 ac_low, ac_high;
+	int ret = 0;
+	bool full;
 	void *tr;
 
-	rect->x1 = 0;
-	rect->x2 = fb->width;
+	mutex_lock(&tdev->dirty_lock);
 
-	tr = tinydrm_panel_rgb565_buf(panel, fb, rect);
-	if (IS_ERR(tr))
-		return PTR_ERR(tr);
+	if (!ili9325->enabled)
+		goto out_unlock;
+
+	/* fbdev can flush even when we're not interested */
+	if (tdev->pipe.plane.fb != fb)
+		goto out_unlock;
+
+	full = tinydrm_merge_clips(&clip, clips, num_clips, flags,
+				   fb->width, fb->height);
+
+	clip.x1 = 0;
+	clip.x2 = fb->width;
+
+	DRM_DEBUG("Flushing [FB:%d] x1=%u, x2=%u, y1=%u, y2=%u, swap=%u\n",
+		  fb->base.id, clip.x1, clip.x2, clip.y1, clip.y2, swap);
+
+	if (ili9325->always_tx_buf || swap || !full ||
+	    fb->format->format == DRM_FORMAT_XRGB8888) {
+		tr = ili9325->tx_buf;
+		ret = tinydrm_rgb565_buf_copy(tr, fb, &clip, swap);
+		if (ret)
+			goto out_unlock;
+	} else {
+		tr = cma_obj->vaddr;
+	}
 
 	/*
 	 * FIXME
@@ -38,32 +69,46 @@ int tinydrm_ili9325_flush(struct tinydrm_panel *panel,
 #define WIDTH 240
 #define HEIGHT 320
 
-	switch (panel->rotation) {
+	switch (ili9325->rotation) {
 	case 0:
 		ac_low = 0;
-		ac_high = rect->y1;
+		ac_high = clip.y1;
 		break;
 	case 180:
 		ac_low = WIDTH - 1 - 0;
-		ac_high = HEIGHT - 1 - rect->y1;
+		ac_high = HEIGHT - 1 - clip.y1;
 		break;
 	case 270:
-		ac_low = WIDTH - 1 - rect->y1;
+		ac_low = WIDTH - 1 - clip.y1;
 		ac_high = 0;
 		break;
 	case 90:
-		ac_low = rect->y1;
+		ac_low = clip.y1;
 		ac_high = HEIGHT - 1 - 0;
 		break;
 	};
 
-	regmap_write(panel->reg, 0x0020, ac_low);
-	regmap_write(panel->reg, 0x0021, ac_high);
+	regmap_write(reg, 0x0020, ac_low);
+	regmap_write(reg, 0x0021, ac_high);
 
-	return regmap_raw_write(panel->reg, 0x0022, tr,
-			       (rect->x2 - rect->x1) * (rect->y2 - rect->y1) * 2);
+	ret = regmap_raw_write(reg, 0x0022, tr,
+			       (clip.x2 - clip.x1) * (clip.y2 - clip.y1) * 2);
+
+out_unlock:
+	mutex_unlock(&tdev->dirty_lock);
+
+	if (ret)
+		dev_err_once(fb->dev->dev, "Failed to update display %d\n",
+			     ret);
+
+	return ret;
 }
-EXPORT_SYMBOL(tinydrm_ili9325_flush);
+
+static const struct drm_framebuffer_funcs tinydrm_ili9325_fb_funcs = {
+	.destroy	= drm_fb_cma_destroy,
+	.create_handle	= drm_fb_cma_create_handle,
+	.dirty		= tinydrm_ili9325_fb_dirty,
+};
 
 static const uint32_t tinydrm_ili9325_formats[] = {
 	DRM_FORMAT_RGB565,
@@ -91,18 +136,45 @@ static const uint32_t tinydrm_ili9325_formats[] = {
  * Returns:
  * Zero on success, negative error code on failure.
  */
-int tinydrm_ili9325_init(struct device *dev, struct tinydrm_panel *panel,
-			 const struct tinydrm_panel_funcs *funcs,
+int tinydrm_ili9325_init(struct device *dev, struct tinydrm_ili9325 *ili9325,
+			 const struct drm_simple_display_pipe_funcs *funcs,
 			 struct regmap *reg, struct drm_driver *driver,
 			 const struct drm_display_mode *mode,
 			 unsigned int rotation)
 {
-	panel->reg = reg;
-	panel->swap_bytes = tinydrm_regmap_raw_swap_bytes(reg);
+	size_t bufsize = mode->vdisplay * mode->hdisplay * sizeof(u16);
+	struct tinydrm_device *tdev = &ili9325->tinydrm;
+	int ret;
 
-	return tinydrm_panel_init(dev, panel, funcs, tinydrm_ili9325_formats,
-				  ARRAY_SIZE(tinydrm_ili9325_formats),
-				  driver, mode, rotation);
+	ili9325->swap_bytes = tinydrm_regmap_raw_swap_bytes(reg);
+	ili9325->rotation = rotation;
+	ili9325->reg = reg;
+
+	ili9325->tx_buf = devm_kmalloc(dev, bufsize, GFP_KERNEL);
+	if (!ili9325->tx_buf)
+		return -ENOMEM;
+
+	ret = devm_tinydrm_init(dev, tdev, &tinydrm_ili9325_fb_funcs, driver);
+	if (ret)
+		return ret;
+
+	/* TODO: Maybe add DRM_MODE_CONNECTOR_SPI */
+	ret = tinydrm_display_pipe_init(tdev, funcs,
+					DRM_MODE_CONNECTOR_VIRTUAL,
+					tinydrm_ili9325_formats,
+					ARRAY_SIZE(tinydrm_ili9325_formats), mode,
+					rotation);
+	if (ret)
+		return ret;
+
+	tdev->drm->mode_config.preferred_depth = 16;
+
+	drm_mode_config_reset(tdev->drm);
+
+	DRM_DEBUG_KMS("preferred_depth=%u, rotation = %u\n",
+		      tdev->drm->mode_config.preferred_depth, rotation);
+
+	return 0;
 }
 EXPORT_SYMBOL(tinydrm_ili9325_init);
 
@@ -269,5 +341,38 @@ struct regmap *tinydrm_ili9325_spi_init(struct spi_device *spi,
 	return spih->reg;
 }
 EXPORT_SYMBOL(tinydrm_ili9325_spi_init);
+
+#endif
+
+#ifdef CONFIG_DEBUG_FS
+
+static const struct drm_info_list ili9325_debugfs_list[] = {
+	{ "fb",   drm_fb_cma_debugfs_show, 0 },
+};
+
+/**
+ * tinydrm_ili9325_debugfs_init - Create debugfs entries
+ * @minor: DRM minor
+ *
+ * Drivers can use this as their &drm_driver->debugfs_init callback.
+ *
+ * Returns:
+ * Zero on success, negative error code on failure.
+ */
+int tinydrm_ili9325_debugfs_init(struct drm_minor *minor)
+{
+	struct tinydrm_device *tdev = minor->dev->dev_private;
+	struct tinydrm_ili9325 *ili9325 = tinydrm_to_ili9325(tdev);
+	int ret;
+
+	ret = tinydrm_regmap_debugfs_init(ili9325->reg, minor->debugfs_root);
+	if (ret)
+		return ret;
+
+	return drm_debugfs_create_files(ili9325_debugfs_list,
+					ARRAY_SIZE(ili9325_debugfs_list),
+					minor->debugfs_root, minor);
+}
+EXPORT_SYMBOL(tinydrm_ili9325_debugfs_init);
 
 #endif
