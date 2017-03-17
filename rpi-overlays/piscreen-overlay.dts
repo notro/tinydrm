@@ -1,0 +1,88 @@
+/*
+ * Device Tree overlay for PiScreen 3.5" display shield by Ozzmaker
+ *
+ */
+
+/dts-v1/;
+/plugin/;
+
+/ {
+	compatible = "brcm,bcm2835", "brcm,bcm2708", "brcm,bcm2709";
+
+	fragment@0 {
+		target = <&spi0>;
+		__overlay__ {
+			status = "okay";
+
+			spidev@0{
+				status = "disabled";
+			};
+
+			spidev@1{
+				status = "disabled";
+			};
+		};
+	};
+
+	fragment@1 {
+		target = <&gpio>;
+		__overlay__ {
+			piscreen_pins: piscreen_pins {
+				brcm,pins = <17 25 24 22>;
+				brcm,function = <0 1 1 1>; /* in out out out */
+			};
+		};
+	};
+
+	fragment@2 {
+		target = <&spi0>;
+		__overlay__ {
+			/* needed to avoid dtc warning */
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			piscreen: piscreen@0{
+				compatible = "ozzmaker,piscreen";
+				pinctrl-names = "default";
+				pinctrl-0 = <&piscreen_pins>;
+
+				reg = <0>;
+				spi-max-frequency = <16000000>;
+
+				rotation = <0>;
+				reset-gpios = <&gpio 25 0>;
+				dc-gpios = <&gpio 24 0>;
+				backlight = <&backlight>;
+			};
+
+			piscreen_ts: piscreen-ts@1 {
+				compatible = "ti,ads7846";
+				reg = <1>;
+
+				spi-max-frequency = <2000000>;
+				interrupts = <17 2>; /* high-to-low edge triggered */
+				interrupt-parent = <&gpio>;
+				pendown-gpio = <&gpio 17 0>;
+				ti,swap-xy;
+				ti,x-plate-ohms = /bits/ 16 <100>;
+				ti,pressure-max = /bits/ 16 <255>;
+			};
+		};
+	};
+
+	fragment@3 {
+		target-path = "/soc";
+		__overlay__ {
+			backlight: backlight {
+				compatible = "gpio-backlight";
+				gpios = <&gpio 22 0>;
+			};
+		};
+	};
+
+	__overrides__ {
+		speed =		<&piscreen>,"spi-max-frequency:0";
+		rotation =	<&piscreen>,"rotation:0";
+		xohms =		<&piscreen_ts>,"ti,x-plate-ohms;0";
+	};
+};
