@@ -1,0 +1,91 @@
+/*
+ * Device Tree overlay for mz61581 by Tontec
+ *
+ */
+
+/dts-v1/;
+/plugin/;
+
+/ {
+	compatible = "brcm,bcm2708";
+
+	fragment@0 {
+		target = <&spi0>;
+		__overlay__ {
+			status = "okay";
+
+			spidev@0{
+				status = "disabled";
+			};
+
+			spidev@1{
+				status = "disabled";
+			};
+		};
+	};
+
+	fragment@1 {
+		target = <&gpio>;
+		__overlay__ {
+			mz61581_pins: mz61581_pins {
+				brcm,pins = <4 15 18 25>;
+				brcm,function = <0 1 1 1>; /* in out out out */
+			};
+		};
+	};
+
+	fragment@2 {
+		target = <&spi0>;
+		__overlay__ {
+			/* needed to avoid dtc warning */
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			mz61581: mz61581@0{
+				compatible = "tontec,mz61581";
+				reg = <0>;
+				pinctrl-names = "default";
+				pinctrl-0 = <&mz61581_pins>;
+
+				spi-max-frequency = <62500000>;
+				spi-cpol;
+				spi-cpha;
+
+				rotation = <0>;
+				reset-gpios = <&gpio 15 0>;
+				dc-gpios = <&gpio 25 0>;
+				backlight = <&backlight>;
+			};
+
+			mz61581_ts: mz61581_ts@1 {
+				compatible = "ti,ads7846";
+				reg = <1>;
+
+				spi-max-frequency = <2000000>;
+				interrupts = <4 2>; /* high-to-low edge triggered */
+				interrupt-parent = <&gpio>;
+				pendown-gpio = <&gpio 4 0>;
+
+				ti,x-plate-ohms = /bits/ 16 <60>;
+				ti,pressure-max = /bits/ 16 <255>;
+			};
+
+		};
+	};
+
+	fragment@3 {
+		target-path = "/soc";
+		__overlay__ {
+			backlight: backlight {
+				compatible = "gpio-backlight";
+				gpios = <&gpio 18 1>;
+			};
+		};
+	};
+
+	__overrides__ {
+		speed =    <&mz61581>, "spi-max-frequency:0";
+		rotation = <&mz61581>, "rotation:0";
+		xohms =    <&mz61581_ts>,"ti,x-plate-ohms;0";
+	};
+};
