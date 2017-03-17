@@ -1,0 +1,90 @@
+/*
+ * Device Tree overlay for rpi-display by Watterott
+ *
+ * 3-wire 9-bit data serial interface II (SCL,SDI,SDO,CSX)
+ *
+ * IM3 IM2 IM1 IM0
+ *  1   1   0   1
+ *
+ */
+
+/dts-v1/;
+/plugin/;
+
+/ {
+	compatible = "brcm,bcm2708";
+
+	fragment@0 {
+		target = <&spi0>;
+		__overlay__ {
+			status = "okay";
+
+			spidev@0{
+				status = "disabled";
+			};
+
+			spidev@1{
+				status = "disabled";
+			};
+		};
+	};
+
+	fragment@1 {
+		target = <&gpio>;
+		__overlay__ {
+			rpi_display_pins: rpi_display_pins {
+				brcm,pins = <18 23 25>;
+				brcm,function = <1 1 0>; /* out out in */
+			};
+		};
+	};
+
+	fragment@2 {
+		target = <&spi0>;
+		__overlay__ {
+			/* needed to avoid dtc warning */
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			rpidisplay: rpi-display@0{
+				compatible = "mi,mi0283qt";
+				reg = <0>;
+				pinctrl-names = "default";
+				pinctrl-0 = <&rpi_display_pins>;
+
+				spi-max-frequency = <32000000>;
+				rotation = <0>;
+				reset-gpios = <&gpio 23 0>;
+				backlight = <&backlight>;
+			};
+
+			rpi-display-ts@1 {
+				compatible = "ti,ads7846";
+				reg = <1>;
+
+				spi-max-frequency = <2000000>;
+				interrupts = <25 2>; /* high-to-low edge triggered */
+				interrupt-parent = <&gpio>;
+				pendown-gpio = <&gpio 25 0>;
+				ti,x-plate-ohms = /bits/ 16 <60>;
+				ti,pressure-max = /bits/ 16 <255>;
+			};
+		};
+	};
+
+	fragment@3 {
+		target-path = "/soc";
+		__overlay__ {
+			backlight: backlight {
+				compatible = "gpio-backlight";
+				gpios = <&gpio 18 0>;
+			};
+		};
+	};
+
+	__overrides__ {
+		speed = <&rpidisplay>,"spi-max-frequency:0";
+		rotation = <&rpidisplay>,"rotation:0";
+		format = <&rpidisplay>,"format";
+	};
+};
