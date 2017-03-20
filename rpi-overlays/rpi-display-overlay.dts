@@ -48,7 +48,7 @@
 				pinctrl-0 = <&rpi_display_pins>;
 
 				spi-max-frequency = <32000000>;
-				rotation = <0>;
+				rotation = <180>;
 				reset-gpios = <&gpio 23 0>;
 				dc-gpios = <&gpio 24 0>;
 				backlight = <&backlight>;
