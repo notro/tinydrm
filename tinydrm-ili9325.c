@@ -70,7 +70,7 @@ static int tinydrm_ili9325_fb_dirty(struct drm_framebuffer *fb,
 #define HEIGHT 320
 
 	switch (ili9325->rotation) {
-	case 0:
+	default:
 		ac_low = 0;
 		ac_high = clip.y1;
 		break;

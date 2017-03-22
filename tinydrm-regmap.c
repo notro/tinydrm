@@ -197,7 +197,7 @@ tinydrm_kstrtoul_array_from_user(const char __user *s, size_t count,
 				 unsigned long *vals, size_t num_vals)
 {
 	char *buf, *pos, *token;
-	int ret, i = 0;
+	int ret = -EINVAL, i = 0;
 
 	buf = memdup_user_nul(s, count);
 	if (IS_ERR(buf))
