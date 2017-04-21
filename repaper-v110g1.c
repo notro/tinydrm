@@ -601,7 +601,7 @@ static int repaper_v110g1_fb_dirty(struct drm_framebuffer *fb,
 	tinydrm_rgb565_to_mono8(mono8, epd->buf, fb->width, fb->height);
 	tinydrm_mono8_to_mono(epd->buf, mono8, fb->width, fb->height);
 
-	special_memcpy(display_buffer, epd->buf, fb->width * fb->height / 8, true, true);
+	special_memcpy(display_buffer, epd->buf, fb->width * fb->height / 8, true, false);
 
 	/* FIXME: make it dynamic somehow */
 	EPD_set_temperature(epd, 25);
