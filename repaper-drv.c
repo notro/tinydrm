@@ -23,6 +23,7 @@
 
 enum repaper_model {
 	EN027AS012 = 1,
+	E2271CS021,
 };
 
 static const uint32_t repaper_formats[] = {
@@ -55,12 +56,14 @@ static struct drm_driver repaper_driver = {
 
 static const struct of_device_id repaper_of_match[] = {
 	{ .compatible = "pervasive,en027as012", .data = (void *)EN027AS012 },
+	{ .compatible = "pervasive,e2271cs021", .data = (void *)E2271CS021 },
 	{},
 };
 MODULE_DEVICE_TABLE(of, repaper_of_match);
 
 static const struct spi_device_id repaper_id[] = {
 	{ "en027as012", EN027AS012 },
+	{ "e2271cs021", E2271CS021 },
 	{ },
 };
 MODULE_DEVICE_TABLE(spi, repaper_id);
@@ -146,26 +149,6 @@ static int repaper_probe(struct spi_device *spi)
 		return ret;
 	}
 
-	/* PWM is needed by the COG1 driven panels */
-	switch (model) {
-/*
-	case EPD_1_44:
-	case EPD_2_0:
-*/
-	case EN027AS012:
-		epd->pwm = devm_pwm_get(dev, "pwm");
-		if (IS_ERR(epd->pwm)) {
-			ret = PTR_ERR(epd->pwm);
-			if (ret != -EPROBE_DEFER)
-				dev_err(dev, "Failed to get pwm\n");
-			return ret;
-		}
-
-		pwm_get_args(epd->pwm, &pargs);
-		pwm_config(epd->pwm, pargs.period / 2, pargs.period);
-		break;
-	}
-
 	switch (model) {
 /*
 	case EPD_1_44: {
@@ -202,6 +185,17 @@ static int repaper_probe(struct spi_device *spi)
 	}
 */
 	case EN027AS012:
+		epd->pwm = devm_pwm_get(dev, "pwm");
+		if (IS_ERR(epd->pwm)) {
+			ret = PTR_ERR(epd->pwm);
+			if (ret != -EPROBE_DEFER)
+				dev_err(dev, "Failed to get pwm\n");
+			return ret;
+		}
+
+		pwm_get_args(epd->pwm, &pargs);
+		pwm_config(epd->pwm, pargs.period / 2, pargs.period);
+
 		pipe_funcs = &repaper_v110g1_pipe_funcs;
 		fb_funcs = &repaper_v110g1_fb_funcs;
 		mode = &repaper_en027as012_mode;
@@ -216,16 +210,37 @@ static int repaper_probe(struct spi_device *spi)
 		epd->channel_select_length = sizeof(repaper_en027as012_cs);
 		epd->gate_source = repaper_en027as012_gs;
 		epd->gate_source_length = sizeof(repaper_en027as012_gs);
+		epd->line_buffer_size = 2 * epd->bytes_per_line +
+					epd->bytes_per_scan + 3;
 		break;
+
+	case E2271CS021:
+		pipe_funcs = &repaper_v231g2_pipe_funcs;
+		fb_funcs = &repaper_v231g2_fb_funcs;
+		mode = &repaper_en027as012_mode;
+
+		epd->stage_time = 630;
+		epd->lines_per_display = 176;
+		epd->dots_per_line = 264;
+		epd->bytes_per_line = 264 / 8;
+		epd->bytes_per_scan = 176 / 4;
+		epd->middle_scan = true; /* data-scan-data */
+		epd->channel_select = repaper_en027as012_cs;
+		epd->channel_select_length = sizeof(repaper_en027as012_cs);
+		epd->pre_border_byte = true;
+		epd->border_byte = EPD_BORDER_BYTE_NONE;
+
+		epd->line_buffer_size = 2 * epd->bytes_per_line +
+					epd->bytes_per_scan + 3 + 4096;
+		break;
+
+	default:
+		return -ENODEV;
 	}
 
 	epd->factored_stage_time = epd->stage_time;
 
-	/* Add for command byte, border byte and filler byte */
-	epd->line_buffer_size = 2 * epd->bytes_per_line +
-				epd->bytes_per_scan + 3;
-
-	epd->line_buffer = devm_kmalloc(dev, epd->line_buffer_size, GFP_KERNEL);
+	epd->line_buffer = devm_kzalloc(dev, epd->line_buffer_size, GFP_KERNEL);
 	if (!epd->line_buffer)
 		return -ENOMEM;
 

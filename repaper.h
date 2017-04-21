@@ -16,6 +16,12 @@
 
 #include <drm/tinydrm/tinydrm.h>
 
+enum repaper_epd_border_byte {
+	EPD_BORDER_BYTE_NONE,  // no border byte requred
+	EPD_BORDER_BYTE_ZERO,  // border byte == 0x00 requred
+	EPD_BORDER_BYTE_SET,   // border byte needs to be set
+};
+
 struct repaper_epd {
 	struct tinydrm_device tinydrm;
 	struct spi_device *spi;
@@ -32,13 +38,17 @@ struct repaper_epd {
 	bool enabled;
 	bool cleared;
 
-	int stage_time;
-	int factored_stage_time;
-	int lines_per_display;
-	int dots_per_line;
-	int bytes_per_line;
-	int bytes_per_scan;
+	unsigned int stage_time;
+	unsigned int factored_stage_time;
+	unsigned int lines_per_display;
+	unsigned int dots_per_line;
+	unsigned int bytes_per_line;
+	unsigned int bytes_per_scan;
 	bool filler;
+
+	bool middle_scan;
+	bool pre_border_byte;
+	enum repaper_epd_border_byte border_byte;
 
 	const u8 *channel_select;
 	size_t channel_select_length;
@@ -57,5 +67,8 @@ epd_from_tinydrm(struct tinydrm_device *tdev)
 
 extern const struct drm_framebuffer_funcs repaper_v110g1_fb_funcs;
 extern const struct drm_simple_display_pipe_funcs repaper_v110g1_pipe_funcs;
+
+extern const struct drm_framebuffer_funcs repaper_v231g2_fb_funcs;
+extern const struct drm_simple_display_pipe_funcs repaper_v231g2_pipe_funcs;
 
 #endif /* __LINUX_REPAPER_H */
