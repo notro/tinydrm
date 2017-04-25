@@ -431,55 +431,14 @@ static void frame_data_repeat(struct repaper_epd *epd, const u8 *image, const u8
 //	printk("%s: iterations=%d\n", __func__, i);
 }
 
-/* Clear display (anything -> white) */
-static void repaper_v231g2_clear(struct repaper_epd *epd)
-{
-	frame_fixed_repeat(epd, 0xff, EPD_compensate);
-	frame_fixed_repeat(epd, 0xff, EPD_white);
-	frame_fixed_repeat(epd, 0xaa, EPD_inverse);
-	frame_fixed_repeat(epd, 0xaa, EPD_normal);
-}
-
-/* Assuming a clear (white) screen output an image */
-static void repaper_v231g2_image_0(struct repaper_epd *epd, const u8 *image)
-{
-	frame_fixed_repeat(epd, 0xaa, EPD_compensate);
-	frame_fixed_repeat(epd, 0xaa, EPD_white);
-	frame_data_repeat(epd, image, NULL, EPD_inverse);
-	frame_data_repeat(epd, image, NULL, EPD_normal);
-}
-
-/* Change from old image to new image */
-static void repaper_v231g2_image(struct repaper_epd *epd, const u8 *old_image, const u8 *new_image)
-{
-	frame_data_repeat(epd, old_image, NULL, EPD_compensate);
-	frame_data_repeat(epd, old_image, NULL, EPD_white);
-	frame_data_repeat(epd, new_image, NULL, EPD_inverse);
-	frame_data_repeat(epd, new_image, NULL, EPD_normal);
-}
-
-/* Change from old image to new image */
-static void repaper_v231g2_partial_image(struct repaper_epd *epd, const u8 *old_image, const u8 *new_image)
-{
-	// Only need last stage for partial update
-	// See discussion on issue #19 in the repaper/gratis repository on github
-	frame_data_repeat(epd, new_image, old_image, EPD_normal);
-}
 
 
 
 
 
-
-// need to sync size with above (max of all sizes)
-// this will be the next display
-static char display_buffer[264 * 176 / 8] = { };
-
-// this is the current display
-static char current_buffer[sizeof(display_buffer)] = { };
 
 // bit reversed table
-static const char reverse[256] = {
+static const char repaper_reversed[256] = {
 //	__00____01____02____03____04____05____06____07____08____09____0a____0b____0c____0d____0e____0f
 	0x00, 0x80, 0x40, 0xc0, 0x20, 0xa0, 0x60, 0xe0, 0x10, 0x90, 0x50, 0xd0, 0x30, 0xb0, 0x70, 0xf0,
 //	__10____11____12____13____14____15____16____17____18____19____1a____1b____1c____1d____1e____1f
@@ -514,34 +473,13 @@ static const char reverse[256] = {
 	0x0f, 0x8f, 0x4f, 0xcf, 0x2f, 0xaf, 0x6f, 0xef, 0x1f, 0x9f, 0x5f, 0xdf, 0x3f, 0xbf, 0x7f, 0xff
 };
 
-
-// copy buffer
-static void special_memcpy(char *d, const char *s, size_t size, bool bit_reversed, bool inverted)
+static void repaper_reverse_bits(char *buf, size_t len)
 {
-	size_t n;
+	int i;
 
-	if (bit_reversed) {
-		if (inverted) {
-			for (n = 0; n < size; ++n) {
-				*d++ = reverse[(unsigned)(*s++)] ^ 0xff;
-			}
-		} else {
-			for (n = 0; n < size; ++n) {
-				*d++ = reverse[(unsigned)(*s++)];
-			}
-		}
-	} else if (inverted) {
-		for (n = 0; n < size; ++n) {
-			*d++ = *s++ ^ 0xff;
-		}
-	} else {
-		memcpy(d, s, size);
-	}
+	for (i = 0; i < len; i++)
+		buf[i] = repaper_reversed[(int)buf[i]];
 }
-
-
-
-
 
 
 
@@ -590,20 +528,38 @@ static int repaper_v231g2_fb_dirty(struct drm_framebuffer *fb,
 	tinydrm_rgb565_to_mono8(mono8, epd->buf, fb->width, fb->height);
 	tinydrm_mono8_to_mono(epd->buf, mono8, fb->width, fb->height);
 
-	special_memcpy(display_buffer, epd->buf, fb->width * fb->height / 8, true, false);
+	repaper_reverse_bits(epd->buf, fb->width * fb->height / 8);
 
 	/* FIXME: make it dynamic somehow */
 	EPD_set_temperature(epd, 25);
 
-	if (epd->cleared) {
-		repaper_v231g2_image(epd, (const u8 *)current_buffer, (const u8 *)display_buffer);
+	if (epd->partial) {
+		frame_data_repeat(epd, epd->buf, epd->current_buffer, EPD_normal);
+	} else if (epd->cleared) {
+		/* Change from old image to new image */
+		frame_data_repeat(epd, epd->current_buffer, NULL, EPD_compensate);
+		frame_data_repeat(epd, epd->current_buffer, NULL, EPD_white);
+		frame_data_repeat(epd, epd->buf, NULL, EPD_inverse);
+		frame_data_repeat(epd, epd->buf, NULL, EPD_normal);
+
+		epd->partial = true;
 	} else {
-		repaper_v231g2_clear(epd);
-		repaper_v231g2_image_0(epd, (const u8 *)display_buffer);
+		/* Clear display (anything -> white) */
+		frame_fixed_repeat(epd, 0xff, EPD_compensate);
+		frame_fixed_repeat(epd, 0xff, EPD_white);
+		frame_fixed_repeat(epd, 0xaa, EPD_inverse);
+		frame_fixed_repeat(epd, 0xaa, EPD_normal);
+
+		/* Assuming a clear (white) screen output an image */
+		frame_fixed_repeat(epd, 0xaa, EPD_compensate);
+		frame_fixed_repeat(epd, 0xaa, EPD_white);
+		frame_data_repeat(epd, epd->buf, NULL, EPD_inverse);
+		frame_data_repeat(epd, epd->buf, NULL, EPD_normal);
+
 		epd->cleared = true;
 	}
 
-	memcpy(current_buffer, display_buffer, sizeof(display_buffer));
+	memcpy(epd->current_buffer, epd->buf, fb->width * fb->height / 8);
 
 	DRM_DEBUG("End Flushing [FB:%d]\n", fb->base.id);
 
@@ -791,6 +747,7 @@ static void repaper_v231g2_pipe_disable(struct drm_simple_display_pipe *pipe)
 
 	mutex_lock(&tdev->dirty_lock);
 	epd->enabled = false;
+	epd->partial = false;
 	mutex_unlock(&tdev->dirty_lock);
 
 	nothing_frame(epd);

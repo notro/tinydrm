@@ -249,6 +249,11 @@ static int repaper_probe(struct spi_device *spi)
 	if (!epd->buf)
 		return -ENOMEM;
 
+	epd->current_buffer = devm_kmalloc(dev, DIV_ROUND_UP(mode->hdisplay *
+					   mode->vdisplay, 8), GFP_KERNEL);
+	if (!epd->current_buffer)
+		return -ENOMEM;
+
 	tdev = &epd->tinydrm;
 
 	ret = devm_tinydrm_init(dev, tdev, fb_funcs, &repaper_driver);

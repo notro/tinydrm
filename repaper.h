@@ -27,6 +27,7 @@ struct repaper_epd {
 	struct spi_device *spi;
 
 	void *buf;
+	void *current_buffer;
 
 	struct gpio_desc *panel_on;
 	struct gpio_desc *border;
@@ -37,6 +38,7 @@ struct repaper_epd {
 
 	bool enabled;
 	bool cleared;
+	bool partial;
 
 	unsigned int stage_time;
 	unsigned int factored_stage_time;
