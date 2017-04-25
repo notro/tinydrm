@@ -34,7 +34,7 @@
 			#size-cells = <0>;
 
 			repaper: repaper@0{
-				compatible = "pervasive,e2271cs021";
+				compatible = "not_set";
 				reg = <0>;
 				pinctrl-names = "default";
 				pinctrl-0 = <&repaper_pins>;
@@ -51,6 +51,7 @@
 	};
 
 	__overrides__ {
-		speed =    <&repaper>, "spi-max-frequency:0";
+		model = <&repaper>, "compatible";
+		speed = <&repaper>, "spi-max-frequency:0";
 	};
 };
