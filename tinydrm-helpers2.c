@@ -72,6 +72,74 @@ int tinydrm_rgb565_buf_copy(void *dst, struct drm_framebuffer *fb,
 }
 EXPORT_SYMBOL(tinydrm_rgb565_buf_copy);
 
+/**
+ * tinydrm_xrgb8888_to_gray8 - Convert XRGB8888 to grayscale
+ * @dst: 8-bit grayscale destination buffer
+ * @fb: DRM framebuffer
+ *
+ * Drm doesn't have native monochrome or grayscale support.
+ * Such drivers can announce the commonly supported XR24 format to userspace
+ * and use this function to convert to the native format.
+ *
+ * Monochrome drivers will use the most significant bit,
+ * where 1 means foreground color and 0 background color.
+ *
+ * ITU BT.601 is used for the RGB -> luma (brightness) conversion.
+ *
+ * Returns:
+ * Zero on success, negative error code on failure.
+ */
+int tinydrm_xrgb8888_to_gray8(u8 *dst, struct drm_framebuffer *fb)
+{
+	struct drm_gem_cma_object *cma_obj = drm_fb_cma_get_gem_obj(fb, 0);
+	struct dma_buf_attachment *import_attach = cma_obj->base.import_attach;
+	unsigned int x, y, pitch = fb->pitches[0];
+	int ret = 0;
+	void *buf;
+	u32 *src;
+
+	if (WARN_ON(fb->format->format != DRM_FORMAT_XRGB8888))
+		return -EINVAL;
+	/*
+	 * The cma memory is write-combined so reads are uncached.
+	 * Speed up by fetching one line at a time.
+	 */
+	buf = kmalloc(pitch, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	if (import_attach) {
+		ret = dma_buf_begin_cpu_access(import_attach->dmabuf,
+					       DMA_FROM_DEVICE);
+		if (ret)
+			goto err_free;;
+	}
+
+	for (y = 0; y < fb->height; y++) {
+		src = cma_obj->vaddr + (y * pitch);
+		memcpy(buf, src, pitch);
+		src = buf;
+		for (x = 0; x < fb->width; x++) {
+			u8 r = (*src & 0x00ff0000) >> 16;
+			u8 g = (*src & 0x0000ff00) >> 8;
+			u8 b =  *src & 0x000000ff;
+
+			/* ITU BT.601: Y = 0.299 R + 0.587 G + 0.114 B */
+			*dst++ = (3 * r + 6 * g + b) / 10;
+			src++;
+		}
+	}
+
+	if (import_attach)
+		ret = dma_buf_end_cpu_access(import_attach->dmabuf,
+					     DMA_FROM_DEVICE);
+err_free:
+	kfree(buf);
+
+	return ret;
+}
+EXPORT_SYMBOL(tinydrm_xrgb8888_to_gray8);
+
 /*
  * RGB565 to monochrome conversion code is taken from fb_agm1264k-fl.c
  * Copyright (C) 2014 ololoshka2871

@@ -30,6 +30,7 @@ struct gpio_desc;
 
 int tinydrm_rgb565_buf_copy(void *dst, struct drm_framebuffer *fb,
 			    struct drm_clip_rect *clip, bool swap);
+int tinydrm_xrgb8888_to_gray8(u8 *dst, struct drm_framebuffer *fb);
 void tinydrm_rgb565_to_mono8(u8 *mono8, u16 *vmem16, u32 width, u32 height);
 void tinydrm_mono8_to_mono(u8 *mono, u8 *mono8, u32 width, u32 height);
 
