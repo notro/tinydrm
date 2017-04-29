@@ -599,6 +599,24 @@ static int repaper_fb_dirty(struct drm_framebuffer *fb,
 
 	memcpy(epd->current_buffer, buf, fb->width * fb->height / 8);
 
+	/*
+	 * An extra frame write is needed if pixels are set in the bottom line,
+	 * or else grey lines rises up from the pixels
+	 */
+	if (epd->pre_border_byte) {
+		bool reflush = false;
+		unsigned int x;
+
+		for (x = 0; x < (fb->width / 8); x++)
+			if (buf[x + (fb->width * (fb->height - 1) / 8)]) {
+				reflush = true;
+				break;
+			}
+
+		if (reflush)
+			repaper_frame_data_repeat(epd, buf, epd->current_buffer, REPAPER_NORMAL);
+	}
+
 	DRM_DEBUG("End Flushing [FB:%d]\n", fb->base.id);
 
 out_unlock:
