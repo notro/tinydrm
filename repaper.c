@@ -22,6 +22,7 @@
 #include <linux/module.h>
 #include <linux/of_device.h>
 #include <linux/spi/spi.h>
+#include <linux/thermal.h>
 
 #include <drm/tinydrm/tinydrm.h>
 #include <drm/tinydrm/tinydrm-helpers2.h>
@@ -57,6 +58,8 @@ struct repaper_epd {
 	struct gpio_desc *discharge;
 	struct gpio_desc *reset;
 	struct gpio_desc *busy;
+
+	struct thermal_zone_device *thermal;
 
 	unsigned int height;
 	unsigned int width;
@@ -463,9 +466,22 @@ static void repaper_frame_data_repeat(struct repaper_epd *epd, const u8 *image,
 	} while (local_clock() < end);
 }
 
-static void repaper_set_temperature(struct repaper_epd *epd, int temperature)
+static void repaper_get_temperature(struct repaper_epd *epd)
 {
+	int ret, temperature = 0;
 	unsigned int factor10x;
+
+	if (!epd->thermal)
+		return;
+
+	ret = thermal_zone_get_temp(epd->thermal, &temperature);
+	if (ret) {
+		dev_err(&epd->spi->dev, "Failed to get temperature (%d)\n",
+			ret);
+		return;
+	}
+
+	temperature /= 1000;
 
 	if (temperature <= -10)
 		factor10x = 170;
@@ -527,7 +543,10 @@ static int repaper_fb_dirty(struct drm_framebuffer *fb,
 	if (tdev->pipe.plane.fb != fb)
 		goto out_unlock;
 
-	DRM_DEBUG("Flushing [FB:%d]\n", fb->base.id);
+	repaper_get_temperature(epd);
+
+	DRM_DEBUG("Flushing [FB:%d] st=%ums\n", fb->base.id,
+		  epd->factored_stage_time);
 
 	buf = kmalloc(fb->width * fb->height, GFP_KERNEL);
 	if (!buf) {
@@ -540,9 +559,6 @@ static int repaper_fb_dirty(struct drm_framebuffer *fb,
 		goto out_unlock;
 
 	repaper_gray8_to_mono_reversed(buf, fb->width, fb->height);
-
-	/* FIXME: make it dynamic somehow */
-	repaper_set_temperature(epd, 25);
 
 	if (epd->partial) {
 		repaper_frame_data_repeat(epd, buf, epd->current_frame,
@@ -595,8 +611,7 @@ out_unlock:
 	mutex_unlock(&tdev->dirty_lock);
 
 	if (ret)
-		dev_err_once(fb->dev->dev, "Failed to update display %d\n",
-			     ret);
+		dev_err(fb->dev->dev, "Failed to update display (%d)\n", ret);
 	kfree(buf);
 
 	return ret;
@@ -895,6 +910,7 @@ static int repaper_probe(struct spi_device *spi)
 	struct device *dev = &spi->dev;
 	struct tinydrm_device *tdev;
 	enum repaper_model model;
+	const char *thermal_zone;
 	struct repaper_epd *epd;
 	size_t line_buffer_size;
 	int ret;
@@ -952,6 +968,16 @@ static int repaper_probe(struct spi_device *spi)
 		if (ret != -EPROBE_DEFER)
 			dev_err(dev, "Failed to get gpio 'busy'\n");
 		return ret;
+	}
+
+	if (!device_property_read_string(dev, "repaper-thermal-zone",
+					 &thermal_zone)) {
+		epd->thermal = thermal_zone_get_zone_by_name(thermal_zone);
+		if (IS_ERR(epd->thermal)) {
+			dev_err(dev, "Failed to get thermal zone: %s\n",
+				thermal_zone);
+			return PTR_ERR(epd->thermal);
+		}
 	}
 
 	switch (model) {
