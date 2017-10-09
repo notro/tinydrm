@@ -279,8 +279,12 @@ static int piscreen_probe(struct spi_device *spi)
 
 	device_property_read_u32(dev, "rotation", &rotation);
 
-	ret = mipi_dbi_spi_init(spi, mipi, dc, funcs, &piscreen_driver,
-				&piscreen_mode, rotation);
+	ret = mipi_dbi_spi_init(spi, mipi, dc);
+	if (ret)
+		return ret;
+
+	ret = mipi_dbi_init(dev, mipi, funcs, &piscreen_driver,
+			    &piscreen_mode, rotation);
 	if (ret)
 		return ret;
 
