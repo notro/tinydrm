@@ -29,6 +29,9 @@
 #include <linux/string.h>
 #include <video/mipi_display.h>
 
+#include <drm/drm_fb_helper.h>
+#include <drm/drm_gem_framebuffer_helper.h>
+
 #include "fbtft.h"
 
 static bool no_set_var;
@@ -661,8 +664,8 @@ out_unlock:
 }
 
 static const struct drm_framebuffer_funcs fbtft_fb_funcs = {
-	.destroy	= drm_fb_cma_destroy,
-	.create_handle	= drm_fb_cma_create_handle,
+	.destroy	= drm_gem_fb_destroy,
+	.create_handle	= drm_gem_fb_create_handle,
 	.dirty		= fbtft_fb_dirty,
 };
 
@@ -706,7 +709,7 @@ static struct drm_driver fbtft_driver = {
 	.driver_features	= DRIVER_GEM | DRIVER_MODESET | DRIVER_PRIME |
 				  DRIVER_ATOMIC,
 	TINYDRM_GEM_DRIVER_OPS,
-	.lastclose		= tinydrm_lastclose,
+	.lastclose		= drm_fb_helper_lastclose,
 	.date			= "20170202",
 	.major			= 1,
 	.minor			= 0,

@@ -11,8 +11,9 @@
 #include <linux/spi/spi.h>
 #include <asm/unaligned.h>
 
-#include <drm/drm_gem_cma_helper.h>
 #include <drm/drm_fb_cma_helper.h>
+#include <drm/drm_gem_cma_helper.h>
+#include <drm/drm_gem_framebuffer_helper.h>
 #include <drm/tinydrm/tinydrm-ili9325.h>
 #include <drm/tinydrm/tinydrm-regmap.h>
 
@@ -105,8 +106,8 @@ out_unlock:
 }
 
 static const struct drm_framebuffer_funcs tinydrm_ili9325_fb_funcs = {
-	.destroy	= drm_fb_cma_destroy,
-	.create_handle	= drm_fb_cma_create_handle,
+	.destroy	= drm_gem_fb_destroy,
+	.create_handle	= drm_gem_fb_create_handle,
 	.dirty		= tinydrm_ili9325_fb_dirty,
 };
 
@@ -346,10 +347,6 @@ EXPORT_SYMBOL(tinydrm_ili9325_spi_init);
 
 #ifdef CONFIG_DEBUG_FS
 
-static const struct drm_info_list ili9325_debugfs_list[] = {
-	{ "fb",   drm_fb_cma_debugfs_show, 0 },
-};
-
 /**
  * tinydrm_ili9325_debugfs_init - Create debugfs entries
  * @minor: DRM minor
@@ -363,15 +360,8 @@ int tinydrm_ili9325_debugfs_init(struct drm_minor *minor)
 {
 	struct tinydrm_device *tdev = minor->dev->dev_private;
 	struct tinydrm_ili9325 *ili9325 = tinydrm_to_ili9325(tdev);
-	int ret;
 
-	ret = tinydrm_regmap_debugfs_init(ili9325->reg, minor->debugfs_root);
-	if (ret)
-		return ret;
-
-	return drm_debugfs_create_files(ili9325_debugfs_list,
-					ARRAY_SIZE(ili9325_debugfs_list),
-					minor->debugfs_root, minor);
+	return tinydrm_regmap_debugfs_init(ili9325->reg, minor->debugfs_root);
 }
 EXPORT_SYMBOL(tinydrm_ili9325_debugfs_init);
 

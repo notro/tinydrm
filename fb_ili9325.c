@@ -25,6 +25,7 @@
 #include <linux/regmap.h>
 #include <linux/spi/spi.h>
 
+#include <drm/drm_fb_helper.h>
 #include <drm/tinydrm/tinydrm-ili9325.h>
 #include <drm/tinydrm/tinydrm-regmap.h>
 
@@ -456,7 +457,7 @@ static struct drm_driver fb_ili9325_driver = {
 	.driver_features	= DRIVER_GEM | DRIVER_MODESET | DRIVER_PRIME |
 				  DRIVER_ATOMIC,
 	TINYDRM_GEM_DRIVER_OPS,
-	.lastclose		= tinydrm_lastclose,
+	.lastclose		= drm_fb_helper_lastclose,
 	.debugfs_init		= tinydrm_ili9325_debugfs_init,
 	.name			= "fb_ili9325",
 	.desc			= "fb_ili9325",

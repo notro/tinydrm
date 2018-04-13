@@ -15,6 +15,7 @@
 #include <linux/property.h>
 #include <linux/spi/spi.h>
 
+#include <drm/drm_fb_helper.h>
 #include <drm/tinydrm/mipi-dbi.h>
 #include <drm/tinydrm/tinydrm-helpers.h>
 
@@ -208,7 +209,7 @@ static struct drm_driver keidei_driver = {
 	.driver_features	= DRIVER_GEM | DRIVER_MODESET | DRIVER_PRIME |
 				  DRIVER_ATOMIC,
 	TINYDRM_GEM_DRIVER_OPS,
-	.lastclose		= tinydrm_lastclose,
+	.lastclose		= drm_fb_helper_lastclose,
 	.debugfs_init		= mipi_dbi_debugfs_init,
 	.name			= "keidei",
 	.desc			= "keidei",
