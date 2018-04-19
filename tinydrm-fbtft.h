@@ -12,6 +12,9 @@
 
 #include <drm/tinydrm/tinydrm.h>
 
+struct backlight_device;
+struct regmap;
+
 int tinydrm_fbtft_init(struct device *dev, struct regmap *reg);
 int tinydrm_fbtft_get_gamma(struct device *dev, u16 *curves,
 			    const char *gamma_str, size_t num_curves,
