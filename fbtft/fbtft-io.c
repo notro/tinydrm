@@ -156,13 +156,11 @@ void tinydrm_i80_write_buf(struct gpio_descs *db, struct gpio_desc *wr,
 
 	if (width == 8) {
 		u8 *buf8 = buf;
-		u32 prev_val = ~*buf8;
 
 		for (i = 0; i < len; i++)
 			tinydrm_i80_write_value(db, wr, *buf8++, NULL);
 	} else if (width == 16) {
 		u16 *buf16 = buf;
-		u32 prev_val = ~*buf16;
 
 		for (i = 0; i < (len / 2); i++)
 			tinydrm_i80_write_value(db, wr, *buf16++, NULL);
