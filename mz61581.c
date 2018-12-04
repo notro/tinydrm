@@ -15,7 +15,7 @@
 #include <linux/property.h>
 #include <linux/spi/spi.h>
 
-#include <drm/drm_fb_helper.h>
+#include <drm/drm_gem_framebuffer_helper.h>
 #include <drm/tinydrm/mipi-dbi.h>
 #include <drm/tinydrm/tinydrm-helpers.h>
 
@@ -23,7 +23,8 @@
 
 /* Renesas R61581 controller with a CPLD SPI conversion in front */
 static void mz61581_enable(struct drm_simple_display_pipe *pipe,
-			   struct drm_crtc_state *crtc_state)
+			   struct drm_crtc_state *crtc_state,
+			   struct drm_plane_state *plane_state)
 {
 	struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
 	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
@@ -83,7 +84,7 @@ static void mz61581_enable(struct drm_simple_display_pipe *pipe,
 	mipi->enabled = true;
 	fb->funcs->dirty(fb, NULL, 0, 0, NULL, 0);
 
-	tinydrm_enable_backlight(mipi->backlight);
+	backlight_enable(mipi->backlight);
 }
 
 static void mz61581_disable(struct drm_simple_display_pipe *pipe)
@@ -94,14 +95,14 @@ static void mz61581_disable(struct drm_simple_display_pipe *pipe)
 	DRM_DEBUG_KMS("\n");
 
 	mipi->enabled = false;
-	tinydrm_disable_backlight(mipi->backlight);
+	backlight_disable(mipi->backlight);
 }
 
 static const struct drm_simple_display_pipe_funcs mz61581_funcs = {
 	.enable = mz61581_enable,
 	.disable = mz61581_disable,
 	.update = tinydrm_display_pipe_update,
-	.prepare_fb = tinydrm_display_pipe_prepare_fb,
+	.prepare_fb = drm_gem_fb_simple_display_pipe_prepare_fb,
 };
 
 static const struct drm_display_mode mz61581_mode = {
@@ -112,7 +113,6 @@ static struct drm_driver mz61581_driver = {
 	.driver_features	= DRIVER_GEM | DRIVER_MODESET | DRIVER_PRIME |
 				  DRIVER_ATOMIC,
 	TINYDRM_GEM_DRIVER_OPS,
-	.lastclose		= drm_fb_helper_lastclose,
 	.debugfs_init		= mipi_dbi_debugfs_init,
 	.name			= "mz61581",
 	.desc			= "Tontec mz61581",
@@ -158,7 +158,7 @@ static int mz61581_probe(struct spi_device *spi)
 		return PTR_ERR(dc);
 	}
 
-	mipi->backlight = tinydrm_of_find_backlight(dev);
+	mipi->backlight = devm_of_find_backlight(dev);
 	if (IS_ERR(mipi->backlight))
 		return PTR_ERR(mipi->backlight);
 

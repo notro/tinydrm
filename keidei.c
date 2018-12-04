@@ -15,7 +15,7 @@
 #include <linux/property.h>
 #include <linux/spi/spi.h>
 
-#include <drm/drm_fb_helper.h>
+#include <drm/drm_gem_framebuffer_helper.h>
 #include <drm/tinydrm/mipi-dbi.h>
 #include <drm/tinydrm/tinydrm-helpers.h>
 
@@ -171,7 +171,8 @@ static int keidei20_prepare(struct mipi_dbi *mipi)
 }
 
 static void keidei_enable(struct drm_simple_display_pipe *pipe,
-			  struct drm_crtc_state *crtc_state)
+			  struct drm_crtc_state *crtc_state,
+			  struct drm_plane_state *plane_state)
 {
 	struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
 	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
@@ -198,7 +199,7 @@ static const struct drm_simple_display_pipe_funcs keidei_funcs = {
 	.enable = keidei_enable,
 	.disable = keidei_disable,
 	.update = tinydrm_display_pipe_update,
-	.prepare_fb = tinydrm_display_pipe_prepare_fb,
+	.prepare_fb = drm_gem_fb_simple_display_pipe_prepare_fb,
 };
 
 static const struct drm_display_mode keidei_mode = {
@@ -209,7 +210,6 @@ static struct drm_driver keidei_driver = {
 	.driver_features	= DRIVER_GEM | DRIVER_MODESET | DRIVER_PRIME |
 				  DRIVER_ATOMIC,
 	TINYDRM_GEM_DRIVER_OPS,
-	.lastclose		= drm_fb_helper_lastclose,
 	.debugfs_init		= mipi_dbi_debugfs_init,
 	.name			= "keidei",
 	.desc			= "keidei",

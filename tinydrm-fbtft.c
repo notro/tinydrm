@@ -284,7 +284,7 @@ struct backlight_device *tinydrm_fbtft_get_backlight(struct device *dev)
 	struct backlight_device *bl;
 	struct gpio_desc *led;
 
-	bl = tinydrm_of_find_backlight(dev);
+	bl = devm_of_find_backlight(dev);
 	if (bl)
 		return bl;
 

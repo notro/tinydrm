@@ -19,7 +19,7 @@
 #include <linux/spi/spi.h>
 #include <video/mipi_display.h>
 
-#include <drm/drm_fb_helper.h>
+#include <drm/drm_gem_framebuffer_helper.h>
 #include <drm/drm_modeset_helper.h>
 #include <drm/tinydrm/mipi-dbi.h>
 #include <drm/tinydrm/tinydrm-helpers.h>
@@ -55,44 +55,6 @@ struct fb_mipi_dbi {
 
 #define ILI9481_HFLIP	BIT(0)
 #define ILI9481_VFLIP	BIT(1)
-
-/* Available in 4.17 */
-static void mipi_dbi_enable_flush(struct mipi_dbi *mipi)
-{
-	struct drm_framebuffer *fb = mipi->tinydrm.pipe.plane.fb;
-
-	mipi->enabled = true;
-	if (fb)
-		fb->funcs->dirty(fb, NULL, 0, 0, NULL, 0);
-
-	tinydrm_enable_backlight(mipi->backlight);
-}
-
-/* Available in 4.17 */
-static int mipi_dbi_poweron_reset(struct mipi_dbi *mipi)
-{
-	struct device *dev = mipi->tinydrm.drm->dev;
-	int ret;
-
-	mipi_dbi_hw_reset(mipi);
-	ret = mipi_dbi_command(mipi, MIPI_DCS_SOFT_RESET);
-	if (ret) {
-		DRM_DEV_ERROR(dev, "Failed to send reset command (%d)\n", ret);
-		return ret;
-	}
-
-	/*
-	 * If we did a hw reset, we know the controller is in Sleep mode and
-	 * per MIPI DSC spec should wait 5ms after soft reset. If we didn't,
-	 * we assume worst case and wait 120ms.
-	 */
-	if (mipi->reset)
-		usleep_range(5000, 20000);
-	else
-		msleep(120);
-
-	return 0;
-}
 
 static void fb_mipi_dbi_rotate(struct mipi_dbi *dbi, u8 rotate0, u8 rotate90, u8 rotate180, u8 rotate270)
 {
@@ -751,7 +713,8 @@ static int fb_mipi_dbi_init_display_dt(struct mipi_dbi *dbi)
 }
 
 static void fb_mipi_dbi_enable(struct drm_simple_display_pipe *pipe,
-			       struct drm_crtc_state *crtc_state)
+			       struct drm_crtc_state *crtc_state,
+			       struct drm_plane_state *plane_state)
 {
 	struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
 	struct mipi_dbi *dbi = mipi_dbi_from_tinydrm(tdev);
@@ -850,14 +813,14 @@ static void fb_mipi_dbi_enable(struct drm_simple_display_pipe *pipe,
 	};
 
 out_flush:
-	mipi_dbi_enable_flush(dbi);
+	mipi_dbi_enable_flush(dbi, crtc_state, plane_state);
 }
 
 static const struct drm_simple_display_pipe_funcs fb_mipi_dbi_funcs = {
 	.enable = fb_mipi_dbi_enable,
 	.disable = mipi_dbi_pipe_disable,
 	.update = tinydrm_display_pipe_update,
-	.prepare_fb = tinydrm_display_pipe_prepare_fb,
+	.prepare_fb = drm_gem_fb_simple_display_pipe_prepare_fb,
 };
 
 static void
@@ -877,7 +840,6 @@ static struct drm_driver fb_mipi_dbi_driver = {
 				  DRIVER_ATOMIC,
 	.fops			= &fb_mipi_dbi_fops,
 	TINYDRM_GEM_DRIVER_OPS,
-	.lastclose		= drm_fb_helper_lastclose,
 	.debugfs_init		= mipi_dbi_debugfs_init,
 	.name			= "fb_mipi_dbi",
 	.desc			= "MIPI DBI fbtft compatible driver",

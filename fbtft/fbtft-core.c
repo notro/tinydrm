@@ -29,7 +29,6 @@
 #include <linux/string.h>
 #include <video/mipi_display.h>
 
-#include <drm/drm_fb_helper.h>
 #include <drm/drm_gem_framebuffer_helper.h>
 
 #include "fbtft.h"
@@ -670,7 +669,8 @@ static const struct drm_framebuffer_funcs fbtft_fb_funcs = {
 };
 
 static void fbtft_pipe_enable(struct drm_simple_display_pipe *pipe,
-			      struct drm_crtc_state *crtc_state)
+			      struct drm_crtc_state *crtc_state,
+			      struct drm_plane_state *plane_state)
 {
 	struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
 	struct fbtft_par *par = fbtft_par_from_tinydrm(tdev);
@@ -681,7 +681,7 @@ static void fbtft_pipe_enable(struct drm_simple_display_pipe *pipe,
 	if (fb)
 		fb->funcs->dirty(fb, NULL, 0, 0, NULL, 0);
 
-	tinydrm_enable_backlight(par->info->bl_dev);
+	backlight_enable(par->info->bl_dev);
 }
 
 static void fbtft_pipe_disable(struct drm_simple_display_pipe *pipe)
@@ -690,7 +690,7 @@ static void fbtft_pipe_disable(struct drm_simple_display_pipe *pipe)
 	struct fbtft_par *par = fbtft_par_from_tinydrm(tdev);
 
 	DRM_DEBUG_KMS("\n");
-	tinydrm_disable_backlight(par->info->bl_dev);
+	backlight_disable(par->info->bl_dev);
 }
 
 static const uint32_t fbtft_formats[] = {
@@ -702,14 +702,13 @@ static const struct drm_simple_display_pipe_funcs fbtft_pipe_funcs = {
 	.enable = fbtft_pipe_enable,
 	.disable = fbtft_pipe_disable,
 	.update = tinydrm_display_pipe_update,
-	.prepare_fb = tinydrm_display_pipe_prepare_fb,
+	.prepare_fb = drm_gem_fb_simple_display_pipe_prepare_fb,
 };
 
 static struct drm_driver fbtft_driver = {
 	.driver_features	= DRIVER_GEM | DRIVER_MODESET | DRIVER_PRIME |
 				  DRIVER_ATOMIC,
 	TINYDRM_GEM_DRIVER_OPS,
-	.lastclose		= drm_fb_helper_lastclose,
 	.date			= "20170202",
 	.major			= 1,
 	.minor			= 0,
