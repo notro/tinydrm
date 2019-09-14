@@ -10,9 +10,8 @@
 #ifndef __LINUX_TINYDRM_FBTFT_H
 #define __LINUX_TINYDRM_FBTFT_H
 
-#include <drm/tinydrm/tinydrm.h>
-
 struct backlight_device;
+struct device;
 struct regmap;
 
 int tinydrm_fbtft_init(struct device *dev, struct regmap *reg);

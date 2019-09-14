@@ -1,7 +1,8 @@
 ccflags-y := -I$(src)/include
 
-tinydrm2-y	+= tinydrm-regmap.o tinydrm-fbtft.o tinydrm-ili9325.o
-obj-m		+= tinydrm2.o
+obj-m	+= tinydrm-regmap.o
+obj-m	+= tinydrm-fbtft.o
+obj-m	+= tinydrm-ili9325.o
 
 obj-m	+= fb_mipi_dbi.o
 obj-m	+= fb_ili9325.o

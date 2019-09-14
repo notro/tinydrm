@@ -16,9 +16,12 @@
 #include <linux/property.h>
 #include <linux/spi/spi.h>
 
+#include <drm/drm_atomic_helper.h>
 #include <drm/drm_drv.h>
+#include <drm/drm_fb_helper.h>
 #include <drm/drm_gem_cma_helper.h>
 #include <drm/drm_gem_framebuffer_helper.h>
+#include <drm/drm_modeset_helper.h>
 #include <drm/tinydrm/mipi-dbi.h>
 #include <drm/tinydrm/tinydrm-helpers.h>
 
@@ -29,7 +32,7 @@
  * display controller. This means that 8-bit values has to be transferred
  * as 16-bit.
  */
-static int piscreen_command(struct mipi_dbi *mipi, u8 cmd, u8 *par, size_t num)
+static int piscreen_command(struct mipi_dbi *mipi, u8 *cmd, u8 *par, size_t num)
 {
 	struct spi_device *spi = mipi->spi;
 	void *data = par;
@@ -42,17 +45,17 @@ static int piscreen_command(struct mipi_dbi *mipi, u8 cmd, u8 *par, size_t num)
 		return -ENOMEM;
 
 	if (!num)
-		DRM_DEBUG_DRIVER("cmd=%02x\n", cmd);
+		DRM_DEBUG_DRIVER("cmd=%02x\n", *cmd);
 	else if (num <= 32)
-		DRM_DEBUG_DRIVER("cmd=%02x, par=%*ph\n", cmd, (int)num, par);
+		DRM_DEBUG_DRIVER("cmd=%02x, par=%*ph\n", *cmd, (int)num, par);
 	else
-		DRM_DEBUG_DRIVER("cmd=%02x, len=%zu\n", cmd, num);
+		DRM_DEBUG_DRIVER("cmd=%02x, len=%zu\n", *cmd, num);
 
 	/*
 	 * The Raspberry Pi supports only 8-bit on the DMA capable SPI
 	 * controller and is little endian, so byte swapping is needed.
 	 */
-	buf[0] = cpu_to_be16(cmd);
+	buf[0] = cpu_to_be16(*cmd);
 	gpiod_set_value_cansleep(mipi->dc, 0);
 	ret = tinydrm_spi_transfer(spi, 10000000, NULL, 8, buf, 2);
 	if (ret || !num)
@@ -83,9 +86,7 @@ static void piscreen_enable(struct drm_simple_display_pipe *pipe,
 			    struct drm_crtc_state *crtc_state,
 			    struct drm_plane_state *plane_state)
 {
-	struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
-	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
-	struct drm_framebuffer *fb = pipe->plane.fb;
+	struct mipi_dbi *mipi = drm_to_mipi_dbi(pipe->crtc.dev);
 	u8 addr_mode;
 
 	DRM_DEBUG_KMS("\n");
@@ -133,26 +134,12 @@ static void piscreen_enable(struct drm_simple_display_pipe *pipe,
 
 	mipi_dbi_command(mipi, MIPI_DCS_SET_DISPLAY_ON);
 
-	mipi->enabled = true;
-	fb->funcs->dirty(fb, NULL, 0, 0, NULL, 0);
-
-	backlight_enable(mipi->backlight);
-}
-
-static void piscreen_disable(struct drm_simple_display_pipe *pipe)
-{
-	struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
-	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
-
-	DRM_DEBUG_KMS("\n");
-
-	mipi->enabled = false;
-	backlight_disable(mipi->backlight);
+	mipi_dbi_enable_flush(mipi, crtc_state, plane_state);
 }
 
 static const struct drm_simple_display_pipe_funcs piscreen_funcs = {
 	.enable = piscreen_enable,
-	.disable = piscreen_disable,
+	.disable = mipi_dbi_pipe_disable,
 	.update = mipi_dbi_pipe_update,
 	.prepare_fb = drm_gem_fb_simple_display_pipe_prepare_fb,
 };
@@ -162,9 +149,7 @@ static void piscreen2_enable(struct drm_simple_display_pipe *pipe,
 			     struct drm_crtc_state *crtc_state,
 			     struct drm_plane_state *plane_state)
 {
-	struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
-	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
-	struct drm_framebuffer *fb = pipe->plane.fb;
+	struct mipi_dbi *mipi = drm_to_mipi_dbi(pipe->crtc.dev);
 	u8 addr_mode;
 
 	DRM_DEBUG_KMS("\n");
@@ -208,26 +193,24 @@ static void piscreen2_enable(struct drm_simple_display_pipe *pipe,
 
 	mipi_dbi_command(mipi, MIPI_DCS_SET_DISPLAY_ON);
 
-	mipi->enabled = true;
-	fb->funcs->dirty(fb, NULL, 0, 0, NULL, 0);
-
-	backlight_enable(mipi->backlight);
+	mipi_dbi_enable_flush(mipi, crtc_state, plane_state);
 }
 
 static const struct drm_simple_display_pipe_funcs piscreen2_funcs = {
 	.enable = piscreen2_enable,
-	.disable = piscreen_disable,
+	.disable = mipi_dbi_pipe_disable,
 	.update = mipi_dbi_pipe_update,
 	.prepare_fb = drm_gem_fb_simple_display_pipe_prepare_fb,
 };
 
 static const struct drm_display_mode piscreen_mode = {
-	TINYDRM_MODE(480, 320, 73, 49),
+	DRM_SIMPLE_MODE(480, 320, 73, 49),
 };
 
 static struct drm_driver piscreen_driver = {
 	.driver_features	= DRIVER_GEM | DRIVER_MODESET | DRIVER_PRIME |
 				  DRIVER_ATOMIC,
+	.release		= mipi_dbi_release,
 	DRM_GEM_CMA_VMAP_DRIVER_OPS,
 	.debugfs_init		= mipi_dbi_debugfs_init,
 	.name			= "piscreen",
@@ -249,7 +232,7 @@ static int piscreen_probe(struct spi_device *spi)
 	const struct drm_simple_display_pipe_funcs *funcs;
 	const struct of_device_id *match;
 	struct device *dev = &spi->dev;
-	struct tinydrm_device *tdev;
+	struct drm_device *drm;
 	struct mipi_dbi *mipi;
 	struct gpio_desc *dc;
 	u32 rotation = 0;
@@ -261,9 +244,18 @@ static int piscreen_probe(struct spi_device *spi)
 
 	funcs = match->data;
 
-	mipi = devm_kzalloc(dev, sizeof(*mipi), GFP_KERNEL);
+	mipi = kzalloc(sizeof(*mipi), GFP_KERNEL);
 	if (!mipi)
 		return -ENOMEM;
+
+	drm = &mipi->drm;
+	ret = devm_drm_dev_init(dev, drm, &piscreen_driver);
+	if (ret) {
+		kfree(mipi);
+		return ret;
+	}
+
+	drm_mode_config_init(drm);
 
 	mipi->reset = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_HIGH);
 	if (IS_ERR(mipi->reset)) {
@@ -287,35 +279,39 @@ static int piscreen_probe(struct spi_device *spi)
 	if (ret)
 		return ret;
 
-	ret = mipi_dbi_init(dev, mipi, funcs, &piscreen_driver,
-			    &piscreen_mode, rotation);
+	ret = mipi_dbi_init(mipi, funcs, &piscreen_mode, rotation);
 	if (ret)
 		return ret;
 
 	mipi->command = piscreen_command;
 	mipi->read_commands = NULL;
 
-	tdev = &mipi->tinydrm;
+	drm_mode_config_reset(drm);
 
-	ret = devm_tinydrm_register(tdev);
+	ret = drm_dev_register(drm, 0);
 	if (ret)
 		return ret;
 
-	spi_set_drvdata(spi, mipi);
+	spi_set_drvdata(spi, drm);
 
-	DRM_DEBUG_DRIVER("Initialized %s:%s @%uMHz on minor %d\n",
-			 tdev->drm->driver->name, dev_name(dev),
-			 spi->max_speed_hz / 1000000,
-			 tdev->drm->primary->index);
+	drm_fbdev_generic_setup(drm, 16);
+
+	return 0;
+}
+
+static int piscreen_remove(struct spi_device *spi)
+{
+	struct drm_device *drm = spi_get_drvdata(spi);
+
+	drm_dev_unplug(drm);
+	drm_atomic_helper_shutdown(drm);
 
 	return 0;
 }
 
 static void piscreen_shutdown(struct spi_device *spi)
 {
-	struct mipi_dbi *mipi = spi_get_drvdata(spi);
-
-	tinydrm_shutdown(&mipi->tinydrm);
+	drm_atomic_helper_shutdown(spi_get_drvdata(spi));
 }
 
 static struct spi_driver piscreen_spi_driver = {
@@ -325,6 +321,7 @@ static struct spi_driver piscreen_spi_driver = {
 		.of_match_table = piscreen_of_match,
 	},
 	.probe = piscreen_probe,
+	.remove = piscreen_remove,
 	.shutdown = piscreen_shutdown,
 };
 module_spi_driver(piscreen_spi_driver);

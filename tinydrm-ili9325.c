@@ -8,14 +8,16 @@
  */
 
 #include <linux/dma-buf.h>
+#include <linux/module.h>
 #include <linux/regmap.h>
 #include <linux/spi/spi.h>
 #include <asm/unaligned.h>
 
 #include <drm/drm_device.h>
 #include <drm/drm_fb_cma_helper.h>
-#include <drm/drm_framebuffer.h>
+#include <drm/drm_format_helper.h>
 #include <drm/drm_fourcc.h>
+#include <drm/drm_framebuffer.h>
 #include <drm/drm_gem_cma_helper.h>
 #include <drm/drm_gem_framebuffer_helper.h>
 #include <drm/tinydrm/tinydrm-ili9325.h>
@@ -41,12 +43,12 @@ static int tinydrm_ili9325_rgb565_buf_copy(void *dst, struct drm_framebuffer *fb
 	switch (fb->format->format) {
 	case DRM_FORMAT_RGB565:
 		if (swap)
-			tinydrm_swab16(dst, src, fb, clip);
+			drm_fb_swab16(dst, src, fb, clip);
 		else
-			tinydrm_memcpy(dst, src, fb, clip);
+			drm_fb_memcpy(dst, src, fb, clip);
 		break;
 	case DRM_FORMAT_XRGB8888:
-		tinydrm_xrgb8888_to_rgb565(dst, src, fb, clip, swap);
+		drm_fb_xrgb8888_to_rgb565(dst, src, fb, clip, swap);
 		break;
 	default:
 		dev_err_once(fb->dev->dev, "Format is not supported: %s\n",
@@ -64,8 +66,7 @@ static int tinydrm_ili9325_rgb565_buf_copy(void *dst, struct drm_framebuffer *fb
 void tinydrm_ili9325_fb_dirty(struct drm_framebuffer *fb, struct drm_rect *rect)
 {
 	struct drm_gem_cma_object *cma_obj = drm_fb_cma_get_gem_obj(fb, 0);
-	struct tinydrm_device *tdev = fb->dev->dev_private;
-	struct tinydrm_ili9325 *ili9325 = tinydrm_to_ili9325(tdev);
+	struct tinydrm_ili9325 *ili9325 = drm_to_ili9325(fb->dev);
 	unsigned int height = rect->y2 - rect->y1;
 	unsigned int width = rect->x2 - rect->x1;
 	struct regmap *reg = ili9325->reg;
@@ -130,74 +131,6 @@ err_msg:
 			     ret);
 }
 EXPORT_SYMBOL(tinydrm_ili9325_fb_dirty);
-
-static const uint32_t tinydrm_ili9325_formats[] = {
-	DRM_FORMAT_RGB565,
-	DRM_FORMAT_XRGB8888,
-};
-
-/**
- * tinydrm_ili9325_init - Initialize &tinydrm_simple for use with ili9325
- * @dev: Parent device
- * @panel: &tinydrm_panel structure to initialize
- * @funcs: Callbacks for the panel (optional)
- * @reg: Register map
- * @driver: DRM driver
- * @mode: Display mode
- * @rotation: Initial rotation in degrees Counter Clock Wise
- *
- * This function initializes a &tinydrm_panel structure and it's underlying
- * @tinydrm_device. It also sets up the display pipeline.
- *
- * Supported formats: Native RGB565 and emulated XRGB8888.
- *
- * Objects created by this function will be automatically freed on driver
- * detach (devres).
- *
- * Returns:
- * Zero on success, negative error code on failure.
- */
-int tinydrm_ili9325_init(struct device *dev, struct tinydrm_ili9325 *ili9325,
-			 const struct drm_simple_display_pipe_funcs *funcs,
-			 struct regmap *reg, struct drm_driver *driver,
-			 const struct drm_display_mode *mode,
-			 unsigned int rotation)
-{
-	size_t bufsize = mode->vdisplay * mode->hdisplay * sizeof(u16);
-	struct tinydrm_device *tdev = &ili9325->tinydrm;
-	int ret;
-
-	ili9325->swap_bytes = tinydrm_regmap_raw_swap_bytes(reg);
-	ili9325->rotation = rotation;
-	ili9325->reg = reg;
-
-	ili9325->tx_buf = devm_kmalloc(dev, bufsize, GFP_KERNEL);
-	if (!ili9325->tx_buf)
-		return -ENOMEM;
-
-	ret = devm_tinydrm_init(dev, tdev, driver);
-	if (ret)
-		return ret;
-
-	/* TODO: Maybe add DRM_MODE_CONNECTOR_SPI */
-	ret = tinydrm_display_pipe_init(tdev, funcs,
-					DRM_MODE_CONNECTOR_VIRTUAL,
-					tinydrm_ili9325_formats,
-					ARRAY_SIZE(tinydrm_ili9325_formats), mode,
-					rotation);
-	if (ret)
-		return ret;
-
-	tdev->drm->mode_config.preferred_depth = 16;
-
-	drm_mode_config_reset(tdev->drm);
-
-	DRM_DEBUG_KMS("preferred_depth=%u, rotation = %u\n",
-		      tdev->drm->mode_config.preferred_depth, rotation);
-
-	return 0;
-}
-EXPORT_SYMBOL(tinydrm_ili9325_init);
 
 #if IS_ENABLED(CONFIG_SPI)
 
@@ -378,11 +311,12 @@ EXPORT_SYMBOL(tinydrm_ili9325_spi_init);
  */
 int tinydrm_ili9325_debugfs_init(struct drm_minor *minor)
 {
-	struct tinydrm_device *tdev = minor->dev->dev_private;
-	struct tinydrm_ili9325 *ili9325 = tinydrm_to_ili9325(tdev);
+	struct tinydrm_ili9325 *ili9325 = drm_to_ili9325(minor->dev);
 
 	return tinydrm_regmap_debugfs_init(ili9325->reg, minor->debugfs_root);
 }
 EXPORT_SYMBOL(tinydrm_ili9325_debugfs_init);
 
 #endif
+
+MODULE_LICENSE("GPL");

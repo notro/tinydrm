@@ -7,16 +7,17 @@
  * (at your option) any later version.
  */
 
+#include <linux/backlight.h>
 #include <linux/delay.h>
 #include <linux/device.h>
 #include <linux/gpio/consumer.h>
+#include <linux/module.h>
 #include <linux/property.h>
 #include <linux/regmap.h>
 #include <linux/slab.h>
 #include <linux/string.h>
 
 #include <drm/drm_print.h>
-#include <drm/tinydrm/tinydrm.h>
 
 #define FBTFT_INIT_CMD		BIT(24)
 #define FBTFT_INIT_DELAY	BIT(25)
@@ -304,3 +305,5 @@ struct backlight_device *tinydrm_fbtft_get_backlight(struct device *dev)
 EXPORT_SYMBOL(tinydrm_fbtft_get_backlight);
 
 #endif
+
+MODULE_LICENSE("GPL");

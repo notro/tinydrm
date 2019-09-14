@@ -19,12 +19,13 @@
 #include <linux/spi/spi.h>
 #include <video/mipi_display.h>
 
+#include <drm/drm_atomic_helper.h>
 #include <drm/drm_drv.h>
+#include <drm/drm_fb_helper.h>
 #include <drm/drm_gem_cma_helper.h>
 #include <drm/drm_gem_framebuffer_helper.h>
 #include <drm/drm_modeset_helper.h>
 #include <drm/tinydrm/mipi-dbi.h>
-#include <drm/tinydrm/tinydrm-helpers.h>
 
 #include "tinydrm-fbtft.h"
 
@@ -60,7 +61,7 @@ struct fb_mipi_dbi {
 
 static void fb_mipi_dbi_rotate(struct mipi_dbi *dbi, u8 rotate0, u8 rotate90, u8 rotate180, u8 rotate270)
 {
-	bool bgr = device_property_present(dbi->tinydrm.drm->dev, "bgr");
+	bool bgr = device_property_present(dbi->drm.dev, "bgr");
 	u8 addr_mode;
 
 	switch (dbi->rotation) {
@@ -671,7 +672,7 @@ static void fb_tinylcd_enable(struct mipi_dbi *dbi)
 
 static int fb_mipi_dbi_init_display_dt(struct mipi_dbi *dbi)
 {
-	struct device *dev = dbi->tinydrm.drm->dev;
+	struct device *dev = dbi->drm.dev;
 	struct property *prop;
 	const __be32 *p;
 	unsigned int i;
@@ -718,8 +719,7 @@ static void fb_mipi_dbi_enable(struct drm_simple_display_pipe *pipe,
 			       struct drm_crtc_state *crtc_state,
 			       struct drm_plane_state *plane_state)
 {
-	struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
-	struct mipi_dbi *dbi = mipi_dbi_from_tinydrm(tdev);
+	struct mipi_dbi *dbi = drm_to_mipi_dbi(pipe->crtc.dev);
 	struct fb_mipi_dbi *fbdbi = container_of(dbi, struct fb_mipi_dbi, dbi);
 	int ret;
 
@@ -829,7 +829,7 @@ static void
 fb_mipi_dbi_set_mode(struct drm_display_mode *mode, unsigned int width, unsigned int height)
 {
 	struct drm_display_mode set_mode = {
-		TINYDRM_MODE(width, height, 0, 0),
+		DRM_SIMPLE_MODE(width, height, 0, 0),
 	};
 
 	*mode = set_mode;
@@ -841,6 +841,7 @@ static struct drm_driver fb_mipi_dbi_driver = {
 	.driver_features	= DRIVER_GEM | DRIVER_MODESET | DRIVER_PRIME |
 				  DRIVER_ATOMIC,
 	.fops			= &fb_mipi_dbi_fops,
+	.release		= mipi_dbi_release,
 	DRM_GEM_CMA_VMAP_DRIVER_OPS,
 	.debugfs_init		= mipi_dbi_debugfs_init,
 	.name			= "fb_mipi_dbi",
@@ -895,14 +896,25 @@ static int fb_mipi_dbi_probe(struct spi_device *spi)
 	struct device *dev = &spi->dev;
 	struct drm_display_mode mode;
 	struct fb_mipi_dbi *fbdbi;
+	struct drm_device *drm;
 	u32 val, rotation = 0;
 	struct mipi_dbi *dbi;
 	struct gpio_desc *dc;
 	int ret;
 
-	fbdbi = devm_kzalloc(dev, sizeof(*fbdbi), GFP_KERNEL);
+	fbdbi = kzalloc(sizeof(*fbdbi), GFP_KERNEL);
 	if (!fbdbi)
 		return -ENOMEM;
+
+	dbi = &fbdbi->dbi;
+	drm = &dbi->drm;
+	ret = devm_drm_dev_init(dev, drm, &fb_mipi_dbi_driver);
+	if (ret) {
+		kfree(fbdbi);
+		return ret;
+	}
+
+	drm_mode_config_init(drm);
 
 	match = of_match_device(fb_mipi_dbi_of_match, dev);
 	if (match) {
@@ -965,8 +977,6 @@ static int fb_mipi_dbi_probe(struct spi_device *spi)
 	fb_mipi_dbi_prop_not_supported(dev, "gamma");
 	fb_mipi_dbi_prop_not_supported(dev, "txbuflen");
 
-	dbi = &fbdbi->dbi;
-
 	dbi->reset = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_HIGH);
 	if (IS_ERR(dbi->reset)) {
 		if (PTR_ERR(dbi->reset) != -EPROBE_DEFER)
@@ -991,21 +1001,36 @@ static int fb_mipi_dbi_probe(struct spi_device *spi)
 	if (ret)
 		return ret;
 
-	ret = mipi_dbi_init(&spi->dev, dbi, &fb_mipi_dbi_funcs,
-			    &fb_mipi_dbi_driver, &mode, rotation);
+	ret = mipi_dbi_init(dbi, &fb_mipi_dbi_funcs, &mode, rotation);
 	if (ret)
 		return ret;
 
-	spi_set_drvdata(spi, dbi);
+	drm_mode_config_reset(drm);
 
-	return devm_tinydrm_register(&dbi->tinydrm);
+	ret = drm_dev_register(drm, 0);
+	if (ret)
+		return ret;
+
+	spi_set_drvdata(spi, drm);
+
+	drm_fbdev_generic_setup(drm, 16);
+
+	return 0;
+}
+
+static int fb_mipi_dbi_remove(struct spi_device *spi)
+{
+	struct drm_device *drm = spi_get_drvdata(spi);
+
+	drm_dev_unplug(drm);
+	drm_atomic_helper_shutdown(drm);
+
+	return 0;
 }
 
 static void fb_mipi_dbi_shutdown(struct spi_device *spi)
 {
-	struct mipi_dbi *dbi = spi_get_drvdata(spi);
-
-	tinydrm_shutdown(&dbi->tinydrm);
+	drm_atomic_helper_shutdown(spi_get_drvdata(spi));
 }
 
 static struct spi_driver fb_mipi_dbi_spi_driver = {
@@ -1016,6 +1041,7 @@ static struct spi_driver fb_mipi_dbi_spi_driver = {
 	},
 	.id_table = fb_mipi_dbi_id,
 	.probe = fb_mipi_dbi_probe,
+	.remove = fb_mipi_dbi_remove,
 	.shutdown = fb_mipi_dbi_shutdown,
 };
 module_spi_driver(fb_mipi_dbi_spi_driver);

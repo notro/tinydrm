@@ -15,11 +15,13 @@
 #include <linux/property.h>
 #include <linux/spi/spi.h>
 
+#include <drm/drm_atomic_helper.h>
 #include <drm/drm_drv.h>
+#include <drm/drm_fb_helper.h>
 #include <drm/drm_gem_cma_helper.h>
 #include <drm/drm_gem_framebuffer_helper.h>
+#include <drm/drm_modeset_helper.h>
 #include <drm/tinydrm/mipi-dbi.h>
-#include <drm/tinydrm/tinydrm-helpers.h>
 
 #include <video/mipi_display.h>
 
@@ -28,9 +30,7 @@ static void mz61581_enable(struct drm_simple_display_pipe *pipe,
 			   struct drm_crtc_state *crtc_state,
 			   struct drm_plane_state *plane_state)
 {
-	struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
-	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
-	struct drm_framebuffer *fb = pipe->plane.fb;
+	struct mipi_dbi *mipi = drm_to_mipi_dbi(pipe->crtc.dev);
 	u8 addr_mode;
 
 	DRM_DEBUG_KMS("\n");
@@ -83,37 +83,24 @@ static void mz61581_enable(struct drm_simple_display_pipe *pipe,
 
 	mipi_dbi_command(mipi, MIPI_DCS_SET_DISPLAY_ON);
 
-	mipi->enabled = true;
-	fb->funcs->dirty(fb, NULL, 0, 0, NULL, 0);
-
-	backlight_enable(mipi->backlight);
-}
-
-static void mz61581_disable(struct drm_simple_display_pipe *pipe)
-{
-	struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
-	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
-
-	DRM_DEBUG_KMS("\n");
-
-	mipi->enabled = false;
-	backlight_disable(mipi->backlight);
+	mipi_dbi_enable_flush(mipi, crtc_state, plane_state);
 }
 
 static const struct drm_simple_display_pipe_funcs mz61581_funcs = {
 	.enable = mz61581_enable,
-	.disable = mz61581_disable,
+	.disable = mipi_dbi_pipe_disable,
 	.update = mipi_dbi_pipe_update,
 	.prepare_fb = drm_gem_fb_simple_display_pipe_prepare_fb,
 };
 
 static const struct drm_display_mode mz61581_mode = {
-	TINYDRM_MODE(480, 320, 73, 49),
+	DRM_SIMPLE_MODE(480, 320, 73, 49),
 };
 
 static struct drm_driver mz61581_driver = {
 	.driver_features	= DRIVER_GEM | DRIVER_MODESET | DRIVER_PRIME |
 				  DRIVER_ATOMIC,
+	.release		= mipi_dbi_release,
 	DRM_GEM_CMA_VMAP_DRIVER_OPS,
 	.debugfs_init		= mipi_dbi_debugfs_init,
 	.name			= "mz61581",
@@ -138,15 +125,24 @@ MODULE_DEVICE_TABLE(spi, mz61581_id);
 static int mz61581_probe(struct spi_device *spi)
 {
 	struct device *dev = &spi->dev;
-	struct tinydrm_device *tdev;
+	struct drm_device *drm;
 	struct mipi_dbi *mipi;
 	struct gpio_desc *dc;
 	u32 rotation = 0;
 	int ret;
 
-	mipi = devm_kzalloc(dev, sizeof(*mipi), GFP_KERNEL);
+	mipi = kzalloc(sizeof(*mipi), GFP_KERNEL);
 	if (!mipi)
 		return -ENOMEM;
+
+	drm = &mipi->drm;
+	ret = devm_drm_dev_init(dev, drm, &mz61581_driver);
+	if (ret) {
+		kfree(mipi);
+		return ret;
+	}
+
+	drm_mode_config_init(drm);
 
 	mipi->reset = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_HIGH);
 	if (IS_ERR(mipi->reset)) {
@@ -170,35 +166,39 @@ static int mz61581_probe(struct spi_device *spi)
 	if (ret)
 		return ret;
 
-	ret = mipi_dbi_init(dev, mipi, &mz61581_funcs, &mz61581_driver,
-			    &mz61581_mode, rotation);
+	ret = mipi_dbi_init(mipi, &mz61581_funcs, &mz61581_mode, rotation);
 	if (ret)
 		return ret;
 
 	/* Reading is not supported */
 	mipi->read_commands = NULL;
 
-	tdev = &mipi->tinydrm;
+	drm_mode_config_reset(drm);
 
-	ret = devm_tinydrm_register(tdev);
+	ret = drm_dev_register(drm, 0);
 	if (ret)
 		return ret;
 
-	spi_set_drvdata(spi, mipi);
+	spi_set_drvdata(spi, drm);
 
-	DRM_DEBUG_DRIVER("Initialized %s:%s @%uMHz on minor %d\n",
-			 tdev->drm->driver->name, dev_name(dev),
-			 spi->max_speed_hz / 1000000,
-			 tdev->drm->primary->index);
+	drm_fbdev_generic_setup(drm, 16);
+
+	return 0;
+}
+
+static int mz61581_remove(struct spi_device *spi)
+{
+	struct drm_device *drm = spi_get_drvdata(spi);
+
+	drm_dev_unplug(drm);
+	drm_atomic_helper_shutdown(drm);
 
 	return 0;
 }
 
 static void mz61581_shutdown(struct spi_device *spi)
 {
-	struct mipi_dbi *mipi = spi_get_drvdata(spi);
-
-	tinydrm_shutdown(&mipi->tinydrm);
+	drm_atomic_helper_shutdown(spi_get_drvdata(spi));
 }
 
 static struct spi_driver mz61581_spi_driver = {
@@ -209,6 +209,7 @@ static struct spi_driver mz61581_spi_driver = {
 	},
 	.id_table = mz61581_id,
 	.probe = mz61581_probe,
+	.remove = mz61581_remove,
 	.shutdown = mz61581_shutdown,
 };
 module_spi_driver(mz61581_spi_driver);

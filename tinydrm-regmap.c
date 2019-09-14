@@ -10,6 +10,7 @@
 #include <linux/debugfs.h>
 #include <linux/device.h>
 #include <linux/gpio/consumer.h>
+#include <linux/module.h>
 #include <linux/regmap.h>
 
 #include <drm/drmP.h>
@@ -296,3 +297,5 @@ int tinydrm_regmap_debugfs_init(struct regmap *reg, struct dentry *parent)
 EXPORT_SYMBOL(tinydrm_regmap_debugfs_init);
 
 #endif
+
+MODULE_LICENSE("GPL");

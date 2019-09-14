@@ -10,25 +10,14 @@
 #ifndef __LINUX_TINYDRM_ILI9325_H
 #define __LINUX_TINYDRM_ILI9325_H
 
-#include <drm/tinydrm/tinydrm.h>
+#include <drm/drm_drv.h>
+#include <drm/drm_simple_kms_helper.h>
 
 struct drm_minor;
 
-/**
- * struct tinydrm_ili9325 - tinydrm ILI9325 device
- * @tinydrm: Base &tinydrm_device
- * @reg: Register map (optional)
- * @enabled: Pipeline is enabled
- * @tx_buf: Transmit buffer
- * @swap_bytes: Swap pixel data bytes
- * @always_tx_buf:
- * @rotation: Rotation in degrees Counter Clock Wise
- * @reset: Optional reset gpio
- * @backlight: Optional backlight device
- * @regulator: Optional regulator
- */
 struct tinydrm_ili9325 {
-	struct tinydrm_device tinydrm;
+	struct drm_device drm;
+	struct drm_simple_display_pipe pipe;
 	struct regmap *reg;
 	bool enabled;
 	void *tx_buf;
@@ -41,18 +30,12 @@ struct tinydrm_ili9325 {
 };
 
 static inline struct tinydrm_ili9325 *
-tinydrm_to_ili9325(struct tinydrm_device *tdev)
+drm_to_ili9325(struct drm_device *drm)
 {
-	return container_of(tdev, struct tinydrm_ili9325, tinydrm);
+	return container_of(drm, struct tinydrm_ili9325, drm);
 }
 
 void tinydrm_ili9325_fb_dirty(struct drm_framebuffer *fb, struct drm_rect *rect);
-
-int tinydrm_ili9325_init(struct device *dev, struct tinydrm_ili9325 *cntrl,
-			 const struct drm_simple_display_pipe_funcs *funcs,
-			 struct regmap *reg, struct drm_driver *driver,
-			 const struct drm_display_mode *mode,
-			 unsigned int rotation);
 
 struct regmap *tinydrm_ili9325_spi_init(struct spi_device *spi,
 					unsigned int id);

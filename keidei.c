@@ -16,11 +16,13 @@
 #include <linux/property.h>
 #include <linux/spi/spi.h>
 
+#include <drm/drm_atomic_helper.h>
 #include <drm/drm_drv.h>
+#include <drm/drm_fb_helper.h>
 #include <drm/drm_gem_cma_helper.h>
 #include <drm/drm_gem_framebuffer_helper.h>
+#include <drm/drm_modeset_helper.h>
 #include <drm/tinydrm/mipi-dbi.h>
-#include <drm/tinydrm/tinydrm-helpers.h>
 
 #include <video/mipi_display.h>
 
@@ -89,23 +91,23 @@ static int keidei20_write(struct spi_device *spi, u16 val, bool data)
 	return spi_write(spi, buf, 6);
 }
 
-static int keidei20_command(struct mipi_dbi *mipi, u8 cmd, u8 *par, size_t num)
+static int keidei20_command(struct mipi_dbi *mipi, u8 *cmd, u8 *par, size_t num)
 {
 	struct spi_device *spi = mipi->spi;
 	int i, ret;
 
 	if (!num)
-		DRM_DEBUG_DRIVER("cmd=%02x\n", cmd);
+		DRM_DEBUG_DRIVER("cmd=%02x\n", *cmd);
 	else if (num <= 32)
-		DRM_DEBUG_DRIVER("cmd=%02x, par=%*ph\n", cmd, (int)num, par);
+		DRM_DEBUG_DRIVER("cmd=%02x, par=%*ph\n", *cmd, (int)num, par);
 	else
-		DRM_DEBUG_DRIVER("cmd=%02x, len=%zu\n", cmd, num);
+		DRM_DEBUG_DRIVER("cmd=%02x, len=%zu\n", *cmd, num);
 
-	ret = keidei20_write(spi, cmd, false);
+	ret = keidei20_write(spi, *cmd, false);
 	if (ret || !num)
 		return ret;
 
-	if (cmd == MIPI_DCS_WRITE_MEMORY_START) {
+	if (*cmd == MIPI_DCS_WRITE_MEMORY_START) {
 		u16 *pixel = (u16 *)par;
 
 		for (i = 0; i < num / 2; i++)
@@ -177,14 +179,11 @@ static void keidei_enable(struct drm_simple_display_pipe *pipe,
 			  struct drm_crtc_state *crtc_state,
 			  struct drm_plane_state *plane_state)
 {
-	struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
-	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
-	struct drm_framebuffer *fb = pipe->plane.fb;
+	struct mipi_dbi *mipi = drm_to_mipi_dbi(pipe->crtc.dev);
 
 	DRM_DEBUG_KMS("\n");
 
-	mipi->enabled = true;
-	fb->funcs->dirty(fb, NULL, 0, 0, NULL, 0);
+	mipi_dbi_enable_flush(mipi, crtc_state, plane_state);
 }
 
 static void keidei_disable(struct drm_simple_display_pipe *pipe)
@@ -206,12 +205,13 @@ static const struct drm_simple_display_pipe_funcs keidei_funcs = {
 };
 
 static const struct drm_display_mode keidei_mode = {
-	TINYDRM_MODE(480, 320, 0, 0),
+	DRM_SIMPLE_MODE(480, 320, 0, 0),
 };
 
 static struct drm_driver keidei_driver = {
 	.driver_features	= DRIVER_GEM | DRIVER_MODESET | DRIVER_PRIME |
 				  DRIVER_ATOMIC,
+	.release		= mipi_dbi_release,
 	DRM_GEM_CMA_VMAP_DRIVER_OPS,
 	.debugfs_init		= mipi_dbi_debugfs_init,
 	.name			= "keidei",
@@ -232,7 +232,7 @@ static int keidei_probe(struct spi_device *spi)
 {
 	const struct of_device_id *match;
 	struct device *dev = &spi->dev;
-	struct tinydrm_device *tdev;
+	struct drm_device *drm;
 	struct mipi_dbi *mipi;
 	int ret = -ENODEV;
 
@@ -248,15 +248,23 @@ static int keidei_probe(struct spi_device *spi)
 	if (!match)
 		return -ENODEV;
 
-	mipi = devm_kzalloc(dev, sizeof(*mipi), GFP_KERNEL);
+	mipi = kzalloc(sizeof(*mipi), GFP_KERNEL);
 	if (!mipi)
 		return -ENOMEM;
+
+	drm = &mipi->drm;
+	ret = devm_drm_dev_init(dev, drm, &keidei_driver);
+	if (ret) {
+		kfree(mipi);
+		return ret;
+	}
+
+	drm_mode_config_init(drm);
 
 	mipi->spi = spi;
 	mipi->command = keidei20_command;
 
-	ret = mipi_dbi_init(dev, mipi, &keidei_funcs, &keidei_driver,
-			    &keidei_mode, 0);
+	ret = mipi_dbi_init(mipi, &keidei_funcs, &keidei_mode, 0);
 	if (ret)
 		return ret;
 
@@ -271,27 +279,32 @@ static int keidei_probe(struct spi_device *spi)
 	if (ret)
 		return ret;
 
-	tdev = &mipi->tinydrm;
+	drm_mode_config_reset(drm);
 
-	ret = devm_tinydrm_register(tdev);
+	ret = drm_dev_register(drm, 0);
 	if (ret)
 		return ret;
 
-	spi_set_drvdata(spi, mipi);
+	spi_set_drvdata(spi, drm);
 
-	DRM_DEBUG_DRIVER("Initialized %s:%s @%uMHz on minor %d\n",
-			 tdev->drm->driver->name, dev_name(dev),
-			 spi->max_speed_hz / 1000000,
-			 tdev->drm->primary->index);
+	drm_fbdev_generic_setup(drm, 16);
+
+	return 0;
+}
+
+static int keidei_remove(struct spi_device *spi)
+{
+	struct drm_device *drm = spi_get_drvdata(spi);
+
+	drm_dev_unplug(drm);
+	drm_atomic_helper_shutdown(drm);
 
 	return 0;
 }
 
 static void keidei_shutdown(struct spi_device *spi)
 {
-	struct mipi_dbi *mipi = spi_get_drvdata(spi);
-
-	tinydrm_shutdown(&mipi->tinydrm);
+	drm_atomic_helper_shutdown(spi_get_drvdata(spi));
 }
 
 static struct spi_driver keidei_spi_driver = {
@@ -301,6 +314,7 @@ static struct spi_driver keidei_spi_driver = {
 		.of_match_table = keidei_of_match,
 	},
 	.probe = keidei_probe,
+	.remove = keidei_remove,
 	.shutdown = keidei_shutdown,
 };
 module_spi_driver(keidei_spi_driver);
