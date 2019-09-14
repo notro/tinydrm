@@ -29,6 +29,8 @@
 #include <linux/string.h>
 #include <video/mipi_display.h>
 
+#include <drm/drm_fb_cma_helper.h>
+#include <drm/drm_gem_cma_helper.h>
 #include <drm/drm_gem_framebuffer_helper.h>
 
 #include "fbtft.h"
@@ -708,7 +710,7 @@ static const struct drm_simple_display_pipe_funcs fbtft_pipe_funcs = {
 static struct drm_driver fbtft_driver = {
 	.driver_features	= DRIVER_GEM | DRIVER_MODESET | DRIVER_PRIME |
 				  DRIVER_ATOMIC,
-	TINYDRM_GEM_DRIVER_OPS,
+	DRM_GEM_CMA_VMAP_DRIVER_OPS,
 	.date			= "20170202",
 	.major			= 1,
 	.minor			= 0,

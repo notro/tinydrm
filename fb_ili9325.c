@@ -25,6 +25,7 @@
 #include <linux/regmap.h>
 #include <linux/spi/spi.h>
 
+#include <drm/drm_gem_cma_helper.h>
 #include <drm/drm_gem_framebuffer_helper.h>
 #include <drm/tinydrm/tinydrm-ili9325.h>
 #include <drm/tinydrm/tinydrm-regmap.h>
@@ -458,7 +459,7 @@ static const struct drm_display_mode fb_ili9325_mode = {
 static struct drm_driver fb_ili9325_driver = {
 	.driver_features	= DRIVER_GEM | DRIVER_MODESET | DRIVER_PRIME |
 				  DRIVER_ATOMIC,
-	TINYDRM_GEM_DRIVER_OPS,
+	DRM_GEM_CMA_VMAP_DRIVER_OPS,
 	.debugfs_init		= tinydrm_ili9325_debugfs_init,
 	.name			= "fb_ili9325",
 	.desc			= "fb_ili9325",

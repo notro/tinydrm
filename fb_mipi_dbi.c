@@ -19,6 +19,7 @@
 #include <linux/spi/spi.h>
 #include <video/mipi_display.h>
 
+#include <drm/drm_gem_cma_helper.h>
 #include <drm/drm_gem_framebuffer_helper.h>
 #include <drm/drm_modeset_helper.h>
 #include <drm/tinydrm/mipi-dbi.h>
@@ -839,7 +840,7 @@ static struct drm_driver fb_mipi_dbi_driver = {
 	.driver_features	= DRIVER_GEM | DRIVER_MODESET | DRIVER_PRIME |
 				  DRIVER_ATOMIC,
 	.fops			= &fb_mipi_dbi_fops,
-	TINYDRM_GEM_DRIVER_OPS,
+	DRM_GEM_CMA_VMAP_DRIVER_OPS,
 	.debugfs_init		= mipi_dbi_debugfs_init,
 	.name			= "fb_mipi_dbi",
 	.desc			= "MIPI DBI fbtft compatible driver",

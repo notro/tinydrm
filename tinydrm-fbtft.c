@@ -15,6 +15,7 @@
 #include <linux/slab.h>
 #include <linux/string.h>
 
+#include <drm/drm_print.h>
 #include <drm/tinydrm/tinydrm.h>
 #include <drm/tinydrm/tinydrm-helpers2.h>
 

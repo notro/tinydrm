@@ -15,6 +15,7 @@
 #include <linux/property.h>
 #include <linux/spi/spi.h>
 
+#include <drm/drm_gem_cma_helper.h>
 #include <drm/drm_gem_framebuffer_helper.h>
 #include <drm/tinydrm/mipi-dbi.h>
 #include <drm/tinydrm/tinydrm-helpers.h>
@@ -209,7 +210,7 @@ static const struct drm_display_mode keidei_mode = {
 static struct drm_driver keidei_driver = {
 	.driver_features	= DRIVER_GEM | DRIVER_MODESET | DRIVER_PRIME |
 				  DRIVER_ATOMIC,
-	TINYDRM_GEM_DRIVER_OPS,
+	DRM_GEM_CMA_VMAP_DRIVER_OPS,
 	.debugfs_init		= mipi_dbi_debugfs_init,
 	.name			= "keidei",
 	.desc			= "keidei",

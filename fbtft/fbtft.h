@@ -23,6 +23,9 @@
 #include <linux/spi/spi.h>
 #include <linux/platform_device.h>
 
+#include <drm/drm_drv.h>
+#include <drm/drm_print.h>
+
 #define FBTFT_ONBOARD_BACKLIGHT 2
 
 #define FBTFT_GPIO_NO_MATCH		0xFFFF

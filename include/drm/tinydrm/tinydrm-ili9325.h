@@ -13,6 +13,8 @@
 #include <drm/tinydrm/tinydrm.h>
 #include <drm/tinydrm/tinydrm-helpers2.h>
 
+struct drm_minor;
+
 /**
  * struct tinydrm_ili9325 - tinydrm ILI9325 device
  * @tinydrm: Base &tinydrm_device
