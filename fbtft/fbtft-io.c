@@ -125,20 +125,16 @@ static void tinydrm_i80_write_value(struct gpio_descs *db,
 				    struct gpio_desc *wr, u32 value,
 				    u32 *prev_value)
 {
-	int i, values[32];
-
-
 if (prev_value && *prev_value == value) {
 	gpiod_set_value_cansleep(wr, 0);
 	gpiod_set_value_cansleep(wr, 0);
 	gpiod_set_value_cansleep(wr, 1);
 
 } else {
-	for (i = 0; i < db->ndescs; i++, value >>= 1)
-		values[i] = value & 1;
+	unsigned long value_bitmap = value;
 
 	gpiod_set_value_cansleep(wr, 0);
-	gpiod_set_array_value_cansleep(db->ndescs, db->desc, values);
+	gpiod_set_array_value_cansleep(db->ndescs, db->desc, NULL, &value_bitmap);
 	gpiod_set_value_cansleep(wr, 1);
 
 

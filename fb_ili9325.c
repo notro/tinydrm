@@ -163,7 +163,8 @@ static void tinydrm_ili9325_set_gamma(struct tinydrm_ili9325 *ili9325,
 }
 
 static void fb_ili9325_pipe_enable(struct drm_simple_display_pipe *pipe,
-				   struct drm_crtc_state *crtc_state)
+				   struct drm_crtc_state *crtc_state,
+				   struct drm_plane_state *plane_state)
 {
 	struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
 	struct tinydrm_ili9325 *ili9325 = tinydrm_to_ili9325(tdev);

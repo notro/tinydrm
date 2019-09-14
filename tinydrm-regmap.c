@@ -62,13 +62,10 @@ struct tinydrm_regmap_i80 {
 static void tinydrm_i80_write_value(struct gpio_desc *wr,
 				    struct gpio_descs *db, u32 value)
 {
-	int i, values[32];
-
-	for (i = 0; i < db->ndescs; i++, value >>= 1)
-		values[i] = value & 1;
+	unsigned long value_bitmap = value;
 
 	gpiod_set_value_cansleep(wr, 0);
-	gpiod_set_array_value_cansleep(db->ndescs, db->desc, values);
+	gpiod_set_array_value_cansleep(db->ndescs, db->desc, NULL, &value_bitmap);
 	gpiod_set_value_cansleep(wr, 1);
 }
 
