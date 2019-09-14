@@ -47,6 +47,8 @@ tinydrm_to_ili9325(struct tinydrm_device *tdev)
 	return container_of(tdev, struct tinydrm_ili9325, tinydrm);
 }
 
+void tinydrm_ili9325_fb_dirty(struct drm_framebuffer *fb, struct drm_rect *rect);
+
 int tinydrm_ili9325_init(struct device *dev, struct tinydrm_ili9325 *cntrl,
 			 const struct drm_simple_display_pipe_funcs *funcs,
 			 struct regmap *reg, struct drm_driver *driver,

@@ -17,6 +17,7 @@
  */
 
 #include <linux/delay.h>
+#include <linux/dma-mapping.h>
 #include <linux/gpio/consumer.h>
 #include <linux/module.h>
 #include <linux/of_device.h>
@@ -25,8 +26,11 @@
 #include <linux/regmap.h>
 #include <linux/spi/spi.h>
 
+#include <drm/drm_damage_helper.h>
+#include <drm/drm_drv.h>
 #include <drm/drm_gem_cma_helper.h>
 #include <drm/drm_gem_framebuffer_helper.h>
+#include <drm/drm_vblank.h>
 #include <drm/tinydrm/tinydrm-ili9325.h>
 #include <drm/tinydrm/tinydrm-regmap.h>
 
@@ -281,10 +285,28 @@ static void fb_ili9325_pipe_disable(struct drm_simple_display_pipe *pipe)
 	ili9325->enabled = false;
 }
 
+static void fb_ili9325_pipe_update(struct drm_simple_display_pipe *pipe,
+				   struct drm_plane_state *old_state)
+{
+	struct drm_plane_state *state = pipe->plane.state;
+	struct drm_crtc *crtc = &pipe->crtc;
+	struct drm_rect rect;
+
+	if (drm_atomic_helper_damage_merged(old_state, state, &rect))
+		tinydrm_ili9325_fb_dirty(state->fb, &rect);
+
+	if (crtc->state->event) {
+		spin_lock_irq(&crtc->dev->event_lock);
+		drm_crtc_send_vblank_event(crtc, crtc->state->event);
+		spin_unlock_irq(&crtc->dev->event_lock);
+		crtc->state->event = NULL;
+	}
+}
+
 static const struct drm_simple_display_pipe_funcs fb_ili9325_funcs = {
 	.enable =  fb_ili9325_pipe_enable,
 	.disable = fb_ili9325_pipe_disable,
-	.update = tinydrm_display_pipe_update,
+	.update = fb_ili9325_pipe_update,
 	.prepare_fb = drm_gem_fb_simple_display_pipe_prepare_fb,
 };
 
@@ -448,7 +470,7 @@ set_rotation:
 static const struct drm_simple_display_pipe_funcs fb_ili9320_funcs = {
 	.enable =  fb_ili9320_pipe_enable,
 	.disable = fb_ili9325_pipe_disable,
-	.update = tinydrm_display_pipe_update,
+	.update = fb_ili9325_pipe_update,
 	.prepare_fb = drm_gem_fb_simple_display_pipe_prepare_fb,
 };
 

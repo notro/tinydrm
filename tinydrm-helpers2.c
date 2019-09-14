@@ -7,12 +7,17 @@
  * (at your option) any later version.
  */
 
+#include <linux/delay.h>
 #include <linux/device.h>
 #include <linux/dma-buf.h>
 #include <linux/gpio/consumer.h>
+#include <linux/module.h>
 
+#include <drm/drm_device.h>
 #include <drm/drm_gem_cma_helper.h>
 #include <drm/drm_fb_cma_helper.h>
+#include <drm/drm_framebuffer.h>
+#include <drm/drm_fourcc.h>
 #include <drm/tinydrm/tinydrm-helpers2.h>
 
 /*
@@ -33,7 +38,7 @@
  * Zero on success, negative error code on failure.
  */
 int tinydrm_rgb565_buf_copy(void *dst, struct drm_framebuffer *fb,
-			    struct drm_clip_rect *clip, bool swap)
+			    struct drm_rect *clip, bool swap)
 {
 	struct drm_gem_cma_object *cma_obj = drm_fb_cma_get_gem_obj(fb, 0);
 	struct dma_buf_attachment *import_attach = cma_obj->base.import_attach;

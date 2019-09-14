@@ -16,6 +16,7 @@
 #include <linux/property.h>
 #include <linux/spi/spi.h>
 
+#include <drm/drm_drv.h>
 #include <drm/drm_gem_cma_helper.h>
 #include <drm/drm_gem_framebuffer_helper.h>
 #include <drm/tinydrm/mipi-dbi.h>
@@ -152,7 +153,7 @@ static void piscreen_disable(struct drm_simple_display_pipe *pipe)
 static const struct drm_simple_display_pipe_funcs piscreen_funcs = {
 	.enable = piscreen_enable,
 	.disable = piscreen_disable,
-	.update = tinydrm_display_pipe_update,
+	.update = mipi_dbi_pipe_update,
 	.prepare_fb = drm_gem_fb_simple_display_pipe_prepare_fb,
 };
 
@@ -216,7 +217,7 @@ static void piscreen2_enable(struct drm_simple_display_pipe *pipe,
 static const struct drm_simple_display_pipe_funcs piscreen2_funcs = {
 	.enable = piscreen2_enable,
 	.disable = piscreen_disable,
-	.update = tinydrm_display_pipe_update,
+	.update = mipi_dbi_pipe_update,
 	.prepare_fb = drm_gem_fb_simple_display_pipe_prepare_fb,
 };
 

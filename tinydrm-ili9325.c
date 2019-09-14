@@ -11,53 +11,42 @@
 #include <linux/spi/spi.h>
 #include <asm/unaligned.h>
 
+#include <drm/drm_device.h>
 #include <drm/drm_fb_cma_helper.h>
+#include <drm/drm_framebuffer.h>
+#include <drm/drm_fourcc.h>
 #include <drm/drm_gem_cma_helper.h>
 #include <drm/drm_gem_framebuffer_helper.h>
 #include <drm/tinydrm/tinydrm-ili9325.h>
 #include <drm/tinydrm/tinydrm-regmap.h>
 
-static int tinydrm_ili9325_fb_dirty(struct drm_framebuffer *fb,
-			     struct drm_file *file_priv,
-			     unsigned int flags, unsigned int color,
-			     struct drm_clip_rect *clips,
-			     unsigned int num_clips)
+void tinydrm_ili9325_fb_dirty(struct drm_framebuffer *fb, struct drm_rect *rect)
 {
 	struct drm_gem_cma_object *cma_obj = drm_fb_cma_get_gem_obj(fb, 0);
 	struct tinydrm_device *tdev = fb->dev->dev_private;
 	struct tinydrm_ili9325 *ili9325 = tinydrm_to_ili9325(tdev);
+	unsigned int height = rect->y2 - rect->y1;
+	unsigned int width = rect->x2 - rect->x1;
 	struct regmap *reg = ili9325->reg;
 	bool swap = ili9325->swap_bytes;
-	struct drm_clip_rect clip;
 	u16 ac_low, ac_high;
 	int ret = 0;
 	bool full;
 	void *tr;
 
-	mutex_lock(&tdev->dirty_lock);
-
 	if (!ili9325->enabled)
-		goto out_unlock;
+		return;
 
-	/* fbdev can flush even when we're not interested */
-	if (tdev->pipe.plane.fb != fb)
-		goto out_unlock;
+	full = width == fb->width && height == fb->height;
 
-	full = tinydrm_merge_clips(&clip, clips, num_clips, flags,
-				   fb->width, fb->height);
-
-	clip.x1 = 0;
-	clip.x2 = fb->width;
-
-	DRM_DEBUG("Flushing [FB:%d] x1=%u, x2=%u, y1=%u, y2=%u, swap=%u\n",
-		  fb->base.id, clip.x1, clip.x2, clip.y1, clip.y2, swap);
+	DRM_DEBUG_KMS("Flushing [FB:%d] " DRM_RECT_FMT "\n", fb->base.id, DRM_RECT_ARG(rect));
 
 	if (ili9325->always_tx_buf || swap || !full ||
 	    fb->format->format == DRM_FORMAT_XRGB8888) {
 		tr = ili9325->tx_buf;
-		ret = tinydrm_rgb565_buf_copy(tr, fb, &clip, swap);
+		ret = tinydrm_rgb565_buf_copy(tr, fb, rect, swap);
 		if (ret)
-			goto out_unlock;
+			goto err_msg;
 	} else {
 		tr = cma_obj->vaddr;
 	}
@@ -73,18 +62,18 @@ static int tinydrm_ili9325_fb_dirty(struct drm_framebuffer *fb,
 	switch (ili9325->rotation) {
 	default:
 		ac_low = 0;
-		ac_high = clip.y1;
+		ac_high = rect->y1;
 		break;
 	case 180:
 		ac_low = WIDTH - 1 - 0;
-		ac_high = HEIGHT - 1 - clip.y1;
+		ac_high = HEIGHT - 1 - rect->y1;
 		break;
 	case 270:
-		ac_low = WIDTH - 1 - clip.y1;
+		ac_low = WIDTH - 1 - rect->y1;
 		ac_high = 0;
 		break;
 	case 90:
-		ac_low = clip.y1;
+		ac_low = rect->y1;
 		ac_high = HEIGHT - 1 - 0;
 		break;
 	};
@@ -92,24 +81,14 @@ static int tinydrm_ili9325_fb_dirty(struct drm_framebuffer *fb,
 	regmap_write(reg, 0x0020, ac_low);
 	regmap_write(reg, 0x0021, ac_high);
 
-	ret = regmap_raw_write(reg, 0x0022, tr,
-			       (clip.x2 - clip.x1) * (clip.y2 - clip.y1) * 2);
+	ret = regmap_raw_write(reg, 0x0022, tr, width * height * 2);
 
-out_unlock:
-	mutex_unlock(&tdev->dirty_lock);
-
+err_msg:
 	if (ret)
 		dev_err_once(fb->dev->dev, "Failed to update display %d\n",
 			     ret);
-
-	return ret;
 }
-
-static const struct drm_framebuffer_funcs tinydrm_ili9325_fb_funcs = {
-	.destroy	= drm_gem_fb_destroy,
-	.create_handle	= drm_gem_fb_create_handle,
-	.dirty		= tinydrm_ili9325_fb_dirty,
-};
+EXPORT_SYMBOL(tinydrm_ili9325_fb_dirty);
 
 static const uint32_t tinydrm_ili9325_formats[] = {
 	DRM_FORMAT_RGB565,
@@ -155,7 +134,7 @@ int tinydrm_ili9325_init(struct device *dev, struct tinydrm_ili9325 *ili9325,
 	if (!ili9325->tx_buf)
 		return -ENOMEM;
 
-	ret = devm_tinydrm_init(dev, tdev, &tinydrm_ili9325_fb_funcs, driver);
+	ret = devm_tinydrm_init(dev, tdev, driver);
 	if (ret)
 		return ret;
 

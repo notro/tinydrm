@@ -10,11 +10,13 @@
  */
 
 #include <linux/delay.h>
+#include <linux/dma-mapping.h>
 #include <linux/module.h>
 #include <linux/of_device.h>
 #include <linux/property.h>
 #include <linux/spi/spi.h>
 
+#include <drm/drm_drv.h>
 #include <drm/drm_gem_cma_helper.h>
 #include <drm/drm_gem_framebuffer_helper.h>
 #include <drm/tinydrm/mipi-dbi.h>
@@ -199,7 +201,7 @@ static void keidei_disable(struct drm_simple_display_pipe *pipe)
 static const struct drm_simple_display_pipe_funcs keidei_funcs = {
 	.enable = keidei_enable,
 	.disable = keidei_disable,
-	.update = tinydrm_display_pipe_update,
+	.update = mipi_dbi_pipe_update,
 	.prepare_fb = drm_gem_fb_simple_display_pipe_prepare_fb,
 };
 
