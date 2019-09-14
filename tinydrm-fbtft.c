@@ -17,7 +17,6 @@
 
 #include <drm/drm_print.h>
 #include <drm/tinydrm/tinydrm.h>
-#include <drm/tinydrm/tinydrm-helpers2.h>
 
 #define FBTFT_INIT_CMD		BIT(24)
 #define FBTFT_INIT_DELAY	BIT(25)

@@ -104,6 +104,17 @@ MODULE_PARM_DESC(vcm, "Set the internal VcomH voltage (ili9325)");
  * VCOMH - VCOML < 6.0   =>  4.79 < 6.0
  */
 
+static void tinydrm_ili9325_reset(struct tinydrm_ili9325 *controller)
+{
+	if (IS_ERR_OR_NULL(controller->reset))
+		return;
+
+	gpiod_set_value_cansleep(controller->reset, 0);
+	msleep(1);
+	gpiod_set_value_cansleep(controller->reset, 1);
+	msleep(10);
+}
+
 static void tinydrm_ili9325_set_rotation(struct tinydrm_ili9325 *ili9325)
 {
 	struct device *dev = ili9325->tinydrm.drm->dev;

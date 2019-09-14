@@ -11,7 +11,6 @@
 #define __LINUX_TINYDRM_ILI9325_H
 
 #include <drm/tinydrm/tinydrm.h>
-#include <drm/tinydrm/tinydrm-helpers2.h>
 
 struct drm_minor;
 
@@ -54,11 +53,6 @@ int tinydrm_ili9325_init(struct device *dev, struct tinydrm_ili9325 *cntrl,
 			 struct regmap *reg, struct drm_driver *driver,
 			 const struct drm_display_mode *mode,
 			 unsigned int rotation);
-
-static inline void tinydrm_ili9325_reset(struct tinydrm_ili9325 *controller)
-{
-	tinydrm_hw_reset(controller->reset, 1, 10);
-}
 
 struct regmap *tinydrm_ili9325_spi_init(struct spi_device *spi,
 					unsigned int id);

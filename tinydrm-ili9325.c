@@ -7,6 +7,7 @@
  * (at your option) any later version.
  */
 
+#include <linux/dma-buf.h>
 #include <linux/regmap.h>
 #include <linux/spi/spi.h>
 #include <asm/unaligned.h>
@@ -18,7 +19,47 @@
 #include <drm/drm_gem_cma_helper.h>
 #include <drm/drm_gem_framebuffer_helper.h>
 #include <drm/tinydrm/tinydrm-ili9325.h>
+#include <drm/tinydrm/tinydrm-helpers.h>
 #include <drm/tinydrm/tinydrm-regmap.h>
+
+static int tinydrm_ili9325_rgb565_buf_copy(void *dst, struct drm_framebuffer *fb,
+					   struct drm_rect *clip, bool swap)
+{
+	struct drm_gem_cma_object *cma_obj = drm_fb_cma_get_gem_obj(fb, 0);
+	struct dma_buf_attachment *import_attach = cma_obj->base.import_attach;
+	struct drm_format_name_buf format_name;
+	void *src = cma_obj->vaddr;
+	int ret = 0;
+
+	if (import_attach) {
+		ret = dma_buf_begin_cpu_access(import_attach->dmabuf,
+					       DMA_FROM_DEVICE);
+		if (ret)
+			return ret;
+	}
+
+	switch (fb->format->format) {
+	case DRM_FORMAT_RGB565:
+		if (swap)
+			tinydrm_swab16(dst, src, fb, clip);
+		else
+			tinydrm_memcpy(dst, src, fb, clip);
+		break;
+	case DRM_FORMAT_XRGB8888:
+		tinydrm_xrgb8888_to_rgb565(dst, src, fb, clip, swap);
+		break;
+	default:
+		dev_err_once(fb->dev->dev, "Format is not supported: %s\n",
+			     drm_get_format_name(fb->format->format,
+						 &format_name));
+		return -EINVAL;
+	}
+
+	if (import_attach)
+		ret = dma_buf_end_cpu_access(import_attach->dmabuf,
+					     DMA_FROM_DEVICE);
+	return ret;
+}
 
 void tinydrm_ili9325_fb_dirty(struct drm_framebuffer *fb, struct drm_rect *rect)
 {
@@ -44,7 +85,7 @@ void tinydrm_ili9325_fb_dirty(struct drm_framebuffer *fb, struct drm_rect *rect)
 	if (ili9325->always_tx_buf || swap || !full ||
 	    fb->format->format == DRM_FORMAT_XRGB8888) {
 		tr = ili9325->tx_buf;
-		ret = tinydrm_rgb565_buf_copy(tr, fb, rect, swap);
+		ret = tinydrm_ili9325_rgb565_buf_copy(tr, fb, rect, swap);
 		if (ret)
 			goto err_msg;
 	} else {
