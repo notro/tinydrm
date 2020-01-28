@@ -20,8 +20,8 @@
 #include <drm/drm_framebuffer.h>
 #include <drm/drm_gem_cma_helper.h>
 #include <drm/drm_gem_framebuffer_helper.h>
+#include <drm/drm_mipi_dbi.h>
 #include <drm/tinydrm/tinydrm-ili9325.h>
-#include <drm/tinydrm/tinydrm-helpers.h>
 #include <drm/tinydrm/tinydrm-regmap.h>
 
 static int tinydrm_ili9325_rgb565_buf_copy(void *dst, struct drm_framebuffer *fb,
@@ -147,6 +147,66 @@ static u8 tinydrm_ili9325_spi_get_startbyte(bool id, bool rs, bool read)
 	return 0x70 | (id << 2) | (rs << 1) | read;
 }
 
+static int tinydrm_ili9325_spi_transfer(struct spi_device *spi, u32 speed_hz,
+					struct spi_transfer *header, u8 bpw,
+					const void *buf, size_t len)
+{
+	struct spi_transfer tr = {
+		.bits_per_word = bpw,
+		.speed_hz = speed_hz,
+	};
+	struct spi_message m;
+	u16 *swap_buf = NULL;
+	size_t max_chunk;
+	size_t chunk;
+	int ret = 0;
+
+	if (WARN_ON_ONCE(bpw != 8 && bpw != 16))
+		return -EINVAL;
+
+	max_chunk = spi_max_transfer_size(spi);
+
+	if (bpw == 16 && !spi_is_bpw_supported(spi, 16)) {
+		tr.bits_per_word = 8;
+#ifdef __LITTLE_ENDIAN
+		swap_buf = kmalloc(min(len, max_chunk), GFP_KERNEL);
+		if (!swap_buf)
+			return -ENOMEM;
+#endif
+	}
+
+	spi_message_init(&m);
+	if (header)
+		spi_message_add_tail(header, &m);
+	spi_message_add_tail(&tr, &m);
+
+	while (len) {
+		chunk = min(len, max_chunk);
+
+		tr.tx_buf = buf;
+		tr.len = chunk;
+
+		if (swap_buf) {
+			const u16 *buf16 = buf;
+			unsigned int i;
+
+			for (i = 0; i < chunk / 2; i++)
+				swap_buf[i] = swab16(buf16[i]);
+
+			tr.tx_buf = swap_buf;
+		}
+
+		buf += chunk;
+		len -= chunk;
+
+		ret = spi_sync(spi, &m);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}
+
 static int tinydrm_ili9325_spi_gather_write(void *context, const void *reg,
 					    size_t reg_len, const void *val,
 					    size_t val_len)
@@ -168,14 +228,14 @@ static int tinydrm_ili9325_spi_gather_write(void *context, const void *reg,
 
 	header.tx_buf = startbyte;
 	*startbyte = tinydrm_ili9325_spi_get_startbyte(spih->id, 0, false);
-	ret = tinydrm_spi_transfer(spih->spi, norm_speed_hz, &header,
-				   spih->bpw, reg, reg_len);
+	ret = tinydrm_ili9325_spi_transfer(spih->spi, norm_speed_hz, &header,
+					   spih->bpw, reg, reg_len);
 	if (ret)
 		goto err_free;
 
 	*startbyte = tinydrm_ili9325_spi_get_startbyte(spih->id, 1, false);
-	ret = tinydrm_spi_transfer(spih->spi, val_len > 64 ? 0 : norm_speed_hz,
-				   &header, spih->bpw, val, val_len);
+	ret = tinydrm_ili9325_spi_transfer(spih->spi, val_len > 64 ? 0 : norm_speed_hz,
+					   &header, spih->bpw, val, val_len);
 
 err_free:
 	kfree(startbyte);
@@ -228,8 +288,8 @@ static int tinydrm_ili9325_spi_read(void *context, const void *reg,
 
 	header.tx_buf = startbyte;
 	*startbyte = tinydrm_ili9325_spi_get_startbyte(spih->id, 0, false);
-	ret = tinydrm_spi_transfer(spi, speed_hz, &header, spih->bpw,
-				   reg, reg_len);
+	ret = tinydrm_ili9325_spi_transfer(spi, speed_hz, &header, spih->bpw,
+					   reg, reg_len);
 	if (ret)
 		goto err_free;
 
@@ -283,7 +343,7 @@ struct regmap *tinydrm_ili9325_spi_init(struct spi_device *spi,
 	spih->bpw = 16;
 	spih->id = id;
 
-	if (!tinydrm_spi_bpw_supported(spi, 16)) {
+	if (!spi_is_bpw_supported(spi, 16)) {
 		config.reg_format_endian = REGMAP_ENDIAN_BIG,
 		config.val_format_endian = REGMAP_ENDIAN_BIG,
 		spih->bpw = 8;

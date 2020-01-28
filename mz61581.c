@@ -21,7 +21,7 @@
 #include <drm/drm_gem_cma_helper.h>
 #include <drm/drm_gem_framebuffer_helper.h>
 #include <drm/drm_modeset_helper.h>
-#include <drm/tinydrm/mipi-dbi.h>
+#include <drm/drm_mipi_dbi.h>
 
 #include <video/mipi_display.h>
 
@@ -30,41 +30,42 @@ static void mz61581_enable(struct drm_simple_display_pipe *pipe,
 			   struct drm_crtc_state *crtc_state,
 			   struct drm_plane_state *plane_state)
 {
-	struct mipi_dbi *mipi = drm_to_mipi_dbi(pipe->crtc.dev);
+	struct mipi_dbi_dev *dbidev = drm_to_mipi_dbi_dev(pipe->crtc.dev);
+	struct mipi_dbi *dbi = &dbidev->dbi;
 	u8 addr_mode;
 
 	DRM_DEBUG_KMS("\n");
 
-	mipi_dbi_hw_reset(mipi);
+	mipi_dbi_hw_reset(dbi);
 
-	mipi_dbi_command(mipi, 0xb0, 0x00);
-	mipi_dbi_command(mipi, MIPI_DCS_EXIT_SLEEP_MODE);
+	mipi_dbi_command(dbi, 0xb0, 0x00);
+	mipi_dbi_command(dbi, MIPI_DCS_EXIT_SLEEP_MODE);
 	msleep(120);
 
-	mipi_dbi_command(mipi, 0xb3, 0x02, 0x00, 0x00, 0x00);
-	mipi_dbi_command(mipi, 0xc0, 0x13, 0x3b, 0x00, 0x02,
+	mipi_dbi_command(dbi, 0xb3, 0x02, 0x00, 0x00, 0x00);
+	mipi_dbi_command(dbi, 0xc0, 0x13, 0x3b, 0x00, 0x02,
 				     0x00, 0x01, 0x00, 0x43);
-	mipi_dbi_command(mipi, 0xc1, 0x08, 0x16, 0x08, 0x08);
-	mipi_dbi_command(mipi, 0xc4, 0x11, 0x07, 0x03, 0x03);
-	mipi_dbi_command(mipi, 0xc6, 0x00);
-	mipi_dbi_command(mipi, 0xc8, 0x03, 0x03, 0x13, 0x5c, 0x03,
+	mipi_dbi_command(dbi, 0xc1, 0x08, 0x16, 0x08, 0x08);
+	mipi_dbi_command(dbi, 0xc4, 0x11, 0x07, 0x03, 0x03);
+	mipi_dbi_command(dbi, 0xc6, 0x00);
+	mipi_dbi_command(dbi, 0xc8, 0x03, 0x03, 0x13, 0x5c, 0x03,
 				     0x07, 0x14, 0x08, 0x00, 0x21,
 				     0x08, 0x14, 0x07, 0x53, 0x0c,
 				     0x13, 0x03, 0x03, 0x21, 0x00);
-	mipi_dbi_command(mipi, MIPI_DCS_SET_TEAR_ON, 0x00);
-	mipi_dbi_command(mipi, MIPI_DCS_SET_ADDRESS_MODE, 0xa0);
-	mipi_dbi_command(mipi, MIPI_DCS_SET_PIXEL_FORMAT, 0x55);
-	mipi_dbi_command(mipi, MIPI_DCS_SET_TEAR_SCANLINE, 0x00, 0x01);
-	mipi_dbi_command(mipi, 0xd0, 0x07, 0x07, 0x1d, 0x03);
-	mipi_dbi_command(mipi, 0xd1, 0x03, 0x30, 0x10);
-	mipi_dbi_command(mipi, 0xd2, 0x03, 0x14, 0x04);
+	mipi_dbi_command(dbi, MIPI_DCS_SET_TEAR_ON, 0x00);
+	mipi_dbi_command(dbi, MIPI_DCS_SET_ADDRESS_MODE, 0xa0);
+	mipi_dbi_command(dbi, MIPI_DCS_SET_PIXEL_FORMAT, 0x55);
+	mipi_dbi_command(dbi, MIPI_DCS_SET_TEAR_SCANLINE, 0x00, 0x01);
+	mipi_dbi_command(dbi, 0xd0, 0x07, 0x07, 0x1d, 0x03);
+	mipi_dbi_command(dbi, 0xd1, 0x03, 0x30, 0x10);
+	mipi_dbi_command(dbi, 0xd2, 0x03, 0x14, 0x04);
 
 #define MY BIT(7)
 #define MX BIT(6)
 #define MV BIT(5)
 #define BGR BIT(3)
 
-	switch (mipi->rotation) {
+	switch (dbidev->rotation) {
 	case 90:
 		addr_mode = MY | MX;
 		break;
@@ -79,11 +80,11 @@ static void mz61581_enable(struct drm_simple_display_pipe *pipe,
 		break;
 	}
 	addr_mode |= BGR;
-	mipi_dbi_command(mipi, MIPI_DCS_SET_ADDRESS_MODE, addr_mode);
+	mipi_dbi_command(dbi, MIPI_DCS_SET_ADDRESS_MODE, addr_mode);
 
-	mipi_dbi_command(mipi, MIPI_DCS_SET_DISPLAY_ON);
+	mipi_dbi_command(dbi, MIPI_DCS_SET_DISPLAY_ON);
 
-	mipi_dbi_enable_flush(mipi, crtc_state, plane_state);
+	mipi_dbi_enable_flush(dbidev, crtc_state, plane_state);
 }
 
 static const struct drm_simple_display_pipe_funcs mz61581_funcs = {
@@ -98,8 +99,7 @@ static const struct drm_display_mode mz61581_mode = {
 };
 
 static struct drm_driver mz61581_driver = {
-	.driver_features	= DRIVER_GEM | DRIVER_MODESET | DRIVER_PRIME |
-				  DRIVER_ATOMIC,
+	.driver_features	= DRIVER_GEM | DRIVER_MODESET | DRIVER_ATOMIC,
 	.release		= mipi_dbi_release,
 	DRM_GEM_CMA_VMAP_DRIVER_OPS,
 	.debugfs_init		= mipi_dbi_debugfs_init,
@@ -125,29 +125,31 @@ MODULE_DEVICE_TABLE(spi, mz61581_id);
 static int mz61581_probe(struct spi_device *spi)
 {
 	struct device *dev = &spi->dev;
+	struct mipi_dbi_dev *dbidev;
 	struct drm_device *drm;
-	struct mipi_dbi *mipi;
+	struct mipi_dbi *dbi;
 	struct gpio_desc *dc;
 	u32 rotation = 0;
 	int ret;
 
-	mipi = kzalloc(sizeof(*mipi), GFP_KERNEL);
-	if (!mipi)
+	dbidev = kzalloc(sizeof(*dbidev), GFP_KERNEL);
+	if (!dbidev)
 		return -ENOMEM;
 
-	drm = &mipi->drm;
+	dbi = &dbidev->dbi;
+	drm = &dbidev->drm;
 	ret = devm_drm_dev_init(dev, drm, &mz61581_driver);
 	if (ret) {
-		kfree(mipi);
+		kfree(dbi);
 		return ret;
 	}
 
 	drm_mode_config_init(drm);
 
-	mipi->reset = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_HIGH);
-	if (IS_ERR(mipi->reset)) {
+	dbi->reset = devm_gpiod_get_optional(dev, "reset", GPIOD_OUT_HIGH);
+	if (IS_ERR(dbi->reset)) {
 		dev_err(dev, "Failed to get gpio 'reset'\n");
-		return PTR_ERR(mipi->reset);
+		return PTR_ERR(dbi->reset);
 	}
 
 	dc = devm_gpiod_get(dev, "dc", GPIOD_OUT_LOW);
@@ -156,22 +158,22 @@ static int mz61581_probe(struct spi_device *spi)
 		return PTR_ERR(dc);
 	}
 
-	mipi->backlight = devm_of_find_backlight(dev);
-	if (IS_ERR(mipi->backlight))
-		return PTR_ERR(mipi->backlight);
+	dbidev->backlight = devm_of_find_backlight(dev);
+	if (IS_ERR(dbidev->backlight))
+		return PTR_ERR(dbidev->backlight);
 
 	device_property_read_u32(dev, "rotation", &rotation);
 
-	ret = mipi_dbi_spi_init(spi, mipi, dc);
-	if (ret)
-		return ret;
-
-	ret = mipi_dbi_init(mipi, &mz61581_funcs, &mz61581_mode, rotation);
+	ret = mipi_dbi_spi_init(spi, dbi, dc);
 	if (ret)
 		return ret;
 
 	/* Reading is not supported */
-	mipi->read_commands = NULL;
+	dbi->read_commands = NULL;
+
+	ret = mipi_dbi_dev_init(dbidev, &mz61581_funcs, &mz61581_mode, rotation);
+	if (ret)
+		return ret;
 
 	drm_mode_config_reset(drm);
 

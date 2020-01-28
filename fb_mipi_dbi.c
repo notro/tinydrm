@@ -24,8 +24,8 @@
 #include <drm/drm_fb_helper.h>
 #include <drm/drm_gem_cma_helper.h>
 #include <drm/drm_gem_framebuffer_helper.h>
+#include <drm/drm_mipi_dbi.h>
 #include <drm/drm_modeset_helper.h>
-#include <drm/tinydrm/mipi-dbi.h>
 
 #include "tinydrm-fbtft.h"
 
@@ -45,7 +45,7 @@ enum fb_mipi_dbi_variant {
 };
 
 struct fb_mipi_dbi {
-	struct mipi_dbi dbi;
+	struct mipi_dbi_dev dbidev;
 	enum fb_mipi_dbi_variant variant;
 };
 
@@ -59,12 +59,12 @@ struct fb_mipi_dbi {
 #define ILI9481_HFLIP	BIT(0)
 #define ILI9481_VFLIP	BIT(1)
 
-static void fb_mipi_dbi_rotate(struct mipi_dbi *dbi, u8 rotate0, u8 rotate90, u8 rotate180, u8 rotate270)
+static void fb_mipi_dbi_rotate(struct mipi_dbi_dev *dbidev, u8 rotate0, u8 rotate90, u8 rotate180, u8 rotate270)
 {
-	bool bgr = device_property_present(dbi->drm.dev, "bgr");
+	bool bgr = device_property_present(dbidev->drm.dev, "bgr");
 	u8 addr_mode;
 
-	switch (dbi->rotation) {
+	switch (dbidev->rotation) {
 	default:
 		addr_mode = rotate0;
 		break;
@@ -80,7 +80,7 @@ static void fb_mipi_dbi_rotate(struct mipi_dbi *dbi, u8 rotate0, u8 rotate90, u8
 	}
 	if (bgr)
 		addr_mode |= MADCTL_BGR;
-	mipi_dbi_command(dbi, MIPI_DCS_SET_ADDRESS_MODE, addr_mode);
+	mipi_dbi_command(&dbidev->dbi, MIPI_DCS_SET_ADDRESS_MODE, addr_mode);
 }
 
 static void fb_hx8340bn_enable(struct mipi_dbi *dbi)
@@ -670,9 +670,10 @@ static void fb_tinylcd_enable(struct mipi_dbi *dbi)
 #define FBTFT_INIT_CMD		BIT(24)
 #define FBTFT_INIT_DELAY	BIT(25)
 
-static int fb_mipi_dbi_init_display_dt(struct mipi_dbi *dbi)
+static int fb_mipi_dbi_init_display_dt(struct mipi_dbi_dev *dbidev)
 {
-	struct device *dev = dbi->drm.dev;
+	struct device *dev = dbidev->drm.dev;
+	struct mipi_dbi *dbi = &dbidev->dbi;
 	struct property *prop;
 	const __be32 *p;
 	unsigned int i;
@@ -719,17 +720,18 @@ static void fb_mipi_dbi_enable(struct drm_simple_display_pipe *pipe,
 			       struct drm_crtc_state *crtc_state,
 			       struct drm_plane_state *plane_state)
 {
-	struct mipi_dbi *dbi = drm_to_mipi_dbi(pipe->crtc.dev);
-	struct fb_mipi_dbi *fbdbi = container_of(dbi, struct fb_mipi_dbi, dbi);
+	struct mipi_dbi_dev *dbidev = drm_to_mipi_dbi_dev(pipe->crtc.dev);
+	struct fb_mipi_dbi *fbdbi = container_of(dbidev, struct fb_mipi_dbi, dbidev);
+	struct mipi_dbi *dbi = &dbidev->dbi;
 	int ret;
 
 	DRM_DEBUG_KMS("\n");
 
-	ret = mipi_dbi_poweron_reset(dbi);
+	ret = mipi_dbi_poweron_reset(dbidev);
 	if (ret < 0)
 		return;
 
-	ret = fb_mipi_dbi_init_display_dt(dbi);
+	ret = fb_mipi_dbi_init_display_dt(dbidev);
 	if (ret < 0)
 		return;
 	if (ret)
@@ -738,76 +740,87 @@ static void fb_mipi_dbi_enable(struct drm_simple_display_pipe *pipe,
 	switch (fbdbi->variant) {
 	case MIPI_DBI_FB_HX8340BN:
 		fb_hx8340bn_enable(dbi);
-		fb_mipi_dbi_rotate(dbi, 0,
+		fb_mipi_dbi_rotate(dbidev,
+					0,
 					MADCTL_MY | MADCTL_MV,
 					MADCTL_MX | MADCTL_MY,
 					MADCTL_MX | MADCTL_MV);
 		break;
 	case MIPI_DBI_FB_HX8353D:
 		fb_hx8353d_enable(dbi);
-		fb_mipi_dbi_rotate(dbi, MADCTL_MX | MADCTL_MY,
+		fb_mipi_dbi_rotate(dbidev,
+					MADCTL_MX | MADCTL_MY,
 					MADCTL_MX | MADCTL_MV,
 					0,
 					MADCTL_MY | MADCTL_MV);
 		break;
 	case MIPI_DBI_FB_HX8357D:
 		fb_hx8357d_enable(dbi);
-		fb_mipi_dbi_rotate(dbi, MADCTL_MX | MADCTL_MY,
+		fb_mipi_dbi_rotate(dbidev,
+					MADCTL_MX | MADCTL_MY,
 					MADCTL_MY | MADCTL_MV,
 					0,
 					MADCTL_MX | MADCTL_MV);
 	case MIPI_DBI_FB_ILI9340:
 		fb_ili9340_enable(dbi);
-		fb_mipi_dbi_rotate(dbi, MADCTL_MX,
+		fb_mipi_dbi_rotate(dbidev,
+					MADCTL_MX,
 					MADCTL_MV | MADCTL_MY | MADCTL_MX,
 					MADCTL_MY,
 					MADCTL_MV);
 		break;
 	case MIPI_DBI_FB_ILI9341:
 		fb_ili9341_enable(dbi);
-		fb_mipi_dbi_rotate(dbi, MADCTL_MX,
+		fb_mipi_dbi_rotate(dbidev,
+					MADCTL_MX,
 					MADCTL_MV | MADCTL_MY | MADCTL_MX,
 					MADCTL_MY,
 					MADCTL_MV | MADCTL_ML);
 		break;
 	case MIPI_DBI_FB_ILI9481:
 		fb_ili9481_enable(dbi);
-		fb_mipi_dbi_rotate(dbi, ILI9481_HFLIP,
+		fb_mipi_dbi_rotate(dbidev,
+					ILI9481_HFLIP,
 					MADCTL_MV,
 					ILI9481_VFLIP,
 					MADCTL_MV | ILI9481_VFLIP | ILI9481_HFLIP);
 		break;
 	case MIPI_DBI_FB_ILI9486:
 		fb_ili9486_enable(dbi);
-		fb_mipi_dbi_rotate(dbi, MADCTL_MY,
+		fb_mipi_dbi_rotate(dbidev,
+					MADCTL_MY,
 					MADCTL_MV,
 					MADCTL_MX,
 					MADCTL_MY | MADCTL_MX | MADCTL_MV);
 		break;
 	case MIPI_DBI_FB_S6D02A1:
 		fb_s6d02a1_enable(dbi);
-		fb_mipi_dbi_rotate(dbi, MADCTL_MX | MADCTL_MY,
+		fb_mipi_dbi_rotate(dbidev,
+					MADCTL_MX | MADCTL_MY,
 					MADCTL_MX | MADCTL_MV,
 					0,
 					MADCTL_MY | MADCTL_MV);
 		break;
 	case MIPI_DBI_FB_ST7735R:
 		fb_st7735r_enable(dbi);
-		fb_mipi_dbi_rotate(dbi, MADCTL_MX | MADCTL_MY,
+		fb_mipi_dbi_rotate(dbidev,
+					MADCTL_MX | MADCTL_MY,
 					MADCTL_MX | MADCTL_MV,
 					0,
 					MADCTL_MY | MADCTL_MV);
 		break;
 	case MIPI_DBI_FB_ST7789V:
 		fb_st7789v_enable(dbi);
-		fb_mipi_dbi_rotate(dbi, 0,
+		fb_mipi_dbi_rotate(dbidev,
+					0,
 					MADCTL_MY | MADCTL_MV,
 					MADCTL_MX | MADCTL_MY,
 					MADCTL_MX | MADCTL_MV);
 		break;
 	case MIPI_DBI_FB_TINYLCD:
 		fb_tinylcd_enable(dbi);
-		fb_mipi_dbi_rotate(dbi, 0x08,
+		fb_mipi_dbi_rotate(dbidev,
+					0x08,
 					0x38,
 					0x58,
 					0x28);
@@ -815,7 +828,7 @@ static void fb_mipi_dbi_enable(struct drm_simple_display_pipe *pipe,
 	};
 
 out_flush:
-	mipi_dbi_enable_flush(dbi, crtc_state, plane_state);
+	mipi_dbi_enable_flush(dbidev, crtc_state, plane_state);
 }
 
 static const struct drm_simple_display_pipe_funcs fb_mipi_dbi_funcs = {
@@ -838,8 +851,7 @@ fb_mipi_dbi_set_mode(struct drm_display_mode *mode, unsigned int width, unsigned
 DEFINE_DRM_GEM_CMA_FOPS(fb_mipi_dbi_fops);
 
 static struct drm_driver fb_mipi_dbi_driver = {
-	.driver_features	= DRIVER_GEM | DRIVER_MODESET | DRIVER_PRIME |
-				  DRIVER_ATOMIC,
+	.driver_features	= DRIVER_GEM | DRIVER_MODESET | DRIVER_ATOMIC,
 	.fops			= &fb_mipi_dbi_fops,
 	.release		= mipi_dbi_release,
 	DRM_GEM_CMA_VMAP_DRIVER_OPS,
@@ -895,6 +907,7 @@ static int fb_mipi_dbi_probe(struct spi_device *spi)
 	const struct of_device_id *match;
 	struct device *dev = &spi->dev;
 	struct drm_display_mode mode;
+	struct mipi_dbi_dev *dbidev;
 	struct fb_mipi_dbi *fbdbi;
 	struct drm_device *drm;
 	u32 val, rotation = 0;
@@ -906,8 +919,9 @@ static int fb_mipi_dbi_probe(struct spi_device *spi)
 	if (!fbdbi)
 		return -ENOMEM;
 
-	dbi = &fbdbi->dbi;
-	drm = &dbi->drm;
+	dbidev = &fbdbi->dbidev;
+	dbi = &dbidev->dbi;
+	drm = &dbidev->drm;
 	ret = devm_drm_dev_init(dev, drm, &fb_mipi_dbi_driver);
 	if (ret) {
 		kfree(fbdbi);
@@ -986,14 +1000,14 @@ static int fb_mipi_dbi_probe(struct spi_device *spi)
 
 	dc = devm_gpiod_get_optional(dev, "dc", GPIOD_OUT_LOW);
 	if (IS_ERR(dc)) {
-		if (PTR_ERR(dbi->dc) != -EPROBE_DEFER)
+		if (PTR_ERR(dc) != -EPROBE_DEFER)
 			DRM_DEV_ERROR(dev, "Failed to get gpio 'dc'\n");
 		return PTR_ERR(dc);
 	}
 
-	dbi->backlight = tinydrm_fbtft_get_backlight(dev);
-	if (IS_ERR(dbi->backlight))
-		return PTR_ERR(dbi->backlight);
+	dbidev->backlight = tinydrm_fbtft_get_backlight(dev);
+	if (IS_ERR(dbidev->backlight))
+		return PTR_ERR(dbidev->backlight);
 
 	tinydrm_fbtft_get_rotation(dev, &rotation);
 
@@ -1001,7 +1015,7 @@ static int fb_mipi_dbi_probe(struct spi_device *spi)
 	if (ret)
 		return ret;
 
-	ret = mipi_dbi_init(dbi, &fb_mipi_dbi_funcs, &mode, rotation);
+	ret = mipi_dbi_dev_init(dbidev, &fb_mipi_dbi_funcs, &mode, rotation);
 	if (ret)
 		return ret;
 

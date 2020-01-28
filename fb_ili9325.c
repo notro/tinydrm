@@ -27,13 +27,15 @@
 #include <linux/spi/spi.h>
 
 #include <drm/drm_atomic_helper.h>
+#include <drm/drm_atomic_state_helper.h>
+#include <drm/drm_connector.h>
 #include <drm/drm_damage_helper.h>
 #include <drm/drm_drv.h>
 #include <drm/drm_fb_helper.h>
 #include <drm/drm_gem_cma_helper.h>
 #include <drm/drm_gem_framebuffer_helper.h>
+#include <drm/drm_probe_helper.h>
 #include <drm/drm_vblank.h>
-#include <drm/tinydrm/tinydrm-helpers.h>
 #include <drm/tinydrm/tinydrm-ili9325.h>
 #include <drm/tinydrm/tinydrm-regmap.h>
 
@@ -106,6 +108,59 @@ MODULE_PARM_DESC(vcm, "Set the internal VcomH voltage (ili9325)");
  * VCOM driver output voltage
  * VCOMH - VCOML < 6.0   =>  4.79 < 6.0
  */
+
+static int ili9325_connector_get_modes(struct drm_connector *connector)
+{
+	struct tinydrm_ili9325 *ili9325 = drm_to_ili9325(connector->dev);
+	struct drm_display_mode *mode;
+	mode = drm_mode_duplicate(connector->dev, &ili9325->mode);
+	if (!mode) {
+		DRM_ERROR("Failed to duplicate mode\n");
+		return 0;
+	}
+
+	if (mode->name[0] == '\0')
+		drm_mode_set_name(mode);
+
+	mode->type |= DRM_MODE_TYPE_PREFERRED;
+	drm_mode_probed_add(connector, mode);
+
+	if (mode->width_mm) {
+		connector->display_info.width_mm = mode->width_mm;
+		connector->display_info.height_mm = mode->height_mm;
+	}
+
+	return 1;
+}
+
+static const struct drm_connector_helper_funcs ili9325_connector_hfuncs = {
+	.get_modes = ili9325_connector_get_modes,
+};
+
+static const struct drm_connector_funcs ili9325_connector_funcs = {
+	.reset = drm_atomic_helper_connector_reset,
+	.fill_modes = drm_helper_probe_single_connector_modes,
+	.destroy = drm_connector_cleanup,
+	.atomic_duplicate_state = drm_atomic_helper_connector_duplicate_state,
+	.atomic_destroy_state = drm_atomic_helper_connector_destroy_state,
+};
+
+static int ili9325_rotate_mode(struct drm_display_mode *mode,
+				unsigned int rotation)
+{
+	if (rotation == 0 || rotation == 180) {
+		return 0;
+	} else if (rotation == 90 || rotation == 270) {
+		swap(mode->hdisplay, mode->vdisplay);
+		swap(mode->hsync_start, mode->vsync_start);
+		swap(mode->hsync_end, mode->vsync_end);
+		swap(mode->htotal, mode->vtotal);
+		swap(mode->width_mm, mode->height_mm);
+		return 0;
+	} else {
+		return -EINVAL;
+	}
+}
 
 static void tinydrm_ili9325_reset(struct tinydrm_ili9325 *controller)
 {
@@ -512,8 +567,7 @@ static void fb_ili9325_release(struct drm_device *drm)
 }
 
 static struct drm_driver fb_ili9325_driver = {
-	.driver_features	= DRIVER_GEM | DRIVER_MODESET | DRIVER_PRIME |
-				  DRIVER_ATOMIC,
+	.driver_features	= DRIVER_GEM | DRIVER_MODESET | DRIVER_ATOMIC,
 	.release		= fb_ili9325_release,
 	DRM_GEM_CMA_VMAP_DRIVER_OPS,
 	.debugfs_init		= tinydrm_ili9325_debugfs_init,
@@ -528,6 +582,10 @@ static struct tinydrm_ili9325 *
 fb_ili9325_probe_common(struct device *dev, struct regmap *reg,
 			const struct drm_simple_display_pipe_funcs *funcs)
 {
+	static const uint64_t modifiers[] = {
+		DRM_FORMAT_MOD_LINEAR,
+		DRM_FORMAT_MOD_INVALID
+	};
 	struct tinydrm_ili9325 *ili9325;
 	struct drm_device *drm;
 	u32 rotation = 0;
@@ -568,10 +626,23 @@ fb_ili9325_probe_common(struct device *dev, struct regmap *reg,
 	if (!ili9325->tx_buf)
 		return ERR_PTR(-ENOMEM);
 
-	ret = tinydrm_display_pipe_init(drm, &ili9325->pipe, funcs,
-					DRM_MODE_CONNECTOR_VIRTUAL,
-					fb_ili9325_formats, ARRAY_SIZE(fb_ili9325_formats),
-					&fb_ili9325_mode, rotation);
+
+	drm_mode_copy(&ili9325->mode, &fb_ili9325_mode);
+	ret = ili9325_rotate_mode(&ili9325->mode, rotation);
+	if (ret) {
+		DRM_ERROR("Illegal rotation value %u\n", rotation);
+		return ERR_PTR(-EINVAL);
+	}
+
+	drm_connector_helper_add(&ili9325->connector, &ili9325_connector_hfuncs);
+	ret = drm_connector_init(drm, &ili9325->connector, &ili9325_connector_funcs,
+				 DRM_MODE_CONNECTOR_SPI);
+	if (ret)
+		return ERR_PTR(ret);
+
+	ret = drm_simple_display_pipe_init(drm, &ili9325->pipe, funcs,
+					   fb_ili9325_formats, ARRAY_SIZE(fb_ili9325_formats),
+					   modifiers, &ili9325->connector);
 	if (ret)
 		return ERR_PTR(ret);
 

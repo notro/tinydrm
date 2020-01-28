@@ -22,7 +22,7 @@
 #include <drm/drm_gem_cma_helper.h>
 #include <drm/drm_gem_framebuffer_helper.h>
 #include <drm/drm_modeset_helper.h>
-#include <drm/tinydrm/mipi-dbi.h>
+#include <drm/drm_mipi_dbi.h>
 
 #include <video/mipi_display.h>
 
@@ -50,9 +50,9 @@ enum keidei_version {
 #define KEIDEI20_DATA_BE	0x15	/* 10101 */
 #define KEIDEI20_DATA_AF	0x1F	/* 11111 */
 
-static int keidei20_reset(struct mipi_dbi *mipi)
+static int keidei20_reset(struct mipi_dbi *dbi)
 {
-	struct spi_device *spi = mipi->spi;
+	struct spi_device *spi = dbi->spi;
 	u8 noreset[3] = { 0, 0, KEIDEI20_NORESET };
 	u8 reset[3] = { 0, 0, KEIDEI20_RESET };
 	int ret;
@@ -91,9 +91,9 @@ static int keidei20_write(struct spi_device *spi, u16 val, bool data)
 	return spi_write(spi, buf, 6);
 }
 
-static int keidei20_command(struct mipi_dbi *mipi, u8 *cmd, u8 *par, size_t num)
+static int keidei20_command(struct mipi_dbi *dbi, u8 *cmd, u8 *par, size_t num)
 {
-	struct spi_device *spi = mipi->spi;
+	struct spi_device *spi = dbi->spi;
 	int i, ret;
 
 	if (!num)
@@ -120,57 +120,57 @@ static int keidei20_command(struct mipi_dbi *mipi, u8 *cmd, u8 *par, size_t num)
 	return 0;
 }
 
-static int keidei10_prepare(struct mipi_dbi *mipi)
+static int keidei10_prepare(struct mipi_dbi *dbi)
 {
-	struct device *dev = &mipi->spi->dev;
+	struct device *dev = &dbi->spi->dev;
 
 	dev_err(dev, "Not supported (yet), just an example of multiple device support in one driver\n");
 
 	return -ENODEV;
 }
 
-static int keidei20_prepare(struct mipi_dbi *mipi)
+static int keidei20_prepare(struct mipi_dbi *dbi)
 {
-	struct device *dev = &mipi->spi->dev;
+	struct device *dev = &dbi->spi->dev;
 	int ret;
 
 	DRM_DEBUG_KMS("\n");
 
-	ret = keidei20_reset(mipi);
+	ret = keidei20_reset(dbi);
 	if (ret) {
 		dev_err(dev, "Failed to reset (%d)\n", ret);
 		return ret;
 	}
 
-	mipi_dbi_command(mipi, 0x11);
+	mipi_dbi_command(dbi, 0x11);
 	msleep(120);
 
-	mipi_dbi_command(mipi, 0xee, 0x02, 0x01, 0x02, 0x01);
-	mipi_dbi_command(mipi, 0xed, 0x00, 0x00, 0x9a, 0x9a, 0x9b,
+	mipi_dbi_command(dbi, 0xee, 0x02, 0x01, 0x02, 0x01);
+	mipi_dbi_command(dbi, 0xed, 0x00, 0x00, 0x9a, 0x9a, 0x9b,
 				     0x9b, 0x00, 0x00, 0x00, 0x00,
 				     0xae, 0xae, 0x01, 0xa2, 0x00);
-	mipi_dbi_command(mipi, 0xb4, 0x00);
-	mipi_dbi_command(mipi, 0xc0, 0x10, 0x3B, 0x00, 0x02, 0x11);
-	mipi_dbi_command(mipi, 0xc1, 0x10);
-	mipi_dbi_command(mipi, 0xc8, 0x00, 0x46, 0x12, 0x20,
+	mipi_dbi_command(dbi, 0xb4, 0x00);
+	mipi_dbi_command(dbi, 0xc0, 0x10, 0x3B, 0x00, 0x02, 0x11);
+	mipi_dbi_command(dbi, 0xc1, 0x10);
+	mipi_dbi_command(dbi, 0xc8, 0x00, 0x46, 0x12, 0x20,
 				     0x0c, 0x00, 0x56, 0x12,
 				     0x67, 0x02, 0x00, 0x0c);
-	mipi_dbi_command(mipi, 0xd0, 0x44, 0x42, 0x06);
-	mipi_dbi_command(mipi, 0xd1, 0x43, 0x16);
-	mipi_dbi_command(mipi, 0xd2, 0x04, 0x22);
-	mipi_dbi_command(mipi, 0xd3, 0x04, 0x12);
-	mipi_dbi_command(mipi, 0xd4, 0x07, 0x12);
-	mipi_dbi_command(mipi, 0xe9, 0x00);
-	mipi_dbi_command(mipi, 0xc5, 0x08);
-	mipi_dbi_command(mipi, 0x36, 0x6a);
-	mipi_dbi_command(mipi, 0x3a, 0x55);
+	mipi_dbi_command(dbi, 0xd0, 0x44, 0x42, 0x06);
+	mipi_dbi_command(dbi, 0xd1, 0x43, 0x16);
+	mipi_dbi_command(dbi, 0xd2, 0x04, 0x22);
+	mipi_dbi_command(dbi, 0xd3, 0x04, 0x12);
+	mipi_dbi_command(dbi, 0xd4, 0x07, 0x12);
+	mipi_dbi_command(dbi, 0xe9, 0x00);
+	mipi_dbi_command(dbi, 0xc5, 0x08);
+	mipi_dbi_command(dbi, 0x36, 0x6a);
+	mipi_dbi_command(dbi, 0x3a, 0x55);
 
-	mipi_dbi_command(mipi, 0x2a, 0x00, 0x00, 0x01, 0x3f);
-	mipi_dbi_command(mipi, 0x2b, 0x00, 0x00, 0x01, 0xe0);
+	mipi_dbi_command(dbi, 0x2a, 0x00, 0x00, 0x01, 0x3f);
+	mipi_dbi_command(dbi, 0x2b, 0x00, 0x00, 0x01, 0xe0);
 	msleep(120);
 
-	mipi_dbi_command(mipi, 0x21);
-	mipi_dbi_command(mipi, 0x35, 0x00);
+	mipi_dbi_command(dbi, 0x21);
+	mipi_dbi_command(dbi, 0x35, 0x00);
 
 	return 0;
 }
@@ -179,22 +179,21 @@ static void keidei_enable(struct drm_simple_display_pipe *pipe,
 			  struct drm_crtc_state *crtc_state,
 			  struct drm_plane_state *plane_state)
 {
-	struct mipi_dbi *mipi = drm_to_mipi_dbi(pipe->crtc.dev);
+	struct mipi_dbi_dev *dbidev = drm_to_mipi_dbi_dev(pipe->crtc.dev);
 
 	DRM_DEBUG_KMS("\n");
 
-	mipi_dbi_enable_flush(mipi, crtc_state, plane_state);
+	mipi_dbi_enable_flush(dbidev, crtc_state, plane_state);
 }
 
 static void keidei_disable(struct drm_simple_display_pipe *pipe)
 {
-//	struct tinydrm_device *tdev = pipe_to_tinydrm(pipe);
-//	struct mipi_dbi *mipi = mipi_dbi_from_tinydrm(tdev);
+//	struct mipi_dbi_dev *dbidev = drm_to_mipi_dbi_dev(pipe->crtc.dev);
 
 	DRM_DEBUG_KMS("\n");
 
 // This will stop flushing while disabled, not sure if this is wanted when there's no backlight control
-//	mipi->enabled = false;
+//	dbidev->enabled = false;
 }
 
 static const struct drm_simple_display_pipe_funcs keidei_funcs = {
@@ -209,8 +208,7 @@ static const struct drm_display_mode keidei_mode = {
 };
 
 static struct drm_driver keidei_driver = {
-	.driver_features	= DRIVER_GEM | DRIVER_MODESET | DRIVER_PRIME |
-				  DRIVER_ATOMIC,
+	.driver_features	= DRIVER_GEM | DRIVER_MODESET | DRIVER_ATOMIC,
 	.release		= mipi_dbi_release,
 	DRM_GEM_CMA_VMAP_DRIVER_OPS,
 	.debugfs_init		= mipi_dbi_debugfs_init,
@@ -232,8 +230,9 @@ static int keidei_probe(struct spi_device *spi)
 {
 	const struct of_device_id *match;
 	struct device *dev = &spi->dev;
+	struct mipi_dbi_dev *dbidev;
 	struct drm_device *drm;
-	struct mipi_dbi *mipi;
+	struct mipi_dbi *dbi;
 	int ret = -ENODEV;
 
 	if (!dev->coherent_dma_mask) {
@@ -248,32 +247,33 @@ static int keidei_probe(struct spi_device *spi)
 	if (!match)
 		return -ENODEV;
 
-	mipi = kzalloc(sizeof(*mipi), GFP_KERNEL);
-	if (!mipi)
+	dbidev = kzalloc(sizeof(*dbidev), GFP_KERNEL);
+	if (!dbidev)
 		return -ENOMEM;
 
-	drm = &mipi->drm;
+	dbi = &dbidev->dbi;
+	drm = &dbidev->drm;
 	ret = devm_drm_dev_init(dev, drm, &keidei_driver);
 	if (ret) {
-		kfree(mipi);
+		kfree(dbi);
 		return ret;
 	}
 
 	drm_mode_config_init(drm);
 
-	mipi->spi = spi;
-	mipi->command = keidei20_command;
+	dbi->spi = spi;
+	dbi->command = keidei20_command;
 
-	ret = mipi_dbi_init(mipi, &keidei_funcs, &keidei_mode, 0);
+	ret = mipi_dbi_dev_init(dbidev, &keidei_funcs, &keidei_mode, 0);
 	if (ret)
 		return ret;
 
 	switch ((enum keidei_version)match->data) {
 	case KEIDEI_V10:
-		ret = keidei10_prepare(mipi);
+		ret = keidei10_prepare(dbi);
 		break;
 	case KEIDEI_V20:
-		ret = keidei20_prepare(mipi);
+		ret = keidei20_prepare(dbi);
 		break;
 	}
 	if (ret)

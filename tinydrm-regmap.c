@@ -12,9 +12,8 @@
 #include <linux/gpio/consumer.h>
 #include <linux/module.h>
 #include <linux/regmap.h>
+#include <linux/slab.h>
 
-#include <drm/drmP.h>
-#include <drm/tinydrm/tinydrm-helpers.h>
 #include <drm/tinydrm/tinydrm-regmap.h>
 
 /**
