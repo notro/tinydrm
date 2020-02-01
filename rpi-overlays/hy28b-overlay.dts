@@ -1,0 +1,103 @@
+/*
+ * Device Tree overlay for Texy's HY28B display HAT
+ *
+ */
+
+/dts-v1/;
+/plugin/;
+
+/ {
+	compatible = "brcm,bcm2835";
+
+	fragment@0 {
+		target = <&spi0>;
+		__overlay__ {
+			status = "okay";
+		};
+	};
+
+/* Downstream needs this:
+	fragment@1 {
+		target = <&spidev0>;
+		__overlay__ {
+			status = "disabled";
+		};
+	};
+
+	fragment@2 {
+		target = <&spidev1>;
+		__overlay__ {
+			status = "disabled";
+		};
+	};
+*/
+	fragment@3 {
+		target = <&spi0>;
+		__overlay__ {
+			/* needed to avoid dtc warning */
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			hy28b: hy28b@0{
+				compatible = "haoyu,hy28b";
+				reg = <0>;
+
+				spi-max-frequency = <32000000>;
+				spi-cpol;
+				spi-cpha;
+
+				rotation = <0>;
+				reset-gpios = <&gpio 25 0>;
+				backlight = <&backlight>;
+			};
+
+			hy28b_ts: hy28b-ts@1 {
+				compatible = "ti,ads7846";
+				reg = <1>;
+
+				spi-max-frequency = <2000000>;
+				interrupts = <17 2>; /* high-to-low edge triggered */
+				interrupt-parent = <&gpio>;
+				pendown-gpio = <&gpio 17 0>;
+				ti,x-plate-ohms = /bits/ 16 <100>;
+				ti,pressure-max = /bits/ 16 <255>;
+			};
+		};
+	};
+
+	fragment@4 {
+		target = <&gpio>;
+		__overlay__ {
+			/*
+			 * This is necessary on Pi1,2,Zero not Pi3:
+			 * Remove &i2s_alt0 which claims gpio18
+			 */
+			pinctrl-0 = <&gpioout &alt0>;
+
+			backlight_pins: backlight_pins {
+				brcm,pins = <18>;
+				brcm,function = <1>; /* out */
+			};
+		};
+	};
+
+	fragment@5 {
+		target-path = "/soc";
+		__overlay__ {
+			backlight: backlight {
+				compatible = "gpio-backlight";
+				pinctrl-names = "default";
+				pinctrl-0 = <&backlight_pins>;
+				gpios = <&gpio 18 0>;
+			};
+		};
+	};
+
+	__overrides__ {
+		speed =		<&hy28b>,"spi-max-frequency:0";
+		rotation =	<&hy28b>,"rotation:0";
+		fps =		<&hy28b>,"fps:0";
+		debug =		<&hy28b>,"debug:0";
+		xohms =		<&hy28b_ts>,"ti,x-plate-ohms;0";
+	};
+};
