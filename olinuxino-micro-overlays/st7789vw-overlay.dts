@@ -1,0 +1,46 @@
+/dts-v1/;
+/plugin/;
+
+/ {
+	compatible = "allwinner,sun7i-a20";
+
+
+
+
+	fragment@1 {
+		target = <&spi2>;
+		__overlay__ {
+			status = "okay";
+
+			spidev@0{
+				status = "disabled";
+			};
+
+			spidev@1{
+				status = "disabled";
+			};
+		};
+	};
+
+	fragment@2 {
+		target = <&spi2>;
+		__overlay__ {
+			/* needed to avoid dtc warning */
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			display@0{
+                compatible = "waveshare,1.3-lcd-hat";
+                reg = <0>;
+                spi-max-frequency = <16000000>;
+                dc-gpios = <&pio 8 12 0>;    /* PI12 */
+                reset-gpios = <&pio 8 13 0>; /* PI13 */
+                rotation = <0>;
+	        };
+
+
+		};
+	};
+
+
+};
