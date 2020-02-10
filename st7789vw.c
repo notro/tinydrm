@@ -45,7 +45,6 @@ static void jd_t18003_t01_pipe_enable(struct drm_simple_display_pipe *pipe,
 	struct mipi_dbi_dev *dbidev = drm_to_mipi_dbi_dev(pipe->crtc.dev);
 	struct mipi_dbi *dbi = &dbidev->dbi;
 	int ret, idx;
-	u8 addr_mode;
 
 	if (!drm_dev_enter(pipe->crtc.dev, &idx))
 		return;
@@ -123,6 +122,7 @@ static struct drm_driver ST7789VW_driver = {
 static const struct of_device_id ST7789VW_of_match[] = {
 	{ .compatible = "sitronix,ST7789VW" },
 	{ .compatible = "waveshare,1.3-lcd-hat"},
+	{ },
 };
 MODULE_DEVICE_TABLE(of, ST7789VW_of_match);
 
